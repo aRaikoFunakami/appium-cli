@@ -55,7 +55,7 @@ class SnapshotElement:
             text += " (content-desc)"
         if self.value is not None and self.value != self.name:
             text += f' value="{self.value}"'
-        visible_state = [item for item in self.state if item != "enabled"]
+        visible_state = [item for item in self.state if item not in ("enabled", "focusable")]
         if visible_state:
             text += f" [{' '.join(visible_state)}]"
         return text
@@ -210,9 +210,13 @@ def generate_snapshot(xml_source: str, scope: str = "full") -> tuple[Accessibili
         element_index += 1
         name, name_source = _node_name(attrs)
         state_values = []
-        for attr in ("enabled", "checked", "selected", "focused", "scrollable"):
+        for attr in ("enabled", "focusable", "checked", "selected", "focused", "scrollable"):
             if attrs.get(attr) == "true":
                 state_values.append(attr)
+        if attrs.get("clickable") == "true":
+            state_values.append("clickable")
+        else:
+            state_values.append("not-clickable")
         element = SnapshotElement(
             ref=f"e{element_index}",
             role=role_from_node(attrs),
