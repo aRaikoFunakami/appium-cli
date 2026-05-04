@@ -30,4 +30,30 @@ The snapshot includes:
 - **Alerts**: detected toasts/dialogs
 - **Nav**: back button availability
 
+Read the full snapshot before choosing a ref. A filtered search can hide the clickable parent, the scrollable container, or nearby duplicate labels.
+
+Example:
+
+```text
+┌ [ref:collapsing_toolbar] topbar
+└ [ref:recycler_view] list [scrollable→vertical]
+    text(2): "Storage", "83% used - 1.37 GB free"
+    button(8): "", "", ...
+
+── [ref:recycler_view] list [scrollable→vertical] ──
+[ref:btn_7] button ""
+[ref:title_7] text "Storage"
+[ref:summary_7] text "83% used - 1.37 GB free"
+```
+
+How to use this output:
+
+- `recycler_view` is the scrollable list container. Use it for scoped scrolling: `appium-cli scroll up --ref=recycler_view`.
+- `title_7` is visible text, but it may not be the tappable target.
+- `btn_7` is the associated clickable row/button ref. Prefer it for `tap`.
+- Refs come from the latest snapshot only. After a tap, scroll, back, dialog, or app switch, run `snapshot` again before reusing refs.
+- Position hints such as `(left-most)` or `(right-most)` help disambiguate repeated controls.
+
+If a desired label is not clickable, inspect the nearby row/button/container in the same snapshot instead of tapping the text ref directly.
+
 Prefer `snapshot` and refs before taking screenshots. `screenshot` returns the smartestiroid-compatible JSON string containing `type`, `image_base64`, `region`, and saves a PNG file under `.appium-cli/session-XXXX/`.
