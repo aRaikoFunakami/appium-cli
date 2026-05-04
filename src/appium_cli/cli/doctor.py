@@ -1,0 +1,129 @@
+"""Read-only environment diagnostics."""
+
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import subprocess
+from dataclasses import dataclass
+from typing import Literal
+
+import typer
+
+from appium_cli.utils import exit_codes
+
+
+Status = Literal["PASS", "WARN", "FAIL"]
+
+
+@dataclass(frozen=True)
+class Check:
+    name: str
+    status: Status
+    message: str
+    hint: str = ""
+
+
+def _run(command: list[str], timeout: float = 10.0) -> subprocess.CompletedProcess[str] | None:
+    if shutil.which(command[0]) is None:
+        return None
+    return subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _binary_check(name: str, command: str, version_args: list[str] | None = None) -> Check:
+    path = shutil.which(command)
+    if not path:
+        return Check(name, "FAIL", f"{command} was not found on PATH", f"Install {command} and update PATH.")
+    if not version_args:
+        return Check(name, "PASS", path)
+    try:
+        result = _run([command, *version_args])
+    except Exception as exc:
+        return Check(name, "WARN", f"{command} exists at {path}, but version check failed: {exc}")
+    if result and result.returncode == 0:
+        version = (result.stdout or result.stderr).strip().splitlines()
+        suffix = f" ({version[0]})" if version else ""
+        return Check(name, "PASS", f"{path}{suffix}")
+    return Check(name, "WARN", f"{command} exists at {path}, but version check failed")
+
+
+def _env_dir_check(name: str, env_name: str) -> Check:
+    value = os.environ.get(env_name)
+    if not value:
+        return Check(name, "FAIL", f"{env_name} is not set", f"Export {env_name} before using appium-cli.")
+    if not os.path.isdir(value):
+        return Check(name, "FAIL", f"{env_name} points to a missing directory: {value}")
+    return Check(name, "PASS", f"{env_name}={value}")
+
+
+def _appium_driver_checks() -> list[Check]:
+    if shutil.which("appium") is None:
+        return [
+            Check("Appium driver uiautomator2", "FAIL", "appium command is unavailable"),
+            Check("Appium driver xcuitest", "WARN", "appium command is unavailable"),
+        ]
+    try:
+        result = _run(["appium", "driver", "list", "--installed"], timeout=20.0)
+    except Exception as exc:
+        return [Check("Appium drivers", "WARN", f"Could not list Appium drivers: {exc}")]
+    if not result or result.returncode != 0:
+        detail = result.stderr.strip() if result else "appium driver list failed"
+        return [Check("Appium drivers", "WARN", detail)]
+    output = result.stdout + result.stderr
+    checks = []
+    checks.append(
+        Check(
+            "Appium driver uiautomator2",
+            "PASS" if "uiautomator2" in output else "FAIL",
+            "uiautomator2 installed" if "uiautomator2" in output else "uiautomator2 is not installed",
+            "Run appium driver install uiautomator2 outside appium-cli.",
+        )
+    )
+    checks.append(
+        Check(
+            "Appium driver xcuitest",
+            "PASS" if "xcuitest" in output else "WARN",
+            "xcuitest installed" if "xcuitest" in output else "xcuitest is not installed (needed only for iOS)",
+            "Run appium driver install xcuitest outside appium-cli if you need iOS.",
+        )
+    )
+    return checks
+
+
+def _xcrun_check() -> Check:
+    if platform.system() != "Darwin":
+        return Check("xcrun", "WARN", "xcrun is only available on macOS; iOS device listing is disabled")
+    return _binary_check("xcrun", "xcrun", ["--version"])
+
+
+def _checks() -> list[Check]:
+    return [
+        _binary_check("Node.js", "node", ["--version"]),
+        _binary_check("npm", "npm", ["--version"]),
+        _binary_check("Appium", "appium", ["--version"]),
+        *_appium_driver_checks(),
+        _env_dir_check("ANDROID_HOME", "ANDROID_HOME"),
+        _env_dir_check("JAVA_HOME", "JAVA_HOME"),
+        _binary_check("adb", "adb", ["version"]),
+        _xcrun_check(),
+    ]
+
+
+def doctor() -> None:
+    """Inspect the local Appium environment without changing it."""
+
+    checks = _checks()
+    for check in checks:
+        typer.echo(f"{check.status}: {check.name}: {check.message}")
+        if check.hint and check.status in ("WARN", "FAIL"):
+            typer.echo(f"  Hint: {check.hint}")
+
+    if any(check.status == "FAIL" for check in checks):
+        raise typer.Exit(exit_codes.GENERAL_ERROR)

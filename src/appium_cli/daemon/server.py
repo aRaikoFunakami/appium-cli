@@ -1,0 +1,75 @@
+"""Unix socket JSON-RPC server for the session daemon."""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+from pathlib import Path
+from typing import Any, Callable
+
+from appium_cli.daemon import state
+from appium_cli.utils import exit_codes
+from appium_cli.utils.paths import SESSION_PID_PATH, SESSION_SOCKET_PATH, ensure_app_dir
+
+
+Handler = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def _default_handler(request: dict[str, Any]) -> dict[str, Any]:
+    tool = request.get("tool")
+    if tool == "ping":
+        return {"text": "pong", "data": {"session": state.session_metadata}}
+    if tool == "get_driver_status":
+        text = "Driver is initialized and ready" if state.driver else "Driver is not initialized"
+        return {"text": text, "data": {"initialized": state.driver is not None}}
+    raise KeyError(f"Unknown tool: {tool}")
+
+
+def _response(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": request_id,
+        "ok": True,
+        "text": result.get("text", ""),
+        "data": result.get("data", {}),
+    }
+
+
+def _error(request_id: Any, exc: Exception, exit_code: int = exit_codes.GENERAL_ERROR) -> dict[str, Any]:
+    return {"id": request_id, "ok": False, "error": str(exc), "exit_code": getattr(exc, "exit_code", exit_code)}
+
+
+def serve(
+    socket_path: Path = SESSION_SOCKET_PATH,
+    handler: Handler = _default_handler,
+) -> None:
+    """Serve JSON-RPC requests until a shutdown request is received."""
+
+    ensure_app_dir()
+    socket_path.unlink(missing_ok=True)
+    SESSION_PID_PATH.write_text(str(os.getpid()), encoding="utf-8")
+    shutdown = False
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+        server.bind(str(socket_path))
+        server.listen(8)
+        while not shutdown:
+            connection, _ = server.accept()
+            with connection:
+                reader = connection.makefile("r", encoding="utf-8")
+                raw = reader.readline()
+                if not raw:
+                    continue
+                try:
+                    request_payload = json.loads(raw)
+                    if request_payload.get("tool") == "shutdown":
+                        shutdown = True
+                        response_payload = _response(request_payload.get("id"), {"text": "shutdown", "data": {}})
+                    else:
+                        response_payload = _response(request_payload.get("id"), handler(request_payload))
+                except Exception as exc:
+                    response_payload = _error(request_payload.get("id") if "request_payload" in locals() else None, exc)
+                connection.sendall((json.dumps(response_payload) + "\n").encode("utf-8"))
+
+    socket_path.unlink(missing_ok=True)
+    SESSION_PID_PATH.unlink(missing_ok=True)
