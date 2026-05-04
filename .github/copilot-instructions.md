@@ -58,9 +58,9 @@ User responsibility:
   - Remove OpenAI/LLM dependencies.
 - Preserve meaningful exceptions where compatibility depends on them, such as `ValueError("Driver is not initialized")` and `InvalidSessionIdException`.
 
-## Tools to implement
+## Tool groups to maintain
 
-Implement these groups, excluding LLM/dialog-agent internals:
+Maintain these implemented command groups, excluding LLM/dialog-agent internals:
 
 - Observation: `snapshot`, `describe`, `find_by_text`, `screenshot`, `get_page_source`
 - Basic actions: `tap`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`
@@ -81,9 +81,9 @@ Do not implement:
 - `detect_and_close_blocking_dialog`
 - Any DialogAgent or LLM-backed behavior
 
-## Phase 1 implementation scope
+## Current implementation baseline
 
-Start with the smallest functional path:
+The Phase 1 baseline includes:
 
 1. Project scaffold and packaging.
 2. `doctor`.
@@ -105,6 +105,7 @@ pyproject.toml
 src/appium_cli/
 src/appium_cli/__main__.py
 src/appium_cli/cli/
+src/appium_cli/core/
 src/appium_cli/daemon/
 src/appium_cli/tools/
 src/appium_cli/utils/
@@ -128,13 +129,16 @@ Phase 1 test dependency:
 
 - `pytest`
 
+Use the project-managed `uv` environment when running tests. Do not call `pytest` directly; use `uv run pytest ...` so agents use the dependency versions from this project.
+
 Avoid adding `pydantic`, formatters, linters, or new build tools unless the implementation genuinely requires them.
 
 ## Server and session design
 
-- Store server ownership at `~/.appium-cli/server.json`.
-- Store daemon socket at `~/.appium-cli/session.sock`.
-- Store daemon pid at `~/.appium-cli/session.pid`.
+- Store runtime state in the project-local `.appium-cli/` directory relative to the current working directory.
+- Store server ownership at `.appium-cli/server.json`.
+- Store daemon socket at `.appium-cli/session.sock`.
+- Store daemon pid at `.appium-cli/session.pid`.
 - `server stop` must only stop a self-owned Appium server.
 - Never kill an externally started Appium server.
 - `server status` should report:
@@ -260,7 +264,7 @@ Do not add `Bash(adb:*)`, `Bash(appium:*)`, `Bash(npm:*)`, or other direct prere
 Add tests with each implemented surface:
 
 - Unit tests for parsers, exit codes, daemon protocol, server ownership, and skill installation.
-- E2E tests behind a marker such as `e2e`; skip by default when a real Android device is not available.
+- E2E tests behind a marker such as `e2e`; skip by default unless `--run-e2e` is provided and a real Android device is available.
 - Split Appium E2E into:
   - self-owned server case
   - external server reuse case
@@ -273,8 +277,8 @@ uv tool install --editable . --force
 appium-cli --help
 appium-cli doctor
 appium-cli devices --json
-pytest
-pytest -m e2e
+uv run pytest
+uv run pytest -m e2e --run-e2e
 ```
 
 Run only existing test/build commands. Do not introduce unrelated tooling.

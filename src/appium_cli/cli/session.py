@@ -71,11 +71,17 @@ def _select_udid(explicit_udid: str | None) -> str:
 def status() -> None:
     """Show daemon/WebDriver session status."""
 
-    if not _daemon_running():
+    try:
+        response = request("get_driver_status")
+    except (FileNotFoundError, ConnectionError, OSError, RuntimeError):
         typer.echo("running: false")
         raise typer.Exit(exit_codes.STOPPED)
-    response = request("ping")
+
     data = response.get("data", {})
+    if not response.get("ok") or not data.get("ready", response.get("text") == "Driver is initialized and ready"):
+        typer.echo("running: false")
+        raise typer.Exit(exit_codes.STOPPED)
+
     typer.echo("running: true")
     typer.echo(f"session_id: {data.get('session_id', 'unknown')}")
     typer.echo(f"udid: {data.get('udid', 'unknown')}")

@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from appium_cli.daemon.client import request
-from appium_cli.daemon.server import serve
+from appium_cli.daemon.server import _send_response, serve
 
 
 def test_daemon_json_rpc_ping_and_shutdown(monkeypatch) -> None:
@@ -29,3 +29,12 @@ def test_daemon_json_rpc_ping_and_shutdown(monkeypatch) -> None:
     thread.join(timeout=5)
     assert not thread.is_alive()
     temp_dir.cleanup()
+
+
+class BrokenConnection:
+    def sendall(self, _payload: bytes) -> None:
+        raise BrokenPipeError("client disconnected")
+
+
+def test_send_response_ignores_client_disconnect() -> None:
+    assert _send_response(BrokenConnection(), {"id": "1", "ok": True}) is False

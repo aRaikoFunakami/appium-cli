@@ -9,7 +9,7 @@ from typing import Any
 
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import InvalidSessionIdException, WebDriverException
 
 from appium_cli.daemon import state
 from appium_cli.daemon.server import serve
@@ -19,7 +19,7 @@ from appium_cli.tools import device_info as device_info_tools
 from appium_cli.tools import interaction
 from appium_cli.tools.device_info import get_device_info
 from appium_cli.tools.observation import describe, find_by_text, get_page_source, screenshot, snapshot
-from appium_cli.tools.session import get_driver_status
+from appium_cli.tools.session import format_driver_status, is_driver_alive
 
 
 def _create_driver(server_url: str, udid: str | None):
@@ -45,7 +45,11 @@ def _handler(request: dict[str, Any]) -> dict[str, Any]:
     if tool == "ping":
         return {"text": "pong", "data": state.session_metadata}
     if tool == "get_driver_status":
-        return {"text": get_driver_status(), "data": state.session_metadata}
+        ready = is_driver_alive()
+        return {
+            "text": format_driver_status(ready),
+            "data": {**state.session_metadata, "initialized": state.driver is not None, "ready": ready},
+        }
     if tool == "get_device_info":
         return {"text": get_device_info(), "data": {}}
     args = request.get("args") or {}
@@ -102,7 +106,10 @@ def main() -> None:
         serve(handler=_handler)
     finally:
         if driver is not None:
-            driver.quit()
+            try:
+                driver.quit()
+            except (InvalidSessionIdException, WebDriverException):
+                pass
         state.reset()
 
 

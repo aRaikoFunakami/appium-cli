@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from appium_cli.daemon import state
+from appium_cli.tools.session import format_driver_status, is_driver_alive
 from appium_cli.utils import exit_codes
 from appium_cli.utils.paths import ensure_app_dir, session_pid_path, session_socket_path
 
@@ -21,8 +22,8 @@ def _default_handler(request: dict[str, Any]) -> dict[str, Any]:
     if tool == "ping":
         return {"text": "pong", "data": {"session": state.session_metadata}}
     if tool == "get_driver_status":
-        text = "Driver is initialized and ready" if state.driver else "Driver is not initialized"
-        return {"text": text, "data": {"initialized": state.driver is not None}}
+        ready = is_driver_alive()
+        return {"text": format_driver_status(ready), "data": {"initialized": state.driver is not None, "ready": ready}}
     raise KeyError(f"Unknown tool: {tool}")
 
 
@@ -37,6 +38,14 @@ def _response(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
 
 def _error(request_id: Any, exc: Exception, exit_code: int = exit_codes.GENERAL_ERROR) -> dict[str, Any]:
     return {"id": request_id, "ok": False, "error": str(exc), "exit_code": getattr(exc, "exit_code", exit_code)}
+
+
+def _send_response(connection: socket.socket, response_payload: dict[str, Any]) -> bool:
+    try:
+        connection.sendall((json.dumps(response_payload) + "\n").encode("utf-8"))
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        return False
+    return True
 
 
 def serve(
@@ -64,6 +73,7 @@ def serve(
                 raw = reader.readline()
                 if not raw:
                     continue
+                request_payload: dict[str, Any] | None = None
                 try:
                     request_payload = json.loads(raw)
                     if request_payload.get("tool") == "shutdown":
@@ -72,8 +82,8 @@ def serve(
                     else:
                         response_payload = _response(request_payload.get("id"), handler(request_payload))
                 except Exception as exc:
-                    response_payload = _error(request_payload.get("id") if "request_payload" in locals() else None, exc)
-                connection.sendall((json.dumps(response_payload) + "\n").encode("utf-8"))
+                    response_payload = _error(request_payload.get("id") if request_payload else None, exc)
+                _send_response(connection, response_payload)
 
     socket_path.unlink(missing_ok=True)
     pid_path.unlink(missing_ok=True)
