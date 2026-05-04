@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from appium_cli.daemon import state
 from appium_cli.utils import exit_codes
-from appium_cli.utils.paths import SESSION_PID_PATH, SESSION_SOCKET_PATH, ensure_app_dir
+from appium_cli.utils.paths import ensure_app_dir, session_pid_path, session_socket_path
 
 
 Handler = Callable[[dict[str, Any]], dict[str, Any]]
@@ -40,14 +40,18 @@ def _error(request_id: Any, exc: Exception, exit_code: int = exit_codes.GENERAL_
 
 
 def serve(
-    socket_path: Path = SESSION_SOCKET_PATH,
+    socket_path: Path | None = None,
     handler: Handler = _default_handler,
 ) -> None:
     """Serve JSON-RPC requests until a shutdown request is received."""
 
+    if socket_path is None:
+        socket_path = session_socket_path()
+    pid_path = session_pid_path()
+
     ensure_app_dir()
     socket_path.unlink(missing_ok=True)
-    SESSION_PID_PATH.write_text(str(os.getpid()), encoding="utf-8")
+    pid_path.write_text(str(os.getpid()), encoding="utf-8")
     shutdown = False
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
@@ -72,4 +76,4 @@ def serve(
                 connection.sendall((json.dumps(response_payload) + "\n").encode("utf-8"))
 
     socket_path.unlink(missing_ok=True)
-    SESSION_PID_PATH.unlink(missing_ok=True)
+    pid_path.unlink(missing_ok=True)

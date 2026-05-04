@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 from typing import Any
 
 from appium import webdriver
@@ -77,7 +79,13 @@ def main() -> None:
     parser.add_argument("--server-url", required=True)
     parser.add_argument("--udid")
     parser.add_argument("--adb-fallback", action="store_true")
+    parser.add_argument("--app-dir", help="Absolute path to .appium-cli directory parent")
     args = parser.parse_args()
+
+    # Ensure get_app_dir() resolves to the same directory as the CLI process
+    if args.app_dir:
+        app_dir_parent = str(Path(args.app_dir).parent)
+        os.chdir(app_dir_parent)
 
     driver = None
     try:

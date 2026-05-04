@@ -1,5 +1,12 @@
 """Command-line entry point for appium-cli."""
 
+from __future__ import annotations
+
+import atexit
+import json
+import sys
+import time
+from datetime import datetime, timezone
 from typing import Annotated
 
 import typer
@@ -50,6 +57,81 @@ from appium_cli.cli.tools import (
     wait_short_loading,
     within_container,
 )
+
+
+# --- Invocation logging state ---
+_log_start_time: float = 0.0
+_log_argv: list[str] = []
+_log_exit_code: int = 0
+
+# Keys whose values should be excluded from log args
+_SENSITIVE_KEYS = {"password", "token", "secret", "image_base64"}
+
+
+def _sanitize_args(argv: list[str]) -> dict:
+    """Build a sanitized args dict from argv for logging."""
+    result: dict[str, str] = {}
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg.startswith("--"):
+            key = arg.lstrip("-").replace("-", "_")
+            if key in _SENSITIVE_KEYS:
+                result[key] = "***"
+                i += 2
+                continue
+            if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                val = argv[i + 1]
+                if key == "text" and len(val) > 100:
+                    val = val[:100] + "..."
+                result[key] = val
+                i += 2
+            else:
+                result[key] = "true"
+                i += 1
+        else:
+            result.setdefault("_positional", arg)
+            i += 1
+    return result
+
+
+def _write_invocation_log() -> None:
+    """atexit handler: append a JSONL line to the session invocation log."""
+    try:
+        from appium_cli.utils.paths import read_current_session, session_log_path
+
+        sid = read_current_session()
+        if not sid:
+            return
+
+        log_path = session_log_path(sid)
+        duration_ms = int((time.time() - _log_start_time) * 1000)
+
+        # Derive command name from argv
+        cmd_parts: list[str] = []
+        args_start = 0
+        for i, arg in enumerate(_log_argv):
+            if arg.startswith("--"):
+                args_start = i
+                break
+            cmd_parts.append(arg)
+            args_start = i + 1
+        cmd = " ".join(cmd_parts) or "unknown"
+        remaining_argv = _log_argv[args_start:]
+
+        entry = {
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + f"{datetime.now(timezone.utc).microsecond // 1000:03d}Z",
+            "cmd": cmd,
+            "args": _sanitize_args(remaining_argv),
+            "status": "OK" if _log_exit_code == 0 else "FAILED",
+            "exit_code": _log_exit_code,
+            "duration_ms": duration_ms,
+        }
+
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # Never let logging crash the CLI
 
 
 app = typer.Typer(
@@ -120,10 +202,19 @@ def _main(
     ] = False,
 ) -> None:
     """Run appium-cli."""
+    global _log_start_time, _log_argv
+    _log_start_time = time.time()
+    _log_argv = sys.argv[1:]
 
 
 def main() -> None:
-    app()
+    global _log_exit_code
+    atexit.register(_write_invocation_log)
+    try:
+        app()
+    except SystemExit as exc:
+        _log_exit_code = exc.code if isinstance(exc.code, int) else 1
+        raise
 
 
 if __name__ == "__main__":

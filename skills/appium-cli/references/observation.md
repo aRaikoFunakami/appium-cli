@@ -11,4 +11,4 @@ appium-cli screenshot
 appium-cli get_page_source
 ```
 
-Prefer `snapshot` and refs before taking screenshots. `screenshot` returns the smartestiroid-compatible JSON string containing `type`, `image_base64`, and `region`.
+Prefer `snapshot` and refs before taking screenshots. `screenshot` returns the smartestiroid-compatible JSON string containing `type`, `image_base64`, `region`, and saves a PNG file under `.appium-cli/session-XXXX/`. The `path`, `size_bytes`, and `mime_type` fields are included in the response when a session is active.

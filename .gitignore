@@ -29,6 +29,9 @@ dist/
 .agents/
 .claude/skills/
 
+# appium-cli runtime artifacts (project-local)
+.appium-cli/
+
 # OS/editor files
 .DS_Store
 .idea/

@@ -110,14 +110,30 @@ def find_by_text(text: str, scope: str = "full") -> str:
 
 
 def screenshot(region: str = "full") -> str:
+    import base64
+
+    from appium_cli.utils.paths import read_current_session, screenshot_path, session_artifact_dir
+
     driver = _require_driver()
-    return json.dumps(
-        {
-            "type": "screenshot",
-            "image_base64": driver.get_screenshot_as_base64(),
-            "region": region,
-        }
-    )
+    b64 = driver.get_screenshot_as_base64()
+
+    result: dict = {
+        "type": "screenshot",
+        "image_base64": b64,
+        "region": region,
+    }
+
+    sid = read_current_session()
+    if sid:
+        artifact_dir = session_artifact_dir(sid)
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        png_path = screenshot_path(sid)
+        png_path.write_bytes(base64.b64decode(b64))
+        result["path"] = str(png_path)
+        result["size_bytes"] = png_path.stat().st_size
+        result["mime_type"] = "image/png"
+
+    return json.dumps(result)
 
 
 def get_page_source() -> str:

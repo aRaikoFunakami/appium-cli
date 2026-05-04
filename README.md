@@ -56,6 +56,25 @@ appium-cli session stop
 
 `server stop` only stops an Appium server started by `appium-cli`. Externally started Appium servers are reused but never killed.
 
+## Artifact storage
+
+Runtime state and artifacts are stored under a project-local `.appium-cli/` directory (relative to cwd). This directory is `.gitignore`d.
+
+```
+.appium-cli/
+├── current-session                          # active session id
+├── server.json / server.log                 # Appium server state
+├── session.sock / session.pid               # daemon IPC
+├── session-2026-05-04T02-18-02-171Z.log     # CLI invocation log (JSONL)
+└── session-2026-05-04T02-18-02-171Z/        # per-session artifacts
+    ├── daemon.log                            # daemon stdout/stderr
+    └── screenshot-2026-05-04T02-20-15-033Z.png
+```
+
+**Invocation log** (`.log`): Each CLI command appends a JSONL line with timestamp, command, sanitized args, status, exit code, and duration.
+
+**Screenshots**: `screenshot` saves a PNG file under the session artifact directory and includes the `path` field in the JSON response.
+
 ## Tool command groups
 
 Canonical command names follow smartestiroid function names in snake_case.
@@ -70,10 +89,10 @@ appium-cli screenshot
 appium-cli get_page_source
 ```
 
-`screenshot` returns the smartestiroid-compatible JSON string:
+`screenshot` returns the smartestiroid-compatible JSON string with an additional `path` field when a session is active:
 
 ```json
-{"type":"screenshot","image_base64":"...","region":"full"}
+{"type":"screenshot","image_base64":"...","region":"full","path":".appium-cli/session-.../screenshot-....png","size_bytes":12345,"mime_type":"image/png"}
 ```
 
 ### Basic actions

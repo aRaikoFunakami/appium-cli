@@ -16,7 +16,7 @@ from typing import Annotated, Literal
 import typer
 
 from appium_cli.utils import exit_codes
-from appium_cli.utils.paths import SERVER_LOG_PATH, SERVER_STATE_PATH, ensure_app_dir
+from appium_cli.utils.paths import ensure_app_dir, server_log_path, server_state_path
 
 
 Ownership = Literal["self", "external", "none"]
@@ -44,17 +44,17 @@ def _status_url(port: int) -> str:
 
 
 def _read_state() -> dict:
-    if not SERVER_STATE_PATH.exists():
+    if not server_state_path().exists():
         return {}
     try:
-        return json.loads(SERVER_STATE_PATH.read_text(encoding="utf-8"))
+        return json.loads(server_state_path().read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
 
 
 def _write_state(state: ServerState) -> None:
     ensure_app_dir()
-    SERVER_STATE_PATH.write_text(json.dumps(asdict(state), indent=2), encoding="utf-8")
+    server_state_path().write_text(json.dumps(asdict(state), indent=2), encoding="utf-8")
 
 
 def _server_responds(port: int, timeout: float = 1.0) -> bool:
@@ -107,7 +107,7 @@ def start_server(port: int = 4723, allow_adb_shell: bool = True) -> ServerState:
     if allow_adb_shell:
         command.extend(["--allow-insecure", "uiautomator2:adb_shell"])
 
-    log_file = SERVER_LOG_PATH.open("ab")
+    log_file = server_log_path().open("ab")
     process = subprocess.Popen(
         command,
         stdout=log_file,
@@ -118,7 +118,7 @@ def start_server(port: int = 4723, allow_adb_shell: bool = True) -> ServerState:
     deadline = time.time() + 30
     while time.time() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(f"Appium exited early with code {process.returncode}. See {SERVER_LOG_PATH}")
+            raise RuntimeError(f"Appium exited early with code {process.returncode}. See {server_log_path()}")
         if _server_responds(port):
             state = ServerState(
                 running=True,
@@ -133,7 +133,7 @@ def start_server(port: int = 4723, allow_adb_shell: bool = True) -> ServerState:
         time.sleep(0.5)
 
     process.terminate()
-    raise RuntimeError(f"Appium did not become ready. See {SERVER_LOG_PATH}")
+    raise RuntimeError(f"Appium did not become ready. See {server_log_path()}")
 
 
 @app.command("status")
@@ -192,7 +192,7 @@ def stop() -> None:
 
     pid = saved.get("pid")
     if not isinstance(pid, int) or not _pid_running(pid):
-        SERVER_STATE_PATH.unlink(missing_ok=True)
+        server_state_path().unlink(missing_ok=True)
         typer.echo("Self-owned Appium server is already stopped.")
         return
 
@@ -200,7 +200,7 @@ def stop() -> None:
     deadline = time.time() + 10
     while time.time() < deadline:
         if not _pid_running(pid):
-            SERVER_STATE_PATH.unlink(missing_ok=True)
+            server_state_path().unlink(missing_ok=True)
             typer.echo("Stopped self-owned Appium server.")
             return
         time.sleep(0.2)

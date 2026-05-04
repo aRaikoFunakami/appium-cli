@@ -17,11 +17,20 @@ from appium_cli.cli.server import start_server
 from appium_cli.daemon.client import request
 from appium_cli.utils import exit_codes
 from appium_cli.utils.adb import list_android_devices
-from appium_cli.utils.paths import APP_DIR, SESSION_PID_PATH, SESSION_SOCKET_PATH, ensure_app_dir
+from appium_cli.utils.paths import (
+    clear_current_session,
+    daemon_log_path,
+    ensure_app_dir,
+    generate_session_id,
+    read_current_session,
+    session_artifact_dir,
+    session_pid_path,
+    session_socket_path,
+    write_current_session,
+)
 
 
 app = typer.Typer(help="Manage the persistent Appium WebDriver session daemon.")
-SESSION_LOG_PATH = APP_DIR / "session.log"
 
 
 def _pid_running(pid: int) -> bool:
@@ -33,7 +42,7 @@ def _pid_running(pid: int) -> bool:
 
 
 def _daemon_running() -> bool:
-    if not SESSION_SOCKET_PATH.exists():
+    if not session_socket_path().exists():
         return False
     try:
         response = request("ping")
@@ -44,7 +53,7 @@ def _daemon_running() -> bool:
 
 def _read_pid() -> int | None:
     try:
-        return int(SESSION_PID_PATH.read_text(encoding="utf-8").strip())
+        return int(session_pid_path().read_text(encoding="utf-8").strip())
     except (FileNotFoundError, ValueError):
         return None
 
@@ -90,10 +99,14 @@ def start(
         typer.echo("Session daemon is already running.")
         return
 
-    ensure_app_dir()
-    SESSION_SOCKET_PATH.unlink(missing_ok=True)
+    app_dir = ensure_app_dir()
+    sid = generate_session_id()
+    artifact_dir = session_artifact_dir(sid)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    session_socket_path().unlink(missing_ok=True)
     if (pid := _read_pid()) and not _pid_running(pid):
-        SESSION_PID_PATH.unlink(missing_ok=True)
+        session_pid_path().unlink(missing_ok=True)
 
     try:
         server_state = start_server(port=port, allow_adb_shell=allow_adb_shell)
@@ -110,11 +123,13 @@ def start(
         server_state.url,
         "--udid",
         selected_udid,
+        "--app-dir",
+        str(app_dir.resolve()),
     ]
     if server_state.ownership == "external":
         command.append("--adb-fallback")
 
-    log_file = SESSION_LOG_PATH.open("ab")
+    log_file = daemon_log_path(sid).open("ab")
     process = subprocess.Popen(
         command,
         stdout=log_file,
@@ -125,15 +140,19 @@ def start(
     deadline = time.time() + 60
     while time.time() < deadline:
         if process.poll() is not None:
-            typer.echo(f"ERROR: session daemon exited early with code {process.returncode}. See {SESSION_LOG_PATH}", err=True)
+            typer.echo(
+                f"ERROR: session daemon exited early with code {process.returncode}. See {daemon_log_path(sid)}",
+                err=True,
+            )
             raise typer.Exit(exit_codes.GENERAL_ERROR)
         if _daemon_running():
-            typer.echo(f"Started session daemon for {selected_udid} (pid={process.pid})")
+            write_current_session(sid)
+            typer.echo(f"Started session daemon for {selected_udid} (pid={process.pid}, session={sid})")
             return
         time.sleep(0.5)
 
     process.terminate()
-    typer.echo(f"ERROR: session daemon did not become ready. See {SESSION_LOG_PATH}", err=True)
+    typer.echo(f"ERROR: session daemon did not become ready. See {daemon_log_path(sid)}", err=True)
     raise typer.Exit(exit_codes.GENERAL_ERROR)
 
 
@@ -155,6 +174,7 @@ def stop() -> None:
         if not _pid_running(pid):
             break
         time.sleep(0.2)
-    SESSION_SOCKET_PATH.unlink(missing_ok=True)
-    SESSION_PID_PATH.unlink(missing_ok=True)
+    session_socket_path().unlink(missing_ok=True)
+    session_pid_path().unlink(missing_ok=True)
+    clear_current_session()
     typer.echo("Stopped session daemon.")
