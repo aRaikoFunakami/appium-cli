@@ -94,7 +94,7 @@ Start with the smallest functional path:
 7. `install --skills`.
 8. Unit tests and Android E2E smoke tests.
 
-Do not port `core/snapshot.py`, `ref_resolver.py`, or `xml_compressor.py` in Phase 1 unless a Phase 1 command directly requires them. They belong to the Phase 2 observation work.
+Phase 1 observation work (snapshot, ref resolution) is complete. `core/snapshot.py`, `core/snapshot_generator.py`, and `core/ref_resolver.py` are ported from smartestiroid and must be maintained as smartestiroid-compatible.
 
 ## Packaging and layout
 
@@ -186,6 +186,45 @@ It should use:
 
 Handle Appium `mobile: shell` responses that are either a dict containing `stdout` or a raw string.
 
+## Snapshot and ref resolution (smartestiroid parity)
+
+The snapshot system is a faithful port of smartestiroid's `SnapshotGenerator` and `RefResolver`.
+
+### Ref naming
+
+Refs are stable IDs derived from the element's attributes (not sequential `e1`/`e2`):
+
+- `resource-id="com.example:id/login"` → `login`
+- `content-desc="Search"` → `search`
+- `role=button, name="Submit"` → `btn_submit`
+- Duplicate resource-ids get `_2`, `_3`, `_4` suffixes (e.g. `tabbackground`, `tabbackground_2`, `tabbackground_3`, `tabbackground_4`)
+
+### Ref resolution (multi-strategy with bounds verification)
+
+`RefResolver` tries locator strategies in order. After finding an element with each strategy, it verifies the element's bounds match the expected bounds within ±20px. If bounds mismatch, it falls through to the next strategy.
+
+1. **resource-id** (`AppiumBy.ID`) → verify bounds
+2. **accessibility_id** (content-desc, `AppiumBy.ACCESSIBILITY_ID`) → verify bounds
+3. **xpath** (text match) → verify bounds
+4. **coordinates** (center of expected bounds) → always passes
+
+This solves the problem where multiple elements share the same resource-id (e.g. all tab buttons have `resource-id="tabBackground"`). Without bounds verification, `find_element(BY.ID, "tabBackground")` always returns the first match.
+
+### Key source files
+
+- `src/appium_cli/core/snapshot.py`: Data models (`LocatorStrategy`, `RefEntry`, `SnapshotElement`, `SnapshotContainer`, `SelectionContainer`, `AccessibilitySnapshot`)
+- `src/appium_cli/core/snapshot_generator.py`: `SnapshotGenerator` — XML → AccessibilitySnapshot + ref map
+- `src/appium_cli/core/ref_resolver.py`: `RefResolver` — ref → WebElement with bounds verification
+- `src/appium_cli/daemon/state.py`: Singleton `SnapshotGenerator` and `RefResolver` instances
+
+### Rules for modifying snapshot/ref code
+
+- Do not revert to sequential `e1`/`e2` ref naming.
+- Do not remove bounds verification from `RefResolver`.
+- Do not bypass `RefResolver` by using `driver.find_element` directly in action tools.
+- All ref-based actions must go through `state.ref_resolver.resolve(ref, driver)`.
+- `compute_screen_id` uses MD5 of sorted `(role, name)` tuples (not SHA1 of raw XML).
+
 ## SKILL policy
 
 - Implement only `appium-cli install --skills`.
@@ -209,6 +248,12 @@ allowed-tools: Bash(appium-cli:*)
 ```
 
 Do not add `Bash(adb:*)`, `Bash(appium:*)`, `Bash(npm:*)`, or other direct prerequisite commands to `allowed-tools`.
+
+### SKILL file update workflow
+
+1. Always edit source skill files in `skills/appium-cli/` first.
+2. Then run `appium-cli install --skills` to propagate changes to install targets (`.agents/skills/appium-cli/`, `~/.copilot/skills/appium-cli/`, etc.).
+3. Never edit installed skill files (under `.agents/` or `~/.copilot/`) directly. They are overwritten by `install --skills`.
 
 ## Testing expectations
 

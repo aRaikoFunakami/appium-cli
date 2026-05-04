@@ -1,12 +1,15 @@
-"""Snapshot-ref based actions and gestures."""
+"""Snapshot-ref based actions and gestures.
+
+All ref-based actions resolve elements through RefResolver with
+multi-strategy lookup and bounds verification.
+"""
 
 from __future__ import annotations
 
 import time
 from typing import Any
 
-from appium.webdriver.common.appiumby import AppiumBy
-
+from appium_cli.core.ref_resolver import ElementNotFoundError, _CoordinateElement
 from appium_cli.daemon import state
 from appium_cli.tools.observation import refresh_snapshot
 
@@ -32,46 +35,18 @@ def _ok_with_snapshot() -> str:
         return f"OK\nWARNING: snapshot refresh failed: {exc}"
 
 
-def _normalize_ref(ref: str) -> str:
-    return ref.strip().strip("[]").removeprefix("ref:")
-
-
-def _entry(ref: str) -> dict[str, Any]:
-    normalized = _normalize_ref(ref)
-    entry = state.current_ref_map.get(normalized)
-    if not entry:
-        raise KeyError(f"ref '{normalized}' が見つかりません。snapshot() で画面を再確認してください。")
-    return entry
-
-
-def _find_web_element(entry: dict[str, Any]):
+def _resolve_element(ref: str) -> Any:
+    """Resolve ref to WebElement via RefResolver with bounds verification."""
     driver = _require_driver()
-    if entry.get("resource_id"):
-        try:
-            return driver.find_element(AppiumBy.ID, entry["resource_id"])
-        except Exception:
-            pass
-    if entry.get("accessibility_id"):
-        try:
-            return driver.find_element(AppiumBy.ACCESSIBILITY_ID, entry["accessibility_id"])
-        except Exception:
-            pass
-    if entry.get("xpath"):
-        try:
-            return driver.find_element(AppiumBy.XPATH, entry["xpath"])
-        except Exception:
-            pass
-    return None
+    return state.ref_resolver.resolve(ref, driver)
 
 
-def _gesture_target(entry: dict[str, Any]) -> dict[str, Any]:
-    element = _find_web_element(entry)
-    if element is not None:
-        return {"elementId": element.id}
-    center = entry.get("center")
-    if center:
-        return {"x": center[0], "y": center[1]}
-    raise KeyError(f"ref '{entry.get('ref')}' cannot be resolved to an element or coordinates")
+def _gesture_target(ref: str) -> dict[str, Any]:
+    """Resolve ref to gesture parameters (elementId or x,y coordinates)."""
+    element = _resolve_element(ref)
+    if isinstance(element, _CoordinateElement):
+        return {"x": element.x, "y": element.y}
+    return {"elementId": element.id}
 
 
 def _screen_rect() -> dict[str, int]:
@@ -81,18 +56,20 @@ def _screen_rect() -> dict[str, int]:
 
 def tap(ref: str) -> str:
     try:
-        _require_driver().execute_script("mobile: clickGesture", _gesture_target(_entry(ref)))
+        _require_driver().execute_script("mobile: clickGesture", _gesture_target(ref))
         time.sleep(0.5)
         return _ok_with_snapshot()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
 
 def type_text(ref: str, text: str, submit: bool = False) -> str:
     try:
-        element = _find_web_element(_entry(ref))
-        if element is None:
-            return _failed(f"ref '{ref}' could not be resolved to an input element")
+        element = _resolve_element(ref)
+        if isinstance(element, _CoordinateElement):
+            return _failed(f"ref '{ref}' resolved to coordinates only; type_text requires a real element")
         element.click()
         try:
             element.clear()
@@ -103,6 +80,8 @@ def type_text(ref: str, text: str, submit: bool = False) -> str:
             _require_driver().press_keycode(66)
         time.sleep(0.5)
         return _ok_with_snapshot()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
@@ -113,12 +92,14 @@ def scroll(direction: str, ref: str = "", percent: float = 0.8) -> str:
             return _failed("direction must be one of: up, down, left, right")
         params: dict[str, Any] = {"direction": _SCROLL_DIRECTION_REVERSE[direction], "percent": percent}
         if ref:
-            params.update(_gesture_target(_entry(ref)))
+            params.update(_gesture_target(ref))
         else:
             params.update(_screen_rect())
         can_scroll_more = _require_driver().execute_script("mobile: scrollGesture", params)
         time.sleep(0.5)
         return _ok_with_snapshot() + f"\ncan_scroll_more: {can_scroll_more}"
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
@@ -129,12 +110,14 @@ def swipe(direction: str, ref: str = "", percent: float = 0.8) -> str:
             return _failed("direction must be one of: up, down, left, right")
         params: dict[str, Any] = {"direction": direction, "percent": min(percent, 1.0)}
         if ref:
-            params.update(_gesture_target(_entry(ref)))
+            params.update(_gesture_target(ref))
         else:
             params.update(_screen_rect())
         _require_driver().execute_script("mobile: swipeGesture", params)
         time.sleep(0.5)
         return _ok_with_snapshot()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
@@ -157,33 +140,39 @@ def wait(seconds: float = 1.0) -> str:
 
 def long_press(ref: str, duration: int = 500) -> str:
     try:
-        params = _gesture_target(_entry(ref))
+        params = _gesture_target(ref)
         params["duration"] = duration
         _require_driver().execute_script("mobile: longClickGesture", params)
         time.sleep(0.5)
         return _ok_with_snapshot()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
 
 def double_tap(ref: str) -> str:
     try:
-        _require_driver().execute_script("mobile: doubleClickGesture", _gesture_target(_entry(ref)))
+        _require_driver().execute_script("mobile: doubleClickGesture", _gesture_target(ref))
         time.sleep(0.5)
         return _ok_with_snapshot()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
 
 def drag(ref: str, end_x: int, end_y: int, speed: int | None = None) -> str:
     try:
-        params = _gesture_target(_entry(ref))
+        params = _gesture_target(ref)
         params.update({"endX": end_x, "endY": end_y})
         if speed is not None:
             params["speed"] = speed
         _require_driver().execute_script("mobile: dragGesture", params)
         time.sleep(0.5)
         return _ok_with_snapshot()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
@@ -194,12 +183,14 @@ def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
         if speed is not None:
             params["speed"] = speed
         if ref:
-            params.update(_gesture_target(_entry(ref)))
+            params.update(_gesture_target(ref))
         else:
             params.update(_screen_rect())
         can_scroll_more = _require_driver().execute_script("mobile: flingGesture", params)
         time.sleep(0.5)
         return _ok_with_snapshot() + f"\ncan_scroll_more: {can_scroll_more}"
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
 
@@ -214,12 +205,14 @@ def pinch_close(ref: str, percent: float = 0.5, speed: int | None = None) -> str
 
 def _pinch(script: str, ref: str, percent: float, speed: int | None) -> str:
     try:
-        params = _gesture_target(_entry(ref))
+        params = _gesture_target(ref)
         params["percent"] = percent
         if speed is not None:
             params["speed"] = speed
         _require_driver().execute_script(script, params)
         time.sleep(0.5)
         return _ok_with_snapshot()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))

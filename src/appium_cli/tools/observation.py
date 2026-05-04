@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from appium_cli.core.snapshot import SnapshotElement, compress_xml, element_to_ref_entry, generate_snapshot
+from appium_cli.core.snapshot import compress_xml
 from appium_cli.daemon import state
 
 
@@ -17,10 +17,32 @@ def _require_driver():
 def refresh_snapshot(scope: str = "full") -> str:
     driver = _require_driver()
     xml_source = driver.page_source
-    snapshot_obj, ref_map = generate_snapshot(xml_source, scope=scope)
+
+    # Build app_info from driver
+    app_info = ""
+    try:
+        pkg = driver.current_package
+        act = driver.current_activity
+        if pkg:
+            app_info = f"{pkg}/{act}" if act else pkg
+    except Exception:
+        pass
+
+    # Update screen dimensions from driver
+    try:
+        window_size = driver.get_window_size()
+        state.snapshot_generator.screen_width = int(window_size["width"])
+        state.snapshot_generator.screen_height = int(window_size["height"])
+    except Exception:
+        pass
+
+    snapshot_obj, ref_map = state.snapshot_generator.generate(
+        xml_source, app_info=app_info, scope=scope
+    )
     state.current_snapshot = snapshot_obj
-    state.current_ref_map = {ref: element_to_ref_entry(element) for ref, element in ref_map.items()}
-    return snapshot_obj.to_text(scope=scope)
+    state.current_ref_map = ref_map
+    state.ref_resolver.register_all(ref_map)
+    return snapshot_obj.to_text(scope=scope if scope != "full" else None)
 
 
 def snapshot(scope: str = "full") -> str:
@@ -31,7 +53,7 @@ def _normalize_ref(ref: str) -> str:
     return ref.strip().strip("[]").removeprefix("ref:")
 
 
-def _find_element(ref: str) -> SnapshotElement | None:
+def _find_element(ref: str):
     normalized = _normalize_ref(ref)
     snapshot_obj = state.current_snapshot
     if not snapshot_obj:
@@ -41,14 +63,14 @@ def _find_element(ref: str) -> SnapshotElement | None:
 
 def describe(ref: str) -> str:
     if state.current_snapshot is None:
-        return "ERROR: スナップショットがありません。先に snapshot() を呼んでください。"
+        return "ERROR: No snapshot available. Run snapshot() first."
     target = _find_element(ref)
     if not target:
         normalized = _normalize_ref(ref)
-        return f"ERROR: ref '{normalized}' が見つかりません。snapshot() で画面を再確認してください。"
+        return f"ERROR: ref '{normalized}' not found. Run snapshot() to refresh."
 
     lines = [
-        f"要素: {target.to_text()}",
+        f"element: {target.to_text()}",
         f"role: {target.role}",
         f"name: {target.name}",
     ]
@@ -66,7 +88,7 @@ def describe(ref: str) -> str:
                 lines.append(f"container_title: {container.title}")
             siblings = [item for item in snapshot_obj.elements if item.container_ref == target.container_ref and item.ref != target.ref]
             if siblings:
-                lines.append("近傍要素:")
+                lines.append("nearby elements:")
                 for sibling in siblings[:5]:
                     lines.append(f"  {sibling.to_text()}")
     return "\n".join(lines)
@@ -74,7 +96,7 @@ def describe(ref: str) -> str:
 
 def find_by_text(text: str, scope: str = "full") -> str:
     if state.current_snapshot is None:
-        return "ERROR: スナップショットがありません。先に snapshot() を呼んでください。"
+        return "ERROR: No snapshot available. Run snapshot() first."
 
     snapshot_obj = state.current_snapshot
     search_lower = text.lower()
@@ -102,8 +124,8 @@ def find_by_text(text: str, scope: str = "full") -> str:
 
     candidates.sort(key=lambda item: item["score"], reverse=True)
     if not candidates:
-        return f"'{text}' に一致する要素が見つかりません。"
-    lines = [f"'{text}' の検索結果 ({len(candidates)} 件):"]
+        return f"No elements matching '{text}' found."
+    lines = [f"Search results for '{text}' ({len(candidates)} matches):"]
     for candidate in candidates[:10]:
         lines.append(f"  [ref:{candidate['ref']}] {candidate['role']} \"{candidate['name']}\" (score={candidate['score']})")
     return "\n".join(lines)

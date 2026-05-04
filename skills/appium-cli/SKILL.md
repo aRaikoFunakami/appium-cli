@@ -19,7 +19,7 @@ appium-cli session status
 appium-cli get_device_info
 appium-cli snapshot
 appium-cli find_by_text "Log in"
-appium-cli tap e22
+appium-cli tap tabbackground_4
 ```
 
 ## Important rules
