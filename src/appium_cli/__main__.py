@@ -57,6 +57,8 @@ from appium_cli.cli.tools import (
     wait_short_loading,
     within_container,
 )
+from appium_cli.cli.usage_suggestions import format_suggestion, suggest_usage
+from appium_cli.utils import exit_codes
 
 
 # --- Invocation logging state ---
@@ -208,9 +210,15 @@ def _main(
 
 
 def main() -> None:
-    global _log_exit_code
+    global _log_argv, _log_exit_code, _log_start_time
     atexit.register(_write_invocation_log)
+    _log_start_time = time.time()
+    _log_argv = sys.argv[1:]
     try:
+        suggestion = suggest_usage(_log_argv)
+        if suggestion is not None:
+            typer.echo(format_suggestion(suggestion), err=True)
+            raise SystemExit(exit_codes.USAGE_ERROR)
         app()
     except SystemExit as exc:
         _log_exit_code = exc.code if isinstance(exc.code, int) else 1

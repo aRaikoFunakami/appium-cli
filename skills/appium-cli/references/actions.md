@@ -45,3 +45,15 @@ appium-cli snapshot
 Use the container marked `[scrollable→vertical]` or `[scrollable→horizontal]` in the snapshot. Omitting `--ref` scrolls from a generic screen area and may target the wrong region or trigger system UI such as notifications/quick settings.
 
 For `scroll`, directions are finger movement directions. `scroll up` is a finger-up gesture and usually reveals lower list content; `scroll down` moves back toward the top. Internally Appium `scrollGesture` receives the reversed content direction.
+
+## Common mistakes
+
+`scroll` is direction-first and takes the target container through `--ref`.
+
+```bash
+# Wrong: ref before direction
+appium-cli scroll recycler_view up
+
+# Right
+appium-cli scroll up --ref=recycler_view
+```

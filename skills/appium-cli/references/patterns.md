@@ -33,6 +33,8 @@ appium-cli tap btn_12
 
 Use the scrollable container ref marked `[scrollable→vertical]` or `[scrollable→horizontal]`. Do not tap a ref from before the scroll; run `snapshot` again and use the new current ref.
 
+`scroll` is direction-first. Use `appium-cli scroll up --ref=recycler_view`, not `appium-cli scroll recycler_view up`.
+
 ## Settings/storage style workflow
 
 ```bash

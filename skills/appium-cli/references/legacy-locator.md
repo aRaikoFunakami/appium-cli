@@ -15,3 +15,15 @@ appium-cli scroll_to_element xpath "//*[@text='Target']"
 ```
 
 Prefer snapshot refs for new workflows. Keep locator tools for compatibility and low-level recovery.
+
+## Common mistakes
+
+Legacy locator tools use `<by> <value>` as positionals. Extra behavior such as scroll direction is an option.
+
+```bash
+# Wrong
+appium-cli scroll_element xpath "//*[@scrollable='true']" up
+
+# Right
+appium-cli scroll_element xpath "//*[@scrollable='true']" --direction=up
+```
