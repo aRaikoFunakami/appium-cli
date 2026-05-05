@@ -15,10 +15,13 @@ from appium_cli.daemon import state
 from appium_cli.daemon.server import serve
 from appium_cli.tools import actions
 from appium_cli.tools import app_management, container
+from appium_cli.tools import contexts
 from appium_cli.tools import device_info as device_info_tools
 from appium_cli.tools import interaction
+from appium_cli.tools import web_dialogs
+from appium_cli.tools import web_navigation
 from appium_cli.tools.device_info import get_device_info
-from appium_cli.tools.observation import describe, find_by_text, get_page_source, screenshot, snapshot
+from appium_cli.tools.observation import describe, find_by_text, get_page_source, screenshot, snapshot, web_snapshot, webview_title, webview_url
 from appium_cli.tools.session import format_driver_status, is_driver_alive
 
 
@@ -62,7 +65,43 @@ def _handler(request: dict[str, Any]) -> dict[str, Any]:
     if tool == "screenshot":
         return {"text": screenshot(**args), "data": {}}
     if tool == "get_page_source":
-        return {"text": get_page_source(), "data": {}}
+        return {"text": get_page_source(**args), "data": {}}
+    # Context commands
+    if tool == "list_contexts":
+        return {"text": contexts.list_contexts(), "data": {}}
+    if tool == "get_context":
+        return {"text": contexts.get_context(), "data": {}}
+    if tool == "switch_context":
+        return {"text": contexts.switch_context(**args), "data": {}}
+    if tool == "native_switch":
+        return {"text": contexts.native_switch(), "data": {}}
+    if tool == "webview_switch":
+        return {"text": contexts.webview_switch(**args), "data": {}}
+    if tool == "webview_status":
+        return {"text": contexts.webview_status(), "data": {}}
+    # WebView observation
+    if tool == "web_snapshot":
+        return {"text": web_snapshot(**args), "data": {}}
+    if tool == "webview_url":
+        return {"text": webview_url(), "data": {}}
+    if tool == "webview_title":
+        return {"text": webview_title(), "data": {}}
+    # Web navigation
+    if tool == "goto":
+        return {"text": web_navigation.goto(**args), "data": {}}
+    if tool == "go_back":
+        return {"text": web_navigation.go_back(), "data": {}}
+    if tool == "go_forward":
+        return {"text": web_navigation.go_forward(), "data": {}}
+    if tool == "reload":
+        return {"text": web_navigation.reload(), "data": {}}
+    # Web dialogs
+    if tool == "dialog_accept":
+        return {"text": web_dialogs.dialog_accept(**args), "data": {}}
+    if tool == "dialog_dismiss":
+        return {"text": web_dialogs.dialog_dismiss(), "data": {}}
+    if tool == "dialog_text":
+        return {"text": web_dialogs.dialog_text(), "data": {}}
     if tool == "double_tap" and "by" in args:
         return {"text": interaction.double_tap(**args), "data": {}}
     if hasattr(actions, str(tool)):

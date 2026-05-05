@@ -16,6 +16,11 @@ tap_history: list[dict[str, Any]] = []
 session_metadata: dict[str, Any] = {}
 app_dir: Path | None = None
 
+# Context tracking
+current_context: str = "NATIVE_APP"
+snapshots_by_context: dict[str, Any] = {}
+ref_maps_by_context: dict[str, dict[str, Any]] = {}
+
 # Singleton instances
 ref_resolver: RefResolver = RefResolver()
 snapshot_generator: SnapshotGenerator = SnapshotGenerator()
@@ -23,6 +28,7 @@ snapshot_generator: SnapshotGenerator = SnapshotGenerator()
 
 def reset() -> None:
     global driver, current_snapshot, current_ref_map, tap_history, session_metadata, app_dir
+    global current_context, snapshots_by_context, ref_maps_by_context
     global ref_resolver, snapshot_generator
     driver = None
     current_snapshot = None
@@ -30,5 +36,8 @@ def reset() -> None:
     tap_history = []
     session_metadata = {}
     app_dir = None
+    current_context = "NATIVE_APP"
+    snapshots_by_context = {}
+    ref_maps_by_context = {}
     ref_resolver = RefResolver()
     snapshot_generator = SnapshotGenerator()

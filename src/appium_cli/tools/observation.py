@@ -3,9 +3,26 @@
 from __future__ import annotations
 
 import json
+import logging
+from typing import Any
 
 from appium_cli.core.snapshot import compress_xml
+from appium_cli.core.web_snapshot_generator import DOM_EXTRACTION_SCRIPT, WebSnapshotGenerator
 from appium_cli.daemon import state
+from appium_cli.tools.contexts import (
+    NATIVE_CONTEXT,
+    current_context,
+    is_web_context,
+    resolve_context,
+    using_context,
+)
+from appium_cli.utils.errors import AppiumCliError
+from appium_cli.utils.exit_codes import FEATURE_NOT_ENABLED
+
+logger = logging.getLogger(__name__)
+
+# Singleton web snapshot generator (stateless, safe to share)
+_web_snapshot_generator = WebSnapshotGenerator()
 
 
 def _require_driver():
@@ -14,11 +31,21 @@ def _require_driver():
     return state.driver
 
 
-def refresh_snapshot(scope: str = "full") -> str:
-    driver = _require_driver()
+def _register_snapshot(
+    context: str, snapshot_obj: Any, ref_map: dict[str, Any]
+) -> None:
+    """Store snapshot as current and in per-context maps."""
+    state.current_snapshot = snapshot_obj
+    state.current_ref_map = ref_map
+    state.snapshots_by_context[context] = snapshot_obj
+    state.ref_maps_by_context[context] = ref_map
+    state.ref_resolver.register_all(ref_map)
+
+
+def _refresh_native_snapshot(driver: Any, scope: str) -> str:
+    """Generate a native accessibility snapshot (original path)."""
     xml_source = driver.page_source
 
-    # Build app_info from driver
     app_info = ""
     try:
         pkg = driver.current_package
@@ -28,7 +55,6 @@ def refresh_snapshot(scope: str = "full") -> str:
     except Exception:
         pass
 
-    # Update screen dimensions from driver
     try:
         window_size = driver.get_window_size()
         state.snapshot_generator.screen_width = int(window_size["width"])
@@ -39,14 +65,113 @@ def refresh_snapshot(scope: str = "full") -> str:
     snapshot_obj, ref_map = state.snapshot_generator.generate(
         xml_source, app_info=app_info, scope=scope
     )
-    state.current_snapshot = snapshot_obj
-    state.current_ref_map = ref_map
-    state.ref_resolver.register_all(ref_map)
+    _register_snapshot(NATIVE_CONTEXT, snapshot_obj, ref_map)
     return snapshot_obj.to_text(scope=scope if scope != "full" else None)
 
 
-def snapshot(scope: str = "full") -> str:
-    return refresh_snapshot(scope)
+def _refresh_web_snapshot(
+    driver: Any,
+    context: str,
+    scope: str,
+    depth: int | None = None,
+    boxes: bool = False,
+) -> str:
+    """Generate a web DOM snapshot."""
+    url = ""
+    title = ""
+    try:
+        url = driver.current_url or ""
+    except Exception:
+        pass
+    try:
+        title = driver.title or ""
+    except Exception:
+        pass
+
+    # Try JS DOM extraction first
+    dom_elements: list[dict] | None = None
+    try:
+        raw = driver.execute_script(DOM_EXTRACTION_SCRIPT)
+        if isinstance(raw, str):
+            dom_elements = json.loads(raw)
+        elif isinstance(raw, list):
+            dom_elements = raw
+    except Exception as exc:
+        logger.debug("JS DOM extraction failed, falling back to HTML parse: %s", exc)
+
+    if dom_elements is not None:
+        snapshot_obj, ref_map = _web_snapshot_generator.generate_from_dom(
+            dom_elements, context, url, title, scope,
+            depth=depth, boxes=boxes,
+        )
+    else:
+        # Fallback to HTML parsing
+        html_source = driver.page_source or ""
+        snapshot_obj, ref_map = _web_snapshot_generator.generate(
+            html_source, context, url, title, scope,
+            depth=depth, boxes=boxes,
+        )
+
+    _register_snapshot(context, snapshot_obj, ref_map)
+    return snapshot_obj.to_text(scope=scope if scope != "full" else None)
+
+
+def refresh_snapshot(
+    scope: str = "full",
+    context: str = "native",
+    restore_context: bool = True,
+    depth: int | None = None,
+    boxes: bool = False,
+    filename: str = "",
+) -> str:
+    """Take a snapshot in the requested context.
+
+    Args:
+        scope: snapshot scope filter
+        context: "native", "current", "webview", "auto", or exact context name
+        restore_context: switch back to original context after snapshot
+        depth: max elements for web snapshots
+        boxes: include bounding boxes (web snapshots)
+        filename: save output to file
+    """
+    driver = _require_driver()
+    target = resolve_context(context, driver)
+
+    if is_web_context(target):
+        with using_context(target, driver, restore=restore_context):
+            result = _refresh_web_snapshot(driver, target, scope, depth, boxes)
+    else:
+        with using_context(target, driver, restore=restore_context):
+            result = _refresh_native_snapshot(driver, scope)
+
+    if filename:
+        from pathlib import Path
+        Path(filename).write_text(result, encoding="utf-8")
+
+    return result
+
+
+def snapshot(
+    scope: str = "full",
+    context: str = "native",
+    depth: int | None = None,
+    boxes: bool = False,
+    filename: str = "",
+) -> str:
+    """Public snapshot entry point."""
+    return refresh_snapshot(
+        scope, context=context, depth=depth, boxes=boxes, filename=filename,
+    )
+
+
+def web_snapshot(
+    scope: str = "full",
+    depth: int | None = None,
+    boxes: bool = False,
+    filename: str = "",
+) -> str:
+    """Convenience alias for ``snapshot --context=webview``."""
+    return snapshot(scope, context="webview", depth=depth, boxes=boxes, filename=filename)
 
 
 def _normalize_ref(ref: str) -> str:
@@ -131,7 +256,7 @@ def find_by_text(text: str, scope: str = "full") -> str:
     return "\n".join(lines)
 
 
-def screenshot(region: str = "full") -> str:
+def screenshot(region: str = "full", filename: str = "") -> str:
     import base64
 
     from appium_cli.utils.paths import read_current_session, screenshot_path, session_artifact_dir
@@ -145,19 +270,67 @@ def screenshot(region: str = "full") -> str:
         "region": region,
     }
 
-    sid = read_current_session()
-    if sid:
-        artifact_dir = session_artifact_dir(sid)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        png_path = screenshot_path(sid)
+    # Named file output
+    if filename:
+        from pathlib import Path
+        png_path = Path(filename)
+        png_path.parent.mkdir(parents=True, exist_ok=True)
         png_path.write_bytes(base64.b64decode(b64))
         result["path"] = str(png_path)
         result["size_bytes"] = png_path.stat().st_size
         result["mime_type"] = "image/png"
+    else:
+        sid = read_current_session()
+        if sid:
+            artifact_dir = session_artifact_dir(sid)
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            png_path = screenshot_path(sid)
+            png_path.write_bytes(base64.b64decode(b64))
+            result["path"] = str(png_path)
+            result["size_bytes"] = png_path.stat().st_size
+            result["mime_type"] = "image/png"
 
     return json.dumps(result)
 
 
-def get_page_source() -> str:
+def get_page_source(context: str = "native") -> str:
+    """Return page source: compressed XML for native, raw HTML for web."""
     driver = _require_driver()
-    return compress_xml(driver.page_source)
+    target = resolve_context(context, driver)
+
+    if is_web_context(target):
+        with using_context(target, driver, restore=True):
+            return driver.page_source or ""
+    else:
+        with using_context(target, driver, restore=True):
+            return compress_xml(driver.page_source)
+
+
+def webview_url() -> str:
+    """Return the current WebView URL."""
+    driver = _require_driver()
+    ctx = current_context(driver)
+    if not is_web_context(ctx):
+        raise AppiumCliError(
+            "Not in a WebView context. Use switch_context or snapshot --context=webview first.",
+            exit_code=FEATURE_NOT_ENABLED,
+        )
+    try:
+        return driver.current_url or ""
+    except Exception as exc:
+        raise AppiumCliError(f"Failed to get WebView URL: {exc}") from exc
+
+
+def webview_title() -> str:
+    """Return the current WebView page title."""
+    driver = _require_driver()
+    ctx = current_context(driver)
+    if not is_web_context(ctx):
+        raise AppiumCliError(
+            "Not in a WebView context. Use switch_context or snapshot --context=webview first.",
+            exit_code=FEATURE_NOT_ENABLED,
+        )
+    try:
+        return driver.title or ""
+    except Exception as exc:
+        raise AppiumCliError(f"Failed to get WebView title: {exc}") from exc

@@ -20,10 +20,15 @@ from appium_cli.cli.session import app as session_app
 from appium_cli.cli.tools import (
     activate_app,
     assert_visible,
+    click,
     click_element,
     describe,
+    dialog_accept,
+    dialog_dismiss,
+    dialog_text,
     double_tap,
     drag,
+    fill,
     find_by_text,
     find_element,
     find_container,
@@ -32,19 +37,26 @@ from appium_cli.cli.tools import (
     fling_left,
     fling_right,
     fling_up,
+    get_context,
     get_current_app,
     get_device_info,
     get_orientation,
     get_page_source,
     get_text,
+    go_back,
+    go_forward,
+    goto,
     is_locked,
+    list_contexts,
     long_press,
     list_apps,
     list_containers,
+    native_switch,
     pinch_close,
     pinch_open,
     press_key,
     press_keycode,
+    reload_page,
     restart_app,
     screenshot,
     scroll,
@@ -54,9 +66,11 @@ from appium_cli.cli.tools import (
     scroll_right,
     scroll_to_element,
     scroll_up,
+    select,
     set_orientation,
     send_keys,
     snapshot,
+    switch_context,
     swipe,
     swipe_down,
     swipe_left,
@@ -67,6 +81,12 @@ from appium_cli.cli.tools import (
     type_text,
     wait,
     wait_short_loading,
+    web_eval,
+    web_snapshot,
+    webview_status,
+    webview_switch,
+    webview_title,
+    webview_url,
     within_container,
 )
 from appium_cli.cli.usage_suggestions import format_suggestion, suggest_usage
@@ -161,7 +181,10 @@ app.command(name="screenshot")(screenshot)
 app.command(name="get_page_source")(get_page_source)
 app.command(name="get_device_info")(get_device_info)
 app.command(name="tap")(tap)
+app.command(name="click")(click)
 app.command(name="type_text")(type_text)
+app.command(name="fill")(fill)
+app.command(name="select")(select)
 app.command(name="scroll")(scroll)
 app.command(name="scroll_up")(scroll_up)
 app.command(name="scroll_down")(scroll_down)
@@ -204,6 +227,23 @@ app.command(name="send_keys")(send_keys)
 app.command(name="wait_short_loading")(wait_short_loading)
 app.command(name="scroll_element")(scroll_element)
 app.command(name="scroll_to_element")(scroll_to_element)
+app.command(name="list_contexts")(list_contexts)
+app.command(name="get_context")(get_context)
+app.command(name="switch_context")(switch_context)
+app.command(name="native_switch")(native_switch)
+app.command(name="webview_switch")(webview_switch)
+app.command(name="webview_status")(webview_status)
+app.command(name="web_snapshot")(web_snapshot)
+app.command(name="webview_url")(webview_url)
+app.command(name="webview_title")(webview_title)
+app.command(name="goto")(goto)
+app.command(name="go_back")(go_back)
+app.command(name="go_forward")(go_forward)
+app.command(name="reload")(reload_page)
+app.command(name="web_eval")(web_eval)
+app.command(name="dialog_accept")(dialog_accept)
+app.command(name="dialog_dismiss")(dialog_dismiss)
+app.command(name="dialog_text")(dialog_text)
 app.command(name="install")(install)
 app.add_typer(server_app, name="server")
 app.add_typer(session_app, name="session")

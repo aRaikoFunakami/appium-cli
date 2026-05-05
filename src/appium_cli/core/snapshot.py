@@ -47,12 +47,16 @@ class RefEntry:
         expected_bounds: (x1, y1, x2, y2) for bounds verification
         role: element role
         name: accessibility label
+        context: Appium context this ref belongs to (e.g. "NATIVE_APP", "CHROMIUM")
+        source_type: "native" or "web"
     """
 
     strategies: list[LocatorStrategy]
     expected_bounds: tuple[int, int, int, int]
     role: str
     name: str
+    context: str = "NATIVE_APP"
+    source_type: str = "native"
 
 
 # ============================================================
@@ -171,6 +175,8 @@ class AccessibilitySnapshot:
         selected_labels: labels of currently selected tabs/buttons
         body_texts: read-only body texts (not inside clickable ancestors)
         selection_containers: exclusive-selection containers (TabLayout / Spinner etc.)
+        context: Appium context name (e.g. "NATIVE_APP", "CHROMIUM")
+        source_type: "native" or "web"
     """
 
     screen_id: str
@@ -182,6 +188,8 @@ class AccessibilitySnapshot:
     selection_containers: list[SelectionContainer] = field(default_factory=list)
     selected_labels: list[str] = field(default_factory=list)
     body_texts: list[str] = field(default_factory=list)
+    context: str = "NATIVE_APP"
+    source_type: str = "native"
 
     def _filter_containers(self, scope: str | None) -> list[SnapshotContainer]:
         if scope is None or scope == "full":
@@ -198,6 +206,11 @@ class AccessibilitySnapshot:
         lines: list[str] = []
         lines.append(f"screen: {self.app_info}" if self.app_info else "screen: android")
         lines.append(f"screen_id: {self.screen_id}")
+
+        # Web snapshots include context and source metadata
+        if self.source_type != "native" or self.context != "NATIVE_APP":
+            lines.append(f"context: {self.context}")
+            lines.append(f"source: {self.source_type}")
 
         layout_summary = self._generate_layout_summary()
         if layout_summary:

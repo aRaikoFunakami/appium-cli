@@ -57,3 +57,21 @@ How to use this output:
 If a desired label is not clickable, inspect the nearby row/button/container in the same snapshot instead of tapping the text ref directly.
 
 Prefer `snapshot` and refs before taking screenshots. `screenshot` returns the smartestiroid-compatible JSON string containing `type`, `image_base64`, `region`, and saves a PNG file under `.appium-cli/session-XXXX/`.
+
+## WebView snapshots
+
+When a WebView or Chrome context is available, use `--context=webview` to get a DOM-based snapshot with `web_` prefixed refs:
+
+```bash
+appium-cli snapshot --context=webview
+appium-cli web_snapshot  # equivalent alias
+```
+
+Web snapshots use CSS selector and XPath locator strategies instead of native resource-id/accessibility_id. Options:
+
+- `--context=native|current|webview|auto|<name>` — choose which context to snapshot (default: `native`)
+- `--depth=N` — limit the number of extracted web elements
+- `--boxes` — include bounding box coordinates in output
+- `--filename=<path>` — save snapshot output to a file
+
+See [WebView reference](webview.md) for the full WebView workflow.

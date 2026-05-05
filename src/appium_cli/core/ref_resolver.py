@@ -3,6 +3,9 @@
 Faithful port of smartestiroid's android/ref_resolver.py.
 Tries locator strategies in order with bounds verification (+-20px).
 Falls back to coordinate-based resolution as the last resort.
+
+Extended for WebView: CSS selector, link text, tag name strategies;
+context-aware switching before resolution; bounds skip for (0,0,0,0).
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ import logging
 from typing import Any
 
 from appium.webdriver.common.appiumby import AppiumBy
+from selenium.webdriver.common.by import By
 
 from .snapshot import LocatorStrategy, RefEntry
 
@@ -67,6 +71,15 @@ class RefResolver:
         """Replace the entire ref map."""
         self._ref_map = dict(ref_map)
 
+    def register_context(self, context: str, ref_map: dict[str, RefEntry]) -> None:
+        """Replace only refs belonging to *context*, keep others."""
+        # Remove old refs from this context
+        to_remove = [k for k, v in self._ref_map.items() if v.context == context]
+        for k in to_remove:
+            del self._ref_map[k]
+        # Add new refs
+        self._ref_map.update(ref_map)
+
     def has(self, ref: str) -> bool:
         return ref in self._ref_map
 
@@ -80,10 +93,11 @@ class RefResolver:
         """Resolve ref to Appium WebElement.
 
         Flow:
-        1. Try strategies in order
-        2. After finding an element, verify bounds (+-20px)
-        3. If bounds mismatch, try next strategy
-        4. All failed -> ElementNotFoundError
+        1. If ref's context differs from driver's current context, switch
+        2. Try strategies in order
+        3. After finding an element, verify bounds (+-20px)
+        4. If bounds mismatch, try next strategy
+        5. All failed -> ElementNotFoundError
 
         Args:
             ref: element ref ID
@@ -104,6 +118,9 @@ class RefResolver:
 
         if not driver:
             raise ElementNotFoundError(ref, "Driver is not initialized.")
+
+        # Switch to the ref's context if needed
+        self._ensure_context(driver, entry.context)
 
         errors: list[str] = []
 
@@ -137,6 +154,19 @@ class RefResolver:
             return None
 
     @staticmethod
+    def _ensure_context(driver: Any, context: str) -> None:
+        """Switch driver to the ref's context if it differs."""
+        try:
+            current = driver.current_context or "NATIVE_APP"
+        except Exception:
+            return
+        if current != context:
+            try:
+                driver.switch_to.context(context)
+            except Exception as exc:
+                logger.warning("Failed to switch to context %s: %s", context, exc)
+
+    @staticmethod
     def _find_by_strategy(driver: Any, strategy: LocatorStrategy) -> Any | None:
         by = strategy.by
         value = strategy.value
@@ -159,6 +189,30 @@ class RefResolver:
             except Exception:
                 return None
 
+        if by == "css selector":
+            try:
+                return driver.find_element(By.CSS_SELECTOR, value)
+            except Exception:
+                return None
+
+        if by == "link text":
+            try:
+                return driver.find_element(By.LINK_TEXT, value)
+            except Exception:
+                return None
+
+        if by == "partial link text":
+            try:
+                return driver.find_element(By.PARTIAL_LINK_TEXT, value)
+            except Exception:
+                return None
+
+        if by == "tag name":
+            try:
+                return driver.find_element(By.TAG_NAME, value)
+            except Exception:
+                return None
+
         if by == "coordinates":
             try:
                 parts = value.split(",")
@@ -174,8 +228,15 @@ class RefResolver:
         element: Any,
         expected: tuple[int, int, int, int],
     ) -> bool:
-        """Check if element bounds match expected bounds within tolerance."""
+        """Check if element bounds match expected bounds within tolerance.
+
+        Skips verification for (0,0,0,0) bounds (web refs without precise bounds).
+        """
         if isinstance(element, _CoordinateElement):
+            return True
+
+        # Skip bounds check for zero bounds (web elements may lack them)
+        if expected == (0, 0, 0, 0):
             return True
 
         try:

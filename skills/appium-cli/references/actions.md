@@ -65,3 +65,17 @@ appium-cli scroll up --ref=recycler_view
 # Preferred
 appium-cli scroll_down recycler_view
 ```
+
+## WebView context actions
+
+Actions are context-aware. When a `web_` ref is used, the driver switches to the ref's WebView context automatically. Web context uses Selenium methods instead of UiAutomator2 gesture scripts:
+
+- `tap` / `click` → `element.click()`
+- `type_text` / `fill` → `element.clear(); element.send_keys()`
+- `select` → Selenium `Select` for HTML `<select>` elements
+- `scroll_down/up` → `window.scrollBy()` JavaScript
+- `press_key` → W3C key names (`Enter`, `Tab`, `ArrowDown`) instead of Android keycodes
+
+Touch gestures (`long_press`, `double_tap`, `drag`, `fling_*`, `pinch_*`, `swipe_*`) are not supported in WebView context and fail with exit code 8. Switch to native context for these.
+
+See [WebView reference](webview.md) for the full WebView workflow.

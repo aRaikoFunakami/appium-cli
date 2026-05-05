@@ -129,3 +129,84 @@ class TestRefResolverRegistration:
         resolver.register_all({"a": _make_entry()})
         resolver.clear()
         assert not resolver.has("a")
+
+    def test_register_context_replaces_only_same_context(self):
+        resolver = RefResolver()
+        native_entry = _make_entry()
+        native_entry.context = "NATIVE_APP"
+        web_entry = RefEntry(
+            strategies=[LocatorStrategy(by="css selector", value="#btn")],
+            expected_bounds=(0, 0, 0, 0),
+            role="button",
+            name="Web Button",
+            context="CHROMIUM",
+            source_type="web",
+        )
+        resolver.register_all({"native_btn": native_entry})
+        resolver.register_context("CHROMIUM", {"web_btn": web_entry})
+
+        assert resolver.has("native_btn")
+        assert resolver.has("web_btn")
+
+        # Replace web refs only
+        web_entry2 = RefEntry(
+            strategies=[LocatorStrategy(by="css selector", value="#btn2")],
+            expected_bounds=(0, 0, 0, 0),
+            role="button",
+            name="Web Button 2",
+            context="CHROMIUM",
+            source_type="web",
+        )
+        resolver.register_context("CHROMIUM", {"web_btn2": web_entry2})
+
+        assert resolver.has("native_btn")
+        assert not resolver.has("web_btn")
+        assert resolver.has("web_btn2")
+
+
+class TestRefResolverWebStrategies:
+    def test_css_selector_strategy(self):
+        resolver = RefResolver()
+        entry = RefEntry(
+            strategies=[LocatorStrategy(by="css selector", value="#submit-btn")],
+            expected_bounds=(0, 0, 0, 0),
+            role="button",
+            name="Submit",
+            context="CHROMIUM",
+            source_type="web",
+        )
+        resolver.register_all({"web_submit": entry})
+
+        driver = MagicMock()
+        driver.current_context = "CHROMIUM"
+        el = _mock_element()
+        driver.find_element.return_value = el
+
+        result = resolver.resolve("web_submit", driver)
+        assert result == el
+
+    def test_zero_bounds_skip_verification(self):
+        resolver = RefResolver()
+        el = _mock_element(x=500, y=600, w=100, h=50)
+        # (0,0,0,0) bounds should skip verification
+        assert resolver._verify_bounds(el, (0, 0, 0, 0)) is True
+
+    def test_ensure_context_switches(self):
+        resolver = RefResolver()
+        entry = RefEntry(
+            strategies=[LocatorStrategy(by="css selector", value="#btn")],
+            expected_bounds=(0, 0, 0, 0),
+            role="button",
+            name="Btn",
+            context="CHROMIUM",
+            source_type="web",
+        )
+        resolver.register_all({"web_btn": entry})
+
+        driver = MagicMock()
+        driver.current_context = "NATIVE_APP"
+        el = _mock_element()
+        driver.find_element.return_value = el
+
+        resolver.resolve("web_btn", driver)
+        driver.switch_to.context.assert_called_with("CHROMIUM")

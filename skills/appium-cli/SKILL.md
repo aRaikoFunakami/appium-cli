@@ -45,11 +45,15 @@ appium-cli session stop
 
 ```bash
 appium-cli snapshot
+appium-cli snapshot --context=webview
+appium-cli web_snapshot
 appium-cli describe btn_7
 appium-cli find_by_text "Storage"
 appium-cli screenshot
 appium-cli screenshot --region=ref:btn_7
 appium-cli get_page_source
+appium-cli webview_url
+appium-cli webview_title
 ```
 
 ### Core actions
@@ -57,7 +61,10 @@ appium-cli get_page_source
 ```bash
 # ref-first actions
 appium-cli tap btn_7
+appium-cli click web_btn_login
 appium-cli type_text input_search "hello" --submit
+appium-cli fill web_search_form "query"
+appium-cli select web_country "JP" --by=value
 
 # directional aliases; pass a ref to scope, omit ref for full screen
 appium-cli scroll_down recycler_view
@@ -86,6 +93,30 @@ Directional commands take an optional ref:
 - `scroll_down recycler_view` scrolls inside the container identified by `recycler_view`.
 - `scroll_down` scrolls the full visible screen.
 - Prefer a visible scrollable container ref when the snapshot shows one. Omit ref only for full-screen scrolling when no obvious scrollable container exists.
+
+### WebView / Chrome context
+
+```bash
+appium-cli list_contexts
+appium-cli get_context
+appium-cli switch_context webview
+appium-cli native_switch
+appium-cli webview_switch
+appium-cli webview_status
+```
+
+### WebView navigation and dialogs
+
+```bash
+appium-cli goto "https://example.com"
+appium-cli go_back
+appium-cli go_forward
+appium-cli reload
+appium-cli web_eval "document.title"
+appium-cli dialog_text
+appium-cli dialog_accept
+appium-cli dialog_dismiss
+```
 
 ### Containers and verification
 
@@ -142,6 +173,17 @@ Use this loop for normal mobile automation:
 
 Prefer visible snapshot refs over locator tools. Do not call `find_by_text` to re-search for an element that is already visible in the snapshot.
 
+### WebView workflow
+
+For Chrome or apps with embedded WebViews:
+
+1. Run `appium-cli list_contexts` to check for `WEBVIEW_*` or `CHROMIUM` contexts.
+2. Run `appium-cli web_snapshot` to get DOM-based refs with `web_` prefix.
+3. Use `click`, `fill`, `select` with web refs. Touch gestures are not available in WebView.
+4. Run `appium-cli native_switch` and `snapshot` to return to native UI.
+
+Web refs are only valid in the WebView context where they were captured. After navigation or reload, take a new `web_snapshot`.
+
 ## Important rules
 
 - Use canonical smartestiroid tool names such as `get_device_info`, `type_text`, and `press_keycode`.
@@ -162,3 +204,4 @@ Prefer visible snapshot refs over locator tools. Do not call `find_by_text` to r
 - [Containers and verification](references/containers.md)
 - [App management](references/app-management.md)
 - [Legacy locator tools](references/legacy-locator.md)
+- [WebView and Chrome](references/webview.md)
