@@ -47,6 +47,7 @@ appium-cli devices --json
 appium-cli server status
 appium-cli server start --port 4723
 appium-cli server start --no-allow-adb-shell
+appium-cli server start --no-chromedriver-autodownload
 appium-cli server stop
 
 appium-cli session status
@@ -55,6 +56,44 @@ appium-cli session stop
 ```
 
 `server stop` only stops an Appium server started by `appium-cli`. Externally started Appium servers are reused but never killed.
+
+### Chrome/WebView Chromedriver autodownload
+
+For Chrome or WebView automation, Appium must be able to find a Chromedriver that matches the device's Chrome/WebView version. When `appium-cli server start` starts a new Appium server, Chromedriver autodownload is enabled by default using the Appium 3-compatible insecure feature name `uiautomator2:chromedriver_autodownload`.
+
+Disable this default with:
+
+```bash
+appium-cli server start --no-chromedriver-autodownload
+```
+
+When using an externally started Appium server, enable the feature yourself. Appium 3 requires insecure feature names to be prefixed with the driver automation name or `*`.
+
+For Android UiAutomator2 on Appium 3, start Appium with:
+
+```bash
+appium --address 127.0.0.1 --port 4723 \
+  --allow-insecure=uiautomator2:chromedriver_autodownload
+```
+
+To allow the feature for all drivers, use:
+
+```bash
+appium --address 127.0.0.1 --port 4723 \
+  --allow-insecure='*:chromedriver_autodownload'
+```
+
+This enables Appium's Chromedriver autodownload feature on the server side. The session capabilities can remain the normal Android Chrome/WebView capabilities, for example:
+
+```json
+{
+  "platformName": "Android",
+  "appium:automationName": "UiAutomator2",
+  "browserName": "Chrome"
+}
+```
+
+Optionally set `appium:chromedriverExecutableDir` in the session capabilities to choose where downloaded Chromedriver binaries are stored. `--relaxed-security` also enables this feature, but `--allow-insecure=uiautomator2:chromedriver_autodownload` is safer because it only permits the required feature.
 
 ## Artifact storage
 

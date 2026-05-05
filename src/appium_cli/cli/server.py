@@ -100,7 +100,7 @@ def get_status(port: int = 4723) -> ServerState:
     return ServerState(running=False, ownership="none", port=port, url=_url(port), shell_capable=None)
 
 
-def start_server(port: int = 4723, allow_adb_shell: bool = True) -> ServerState:
+def start_server(port: int = 4723, allow_adb_shell: bool = True, chromedriver_autodownload: bool = True) -> ServerState:
     current = get_status(port)
     if current.running:
         _write_state(current)
@@ -112,8 +112,13 @@ def start_server(port: int = 4723, allow_adb_shell: bool = True) -> ServerState:
 
     ensure_app_dir()
     command = [appium_bin, "--port", str(port)]
+    insecure_features: list[str] = []
     if allow_adb_shell:
-        command.extend(["--allow-insecure", "uiautomator2:adb_shell"])
+        insecure_features.append("uiautomator2:adb_shell")
+    if chromedriver_autodownload:
+        insecure_features.append("uiautomator2:chromedriver_autodownload")
+    if insecure_features:
+        command.extend(["--allow-insecure", ",".join(insecure_features)])
 
     log_file = server_log_path().open("ab")
     process = subprocess.Popen(
@@ -182,13 +187,20 @@ def start(
             help="Allow Appium mobile: shell when this command starts a new server.",
         ),
     ] = True,
+    chromedriver_autodownload: Annotated[
+        bool,
+        typer.Option(
+            "--chromedriver-autodownload/--no-chromedriver-autodownload",
+            help="Allow Appium to download a matching Chromedriver for Chrome/WebView automation when this command starts a new server.",
+        ),
+    ] = True,
     json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
     """Start or reuse the singleton Appium server."""
 
     current = get_status(port)
     try:
-        state = start_server(port, allow_adb_shell)
+        state = start_server(port, allow_adb_shell, chromedriver_autodownload)
     except RuntimeError as exc:
         if json_output:
             _echo_json({"ok": False, "error": str(exc), "exit_code": exit_codes.GENERAL_ERROR})

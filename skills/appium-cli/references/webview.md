@@ -133,7 +133,9 @@ WebView automation requires:
 
 1. **WebView debugging enabled** in the app (`WebView.setWebContentsDebuggingEnabled(true)` for Android)
 2. **Compatible Chromedriver** version matching the device's Chrome/WebView version
-3. Appium capability `chromedriver_autodownload` or a manually specified Chromedriver path
+3. Appium server feature `uiautomator2:chromedriver_autodownload` or a manually specified Chromedriver path
+
+When `appium-cli server start` starts a new Appium server, Chromedriver autodownload is enabled by default. Use `appium-cli server start --no-chromedriver-autodownload` to opt out. For externally started Appium servers, start Appium with `--allow-insecure=uiautomator2:chromedriver_autodownload` or equivalent.
 
 Use `appium-cli webview_status` to check availability and get diagnostic hints.
 

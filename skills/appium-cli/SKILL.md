@@ -15,6 +15,7 @@ appium-cli doctor
 appium-cli devices --platform android
 appium-cli server status
 appium-cli server start --port 4723
+appium-cli server start --no-chromedriver-autodownload
 appium-cli session status
 appium-cli get_device_info
 appium-cli snapshot
@@ -35,6 +36,7 @@ appium-cli doctor
 appium-cli devices --platform android
 appium-cli server status
 appium-cli server start --port 4723
+appium-cli server start --no-chromedriver-autodownload
 appium-cli server stop
 appium-cli session status
 appium-cli session start

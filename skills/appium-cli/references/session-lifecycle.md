@@ -7,6 +7,7 @@ appium-cli server status
 appium-cli server status --json
 appium-cli server start --port 4723
 appium-cli server start --no-allow-adb-shell
+appium-cli server start --no-chromedriver-autodownload
 appium-cli server stop
 ```
 
@@ -22,3 +23,5 @@ appium-cli session stop
 ```
 
 Shell-dependent commands need Appium `mobile: shell`. When `appium-cli` starts Appium, shell support is enabled by default. External servers without shell support may fall back to local `adb` only when safe.
+
+Chrome/WebView automation needs a Chromedriver matching the device's Chrome/WebView version. When `appium-cli` starts Appium, Chromedriver autodownload is enabled by default using `uiautomator2:chromedriver_autodownload`. Use `--no-chromedriver-autodownload` to disable it.
