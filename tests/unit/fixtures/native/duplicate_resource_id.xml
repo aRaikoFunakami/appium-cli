@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,0][1080,1920]" displayed="true">
+    <node index="0" text="" resource-id="com.example.app:id/tabs" class="com.google.android.material.tabs.TabLayout" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,72][1080,240]" displayed="true">
+      <node index="0" text="One" resource-id="com.example.app:id/tabBackground" class="android.view.ViewGroup" package="com.example.app" content-desc="One" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="true" bounds="[0,72][270,240]" displayed="true"/>
+      <node index="1" text="Two" resource-id="com.example.app:id/tabBackground" class="android.view.ViewGroup" package="com.example.app" content-desc="Two" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[270,72][540,240]" displayed="true"/>
+      <node index="2" text="Three" resource-id="com.example.app:id/tabBackground" class="android.view.ViewGroup" package="com.example.app" content-desc="Three" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[540,72][810,240]" displayed="true"/>
+      <node index="3" text="Four" resource-id="com.example.app:id/tabBackground" class="android.view.ViewGroup" package="com.example.app" content-desc="Four" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[810,72][1080,240]" displayed="true"/>
+    </node>
+  </node>
+</hierarchy>

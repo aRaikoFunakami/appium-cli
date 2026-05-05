@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Any
 
+from appium_cli.core.native_snapshot import NativeSnapshot
+from appium_cli.core.native_snapshot_generator import NativeSnapshotGenerator
 from appium_cli.core.snapshot import compress_xml
 from appium_cli.core.web_snapshot import WebSnapshot
 from appium_cli.core.web_snapshot_generator import DOM_EXTRACTION_SCRIPT, WebSnapshotGenerator
@@ -24,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Singleton web snapshot generator (stateless, safe to share)
 _web_snapshot_generator = WebSnapshotGenerator()
+_native_snapshot_generator = NativeSnapshotGenerator()
 
 
 def _require_driver():
@@ -36,7 +39,7 @@ def _register_snapshot(
     context: str, snapshot_obj: Any, ref_map: dict[str, Any] | None = None
 ) -> None:
     """Store snapshot as current and in per-context maps."""
-    if ref_map is None and isinstance(snapshot_obj, WebSnapshot):
+    if ref_map is None and isinstance(snapshot_obj, (WebSnapshot, NativeSnapshot)):
         ref_map = snapshot_obj.to_ref_map()
     if ref_map is None:
         ref_map = {}
@@ -47,8 +50,13 @@ def _register_snapshot(
     state.ref_resolver.register_all(ref_map)
 
 
-def _refresh_native_snapshot(driver: Any, scope: str) -> str:
-    """Generate a native accessibility snapshot (original path)."""
+def _refresh_native_snapshot(
+    driver: Any,
+    scope: str,
+    max_nodes: int | None = None,
+    boxes: bool = False,
+) -> str:
+    """Generate a native accessibility snapshot (tree-first)."""
     xml_source = driver.page_source
 
     app_info = ""
@@ -60,18 +68,15 @@ def _refresh_native_snapshot(driver: Any, scope: str) -> str:
     except Exception:
         pass
 
-    try:
-        window_size = driver.get_window_size()
-        state.snapshot_generator.screen_width = int(window_size["width"])
-        state.snapshot_generator.screen_height = int(window_size["height"])
-    except Exception:
-        pass
-
-    snapshot_obj, ref_map = state.snapshot_generator.generate(
-        xml_source, app_info=app_info, scope=scope
+    generator = (
+        _native_snapshot_generator
+        if max_nodes is None
+        else NativeSnapshotGenerator(max_nodes=max_nodes)
     )
+    snapshot_obj = generator.generate(xml_source, app_info=app_info, context=NATIVE_CONTEXT)
+    ref_map = snapshot_obj.to_ref_map()
     _register_snapshot(NATIVE_CONTEXT, snapshot_obj, ref_map)
-    return snapshot_obj.to_text(scope=scope if scope != "full" else None)
+    return snapshot_obj.to_text(scope=scope if scope != "full" else None, boxes=boxes)
 
 
 def _refresh_web_snapshot(
@@ -152,7 +157,7 @@ def refresh_snapshot(
             result = _refresh_web_snapshot(driver, target, scope, depth, max_nodes, boxes)
     else:
         with using_context(target, driver, restore=restore_context):
-            result = _refresh_native_snapshot(driver, scope)
+            result = _refresh_native_snapshot(driver, scope, max_nodes=max_nodes, boxes=boxes)
 
     if filename:
         from pathlib import Path
@@ -202,95 +207,38 @@ def _find_element(ref: str):
     snapshot_obj = state.current_snapshot
     if not snapshot_obj:
         return None
-    if isinstance(snapshot_obj, WebSnapshot):
-        return snapshot_obj.find_ref(normalized)
-    return next((element for element in snapshot_obj.elements if element.ref == normalized), None)
+    return snapshot_obj.find_ref(normalized)
 
 
 def describe(ref: str) -> str:
     if state.current_snapshot is None:
         return "ERROR: No snapshot available. Run snapshot() first."
-    if isinstance(state.current_snapshot, WebSnapshot):
-        return state.current_snapshot.describe_ref(ref)
-    target = _find_element(ref)
-    if not target:
-        normalized = _normalize_ref(ref)
-        return f"ERROR: ref '{normalized}' not found. Run snapshot() to refresh."
-
-    lines = [
-        f"element: {target.to_text()}",
-        f"role: {target.role}",
-        f"name: {target.name}",
-    ]
-    if target.value is not None:
-        lines.append(f"value: {target.value}")
-    lines.append(f"state: {', '.join(target.state) if target.state else 'none'}")
-    lines.append(f"bounds: {target.bounds}")
-
-    snapshot_obj = state.current_snapshot
-    if target.container_ref:
-        container = next((item for item in snapshot_obj.containers if item.ref == target.container_ref), None)
-        if container:
-            lines.append(f"container: {container.region} ({container.ref})")
-            if container.title:
-                lines.append(f"container_title: {container.title}")
-            siblings = [item for item in snapshot_obj.elements if item.container_ref == target.container_ref and item.ref != target.ref]
-            if siblings:
-                lines.append("nearby elements:")
-                for sibling in siblings[:5]:
-                    lines.append(f"  {sibling.to_text()}")
-    return "\n".join(lines)
+    return state.current_snapshot.describe_ref(ref)
 
 
 def find_by_text(text: str, scope: str = "full") -> str:
     if state.current_snapshot is None:
         return "ERROR: No snapshot available. Run snapshot() first."
-
     snapshot_obj = state.current_snapshot
-    if isinstance(snapshot_obj, WebSnapshot):
-        matches = snapshot_obj.find_text(text, inputs_only=scope == "inputs")
-        if not matches:
-            return f"No elements matching '{text}' found."
-        lines = [f"Search results for '{text}' ({len(matches)} matches):"]
-        for match in matches[:10]:
-            target_ref = match.target.ref if match.target and match.target.ref else ""
-            ref_part = f"[ref:{target_ref}] " if target_ref else ""
-            action_part = "" if target_ref == match.node.ref else f" -> action target [ref:{target_ref}]" if target_ref else ""
-            lines.append(
-                f"  {ref_part}{match.node.role} \"{match.node.name}\" "
-                f"(score={match.score}){action_part}"
-            )
-        return "\n".join(lines)
-
-    search_lower = text.lower()
-    candidates: list[dict] = []
-    target_elements = snapshot_obj.elements
-    if scope == "inputs":
-        target_elements = [element for element in snapshot_obj.elements if element.role == "textbox"]
-    elif scope not in ("", "full", None):
-        allowed_refs = {ref for container in snapshot_obj._filter_containers(scope) for ref in container.children_refs}
-        if allowed_refs:
-            target_elements = [element for element in snapshot_obj.elements if element.ref in allowed_refs]
-
-    for element in target_elements:
-        name_lower = element.name.lower()
-        value_lower = (element.value or "").lower()
-        if name_lower == search_lower or value_lower == search_lower:
-            score = 100
-        elif name_lower.startswith(search_lower) or value_lower.startswith(search_lower):
-            score = 80
-        elif search_lower in name_lower or search_lower in value_lower:
-            score = 60
-        else:
-            continue
-        candidates.append({"ref": element.ref, "role": element.role, "name": element.name, "score": score})
-
-    candidates.sort(key=lambda item: item["score"], reverse=True)
-    if not candidates:
+    inputs_only = scope == "inputs"
+    matches = snapshot_obj.find_text(text, inputs_only=inputs_only)
+    if not matches:
         return f"No elements matching '{text}' found."
-    lines = [f"Search results for '{text}' ({len(candidates)} matches):"]
-    for candidate in candidates[:10]:
-        lines.append(f"  [ref:{candidate['ref']}] {candidate['role']} \"{candidate['name']}\" (score={candidate['score']})")
+    lines = [f"Search results for '{text}' ({len(matches)} matches):"]
+    for match in matches[:10]:
+        target_ref = match.target.ref if match.target and match.target.ref else ""
+        if match.node.ref:
+            lines.append(
+                f"  [ref:{match.node.ref}] {match.node.role} \"{match.node.name}\" (score={match.score})"
+            )
+        elif target_ref:
+            lines.append(
+                f"  {match.node.role} \"{match.node.name}\" (score={match.score}) -> action target [ref:{target_ref}]"
+            )
+        else:
+            lines.append(
+                f"  {match.node.role} \"{match.node.name}\" (score={match.score})"
+            )
     return "\n".join(lines)
 
 

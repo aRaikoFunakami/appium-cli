@@ -47,8 +47,8 @@ def snapshot(
     scope: Annotated[str, typer.Option("--scope", help="Snapshot scope.")] = "full",
     context: Annotated[str, typer.Option("--context", help="Context: native, webview, auto, current, or exact name.")] = "native",
     depth: Annotated[int | None, typer.Option("--depth", help="Limit web snapshot tree to N levels.")] = None,
-    max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit web snapshot to N nodes.")] = None,
-    boxes: Annotated[bool, typer.Option("--boxes", help="Include bounding boxes in web snapshot.")] = False,
+    max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit snapshot tree to N nodes (applies to both native and web).")] = None,
+    boxes: Annotated[bool, typer.Option("--boxes", help="Include element bounding boxes in output (native and web).")] = False,
     filename: Annotated[str, typer.Option("--filename", help="Save snapshot to file.")] = "",
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
@@ -358,8 +358,8 @@ def webview_status(
 def web_snapshot(
     scope: Annotated[str, typer.Option("--scope", help="Snapshot scope.")] = "full",
     depth: Annotated[int | None, typer.Option("--depth", help="Limit tree to N levels.")] = None,
-    max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit to N nodes.")] = None,
-    boxes: Annotated[bool, typer.Option("--boxes", help="Include bounding boxes.")] = False,
+    max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit web snapshot tree to N nodes.")] = None,
+    boxes: Annotated[bool, typer.Option("--boxes", help="Include element bounding boxes in web snapshot.")] = False,
     filename: Annotated[str, typer.Option("--filename", help="Save snapshot to file.")] = "",
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:

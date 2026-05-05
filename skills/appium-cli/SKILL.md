@@ -47,6 +47,7 @@ appium-cli session stop
 
 ```bash
 appium-cli snapshot
+appium-cli snapshot --max-nodes=300 --boxes
 appium-cli snapshot --context=webview
 appium-cli web_snapshot --depth=15 --max-nodes=300
 appium-cli describe btn_7
@@ -57,6 +58,8 @@ appium-cli get_page_source
 appium-cli webview_url
 appium-cli webview_title
 ```
+
+`--max-nodes` and `--boxes` apply to both `snapshot` (native) and `web_snapshot`.
 
 ### Core actions
 
@@ -156,6 +159,58 @@ appium-cli scroll_element xpath "//*[@scrollable='true']" --direction=up
 appium-cli scroll_to_element xpath "//*[@text='Target']"
 ```
 
+## Snapshot model
+
+Both `snapshot` (native) and `web_snapshot` (WebView/Chrome) return the same tree-first format: a header followed by an indented tree of nodes. There are no separate `containers` and `elements` sections, and no separate selection containers — selection state is reported inline on each node.
+
+Each line is `- <role> "<name>" [ref:...] [state...]`. A node has a ref only when it is actionable, editable, scrollable, or a recognised container (topbar, list, dialog, overlay, tabs, selection). Pure text nodes have no ref.
+
+Example native snapshot:
+
+```
+screen: NATIVE_APP
+screen_id: 8dd580
+context: NATIVE_APP
+source: native
+
+- tabs [ref:bottom_nav]
+  - tab "Home" [ref:nav_home] [selected]
+    - text "Home"
+  - tab "Search" [ref:nav_search]
+    - text "Search"
+  - tab "Profile" [ref:nav_profile]
+    - text "Profile"
+
+alerts: none
+nav: none
+```
+
+Example list / row screen:
+
+```
+screen: NATIVE_APP
+screen_id: 6b2c9e
+context: NATIVE_APP
+source: native
+
+- list [ref:recycler] [scrollable:vertical]
+  - row [ref:row]
+    - text "Row 1"
+    - text "Subtitle 1"
+  - row [ref:row_2]
+    - text "Row 2"
+    - text "Subtitle 2"
+
+alerts: none
+nav: none
+```
+
+Notes:
+
+- Selection state appears inline (e.g. `[selected]`, `[checked]`). There is no separate selection container.
+- `list_containers` walks this tree and reports nodes whose `container_kind` is set (`topbar`, `list`, `dialog`, `overlay`, `tabs`, `selection`).
+- To act on a piece of visible text that has no ref, run `appium-cli find_by_text "<text>"`. Each result is either `[ref:...] role "name"` (the matched node is itself actionable) or `role "name" -> action target [ref:...]` (the matched text is a leaf; tap the action target ref instead).
+
 ## Argument order rules
 
 - Ref-first actions pass the ref as the first positional argument: `tap <ref>`, `long_press <ref>`, `pinch_open <ref>`.
@@ -180,8 +235,8 @@ Prefer visible snapshot refs over locator tools. Do not call `find_by_text` to r
 For Chrome or apps with embedded WebViews:
 
 1. Run `appium-cli list_contexts` to check for `WEBVIEW_*` or `CHROMIUM` contexts.
-2. Run `appium-cli web_snapshot` to get an indented DOM tree with `web_` refs on actionable nodes.
-3. Use `click`, `fill`, `select` with web refs. Nested headings/text usually do not have refs; use the parent link/button ref shown above them. Touch gestures are not available in WebView.
+2. Run `appium-cli web_snapshot` to get the same tree format as native `snapshot`, with `web_` refs on actionable nodes.
+3. Use `click`, `fill`, `select` with web refs. Pure text/heading nodes have no ref; use the parent link/button ref shown above them, or run `appium-cli find_by_text "<text>"` and follow the `action target` ref. Touch gestures are not available in WebView.
 4. Run `appium-cli native_switch` and `snapshot` to return to native UI.
 
 Web refs are only valid in the WebView context where they were captured. After navigation or reload, take a new `web_snapshot`.

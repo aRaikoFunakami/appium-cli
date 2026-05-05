@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from appium_cli.core.snapshot import AccessibilitySnapshot, LocatorStrategy, RefEntry
+from appium_cli.core.snapshot import LocatorStrategy, RefEntry
 from appium_cli.core.web_snapshot import WebSnapshot, WebSnapshotNode
 from appium_cli.core.web_snapshot_generator import (
     WebSnapshotGenerator,
@@ -390,14 +390,4 @@ class TestRefEntryDefaults:
         assert entry.source_type == "web"
 
 
-class TestAccessibilitySnapshotDefaults:
-    def test_default_context_is_native(self):
-        snap = AccessibilitySnapshot(screen_id="abc123")
-        assert snap.context == "NATIVE_APP"
-        assert snap.source_type == "native"
 
-    def test_native_snapshot_text_has_no_context_line(self):
-        snap = AccessibilitySnapshot(screen_id="abc123")
-        text = snap.to_text()
-        assert "context:" not in text
-        assert "source:" not in text

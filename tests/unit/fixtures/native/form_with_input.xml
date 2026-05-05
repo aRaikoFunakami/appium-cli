@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,0][1080,1920]" displayed="true">
+    <node index="0" text="" resource-id="com.example.app:id/form_email" class="android.widget.LinearLayout" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[24,200][1056,400]" displayed="true">
+      <node index="0" text="Email" resource-id="com.example.app:id/label_email" class="android.widget.TextView" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[24,200][300,400]" displayed="true"/>
+      <node index="1" text="" resource-id="com.example.app:id/input_email" class="android.widget.EditText" package="com.example.app" content-desc="Email address" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="true" long-clickable="true" password="false" scrollable="false" selected="false" bounds="[312,200][1056,400]" displayed="true"/>
+    </node>
+  </node>
+</hierarchy>

@@ -1,4 +1,8 @@
-"""Process-local daemon state."""
+"""Process-local daemon state.
+
+current_snapshot holds either a NativeSnapshot or WebSnapshot instance — both
+expose a tree-first API (find_ref, find_text, describe_ref, to_text, to_ref_map).
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from appium_cli.core.ref_resolver import RefResolver
-from appium_cli.core.snapshot_generator import SnapshotGenerator
 
 
 driver: Any | None = None
@@ -23,13 +26,12 @@ ref_maps_by_context: dict[str, dict[str, Any]] = {}
 
 # Singleton instances
 ref_resolver: RefResolver = RefResolver()
-snapshot_generator: SnapshotGenerator = SnapshotGenerator()
 
 
 def reset() -> None:
     global driver, current_snapshot, current_ref_map, tap_history, session_metadata, app_dir
     global current_context, snapshots_by_context, ref_maps_by_context
-    global ref_resolver, snapshot_generator
+    global ref_resolver
     driver = None
     current_snapshot = None
     current_ref_map = {}
@@ -40,4 +42,3 @@ def reset() -> None:
     snapshots_by_context = {}
     ref_maps_by_context = {}
     ref_resolver = RefResolver()
-    snapshot_generator = SnapshotGenerator()
