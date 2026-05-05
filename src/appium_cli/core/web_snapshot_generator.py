@@ -1,36 +1,16 @@
-"""WebSnapshotGenerator: build an AccessibilitySnapshot from WebView DOM.
-
-Two paths:
-1. ``generate_from_dom()`` — takes structured element dicts extracted via
-   JavaScript ``document.querySelectorAll()``.
-2. ``generate()`` — takes raw HTML and parses actionable elements with
-   Python's ``html.parser`` as a fallback when JS execution fails.
-
-All generated refs carry a ``web_`` prefix and use CSS/XPath locator
-strategies instead of Appium-native ``resource-id`` / ``accessibility_id``.
-"""
+"""WebSnapshotGenerator: build a tree-first WebSnapshot from WebView DOM."""
 
 from __future__ import annotations
 
-import hashlib
 import html.parser
 import re
 from typing import Any
 
-from .snapshot import (
-    AccessibilitySnapshot,
-    LocatorStrategy,
-    RefEntry,
-    SnapshotContainer,
-    SnapshotElement,
-    compute_screen_id,
-)
+from .snapshot import LocatorStrategy
+from .web_snapshot import WebSnapshot, WebSnapshotNode
 
-# ============================================================
-# Constants
-# ============================================================
-
-_MAX_ELEMENTS = 250
+_DEFAULT_MAX_DEPTH = 15
+_DEFAULT_MAX_NODES = 300
 _WEB_PREFIX = "web_"
 
 _TAG_TO_ROLE: dict[str, str] = {
@@ -54,6 +34,8 @@ _TAG_TO_ROLE: dict[str, str] = {
     "form": "form",
     "nav": "navigation",
     "dialog": "dialog",
+    "main": "main",
+    "section": "group",
 }
 
 _INPUT_TYPE_ROLE: dict[str, str] = {
@@ -77,73 +59,178 @@ _ROLE_PREFIX: dict[str, str] = {
     "image": "img",
     "heading": "heading",
     "slider": "slider",
+    "tab": "tab",
+    "menuitem": "menuitem",
 }
 
-# Selector for the JS DOM extraction script
-ACTIONABLE_SELECTOR = (
-    "a, button, input, textarea, select, "
-    "[role], [aria-label], [data-testid], "
-    "img[alt], label[for], "
-    "[onclick], [tabindex]"
-)
+_ACTIONABLE_ROLES = {
+    "button",
+    "checkbox",
+    "file",
+    "link",
+    "menuitem",
+    "option",
+    "radio",
+    "select",
+    "slider",
+    "switch",
+    "tab",
+    "textbox",
+}
 
-# JS script embedded in observation.py to extract actionable elements
+_ACTIONABLE_TAGS = {"a", "button", "input", "textarea", "select", "option"}
+
 DOM_EXTRACTION_SCRIPT = """
 (function() {
-    var sel = arguments[0] || '""" + ACTIONABLE_SELECTOR + """';
-    var max = arguments[1] || 250;
-    var els = document.querySelectorAll(sel);
-    var results = [];
+    var maxDepth = arguments[0] || 15;
+    var maxNodes = arguments[1] || 300;
     var seen = 0;
-    for (var i = 0; i < els.length && seen < max; i++) {
-        var el = els[i];
-        var tag = el.tagName.toLowerCase();
+    var truncated = false;
+
+    function clean(text, limit) {
+        if (!text) return '';
+        return String(text).replace(/\\s+/g, ' ').trim().substring(0, limit || 120);
+    }
+
+    function directText(el) {
+        var parts = [];
+        for (var i = 0; i < el.childNodes.length; i++) {
+            var child = el.childNodes[i];
+            if (child.nodeType === Node.TEXT_NODE) {
+                var text = clean(child.nodeValue, 120);
+                if (text) parts.push(text);
+            }
+        }
+        return clean(parts.join(' '), 120);
+    }
+
+    function isHidden(el) {
+        if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+        if (el.getAttribute('aria-hidden') === 'true') return true;
+        var style = window.getComputedStyle(el);
+        if (!style || style.display === 'none' || style.visibility === 'hidden') return true;
         var rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) continue;
-        var item = {
+        var tag = el.tagName.toLowerCase();
+        if (rect.width === 0 && rect.height === 0 && !['html', 'body', 'script', 'style'].includes(tag)) {
+            return true;
+        }
+        return false;
+    }
+
+    function roleOf(el) {
+        var explicit = (el.getAttribute('role') || '').toLowerCase();
+        if (explicit) return explicit;
+        var tag = el.tagName.toLowerCase();
+        if (tag === 'a') return 'link';
+        if (tag === 'button') return 'button';
+        if (tag === 'textarea') return 'textbox';
+        if (tag === 'select') return 'select';
+        if (tag === 'option') return 'option';
+        if (tag === 'img') return 'image';
+        if (tag === 'label') return 'label';
+        if (/^h[1-6]$/.test(tag)) return 'heading';
+        if (tag === 'nav') return 'navigation';
+        if (tag === 'main') return 'main';
+        if (tag === 'form') return 'form';
+        if (tag === 'dialog') return 'dialog';
+        if (tag === 'input') {
+            var type = (el.type || 'text').toLowerCase();
+            if (type === 'checkbox') return 'checkbox';
+            if (type === 'radio') return 'radio';
+            if (['submit', 'button', 'image', 'reset'].includes(type)) return 'button';
+            if (type === 'range') return 'slider';
+            if (type === 'file') return 'file';
+            return 'textbox';
+        }
+        return 'element';
+    }
+
+    function nameOf(el, role) {
+        var tag = el.tagName.toLowerCase();
+        return clean(
+            el.getAttribute('aria-label') ||
+            el.getAttribute('alt') ||
+            el.getAttribute('placeholder') ||
+            (tag === 'input' ? el.value : '') ||
+            (['link', 'button', 'heading', 'label', 'option', 'tab', 'menuitem'].includes(role) ? el.innerText : '') ||
+            directText(el),
+            120
+        );
+    }
+
+    function cssFor(el) {
+        var tag = el.tagName.toLowerCase();
+        if (el.id) return '#' + CSS.escape(el.id);
+        var testId = el.getAttribute('data-testid') || '';
+        if (testId) return '[data-testid=\"' + testId.replace(/\"/g, '\\\\\"') + '\"]';
+        if (el.name) return tag + '[name=\"' + String(el.name).replace(/\"/g, '\\\\\"') + '\"]';
+        if (tag === 'a' && el.getAttribute('href')) {
+            return 'a[href=\"' + el.getAttribute('href').replace(/\"/g, '\\\\\"') + '\"]';
+        }
+        return '';
+    }
+
+    function walk(el, depth) {
+        if (!el || el.nodeType !== Node.ELEMENT_NODE || isHidden(el)) return null;
+        if (seen >= maxNodes) {
+            truncated = true;
+            return {tag: '', role: 'text', name: '...', children: [], omitted: true};
+        }
+        if (depth > maxDepth) {
+            truncated = true;
+            return {tag: '', role: 'text', name: '...', children: [], omitted: true};
+        }
+
+        seen += 1;
+        var tag = el.tagName.toLowerCase();
+        var role = roleOf(el);
+        var rect = el.getBoundingClientRect();
+        var node = {
             tag: tag,
             id: el.id || '',
             test_id: el.getAttribute('data-testid') || '',
             aria_label: el.getAttribute('aria-label') || '',
-            role: el.getAttribute('role') || '',
-            name: el.textContent ? el.textContent.trim().substring(0, 100) : '',
+            role: role,
+            name: nameOf(el, role),
             value: el.value || '',
             type: el.type || '',
             href: el.href || '',
             placeholder: el.placeholder || '',
-            css: '',
-            xpath: '',
+            css: cssFor(el),
             bounds: {
                 x1: Math.round(rect.left + window.scrollX),
                 y1: Math.round(rect.top + window.scrollY),
                 x2: Math.round(rect.right + window.scrollX),
                 y2: Math.round(rect.bottom + window.scrollY)
             },
-            disabled: el.disabled || false,
-            checked: el.checked || false,
-            selected: el.selected || false,
-            readonly: el.readOnly || false
+            disabled: el.disabled || el.getAttribute('aria-disabled') === 'true' || false,
+            checked: el.checked || el.getAttribute('aria-checked') === 'true' || false,
+            selected: el.selected || el.getAttribute('aria-selected') === 'true' || false,
+            readonly: el.readOnly || false,
+            clickable: !!el.onclick || el.getAttribute('tabindex') !== null || el.isContentEditable || false,
+            children: [],
+            omitted: false
         };
-        // Build stable CSS selector
-        if (el.id) {
-            item.css = '#' + CSS.escape(el.id);
-        } else if (item.test_id) {
-            item.css = '[data-testid="' + item.test_id + '"]';
-        } else if (el.name) {
-            item.css = tag + '[name="' + el.name + '"]';
-        } else if (tag === 'a' && el.href) {
-            item.css = 'a[href="' + el.getAttribute('href') + '"]';
+
+        for (var i = 0; i < el.children.length; i++) {
+            var child = walk(el.children[i], depth + 1);
+            if (child) node.children.push(child);
+            if (seen >= maxNodes) {
+                truncated = true;
+                break;
+            }
         }
-        results.push(item);
-        seen++;
+        return node;
     }
-    return JSON.stringify(results);
+
+    var root = walk(document.body || document.documentElement, 0) ||
+        {tag: 'body', role: 'document', name: document.title || '', children: []};
+    root.role = 'document';
+    root.name = document.title || root.name || '';
+    root.truncated = truncated;
+    return JSON.stringify(root);
 })();
 """
-
-# ============================================================
-# Ref naming
-# ============================================================
 
 _SAFE_CHARS_RE = re.compile(r"[^a-z0-9_]")
 _MULTI_UNDERSCORE_RE = re.compile(r"_{2,}")
@@ -157,29 +244,22 @@ def _to_snake(text: str) -> str:
     return safe[:40] if safe else ""
 
 
-def _derive_ref(elem: dict[str, str], role: str) -> str:
-    """Derive a ref base name from element attributes."""
-    # 1. id
+def _derive_ref(elem: dict[str, Any], role: str) -> str:
+    """Derive a web ref base name from element attributes."""
     if elem.get("id"):
-        return _WEB_PREFIX + _to_snake(elem["id"])
-    # 2. data-testid
+        return _WEB_PREFIX + _to_snake(str(elem["id"]))
     if elem.get("test_id"):
-        return _WEB_PREFIX + _to_snake(elem["test_id"])
-    # 3. aria-label
+        return _WEB_PREFIX + _to_snake(str(elem["test_id"]))
     if elem.get("aria_label"):
-        return _WEB_PREFIX + _to_snake(elem["aria_label"])
-    # 4. role_prefix + name fallback
+        return _WEB_PREFIX + _to_snake(str(elem["aria_label"]))
+
     prefix = _ROLE_PREFIX.get(role, role)
-    name = elem.get("name", "").strip()
+    name = str(elem.get("name") or "").strip()
     if name:
-        slug = _to_snake(name)[:25]
-        return _WEB_PREFIX + prefix + "_" + slug
-    # 5. role_prefix + placeholder
-    placeholder = elem.get("placeholder", "").strip()
+        return _WEB_PREFIX + prefix + "_" + _to_snake(name)[:25]
+    placeholder = str(elem.get("placeholder") or "").strip()
     if placeholder:
-        slug = _to_snake(placeholder)[:25]
-        return _WEB_PREFIX + prefix + "_" + slug
-    # 6. generic
+        return _WEB_PREFIX + prefix + "_" + _to_snake(placeholder)[:25]
     return _WEB_PREFIX + prefix
 
 
@@ -187,65 +267,84 @@ def _make_unique(base: str, existing: set[str]) -> str:
     """Ensure ref is unique by appending _2, _3, ... suffixes."""
     if base not in existing:
         return base
-    n = 2
-    while f"{base}_{n}" in existing:
-        n += 1
-    return f"{base}_{n}"
+    index = 2
+    while f"{base}_{index}" in existing:
+        index += 1
+    return f"{base}_{index}"
 
 
-def _determine_role(elem: dict[str, str]) -> str:
+def _determine_role(elem: dict[str, Any]) -> str:
     """Determine the element role from tag/type/role attributes."""
-    # Explicit ARIA role
-    aria_role = elem.get("role", "").lower()
-    if aria_role in _TAG_TO_ROLE.values() or aria_role in (
-        "menuitem", "tab", "switch", "progressbar",
-    ):
+    aria_role = str(elem.get("role") or "").lower()
+    if aria_role and aria_role != "element":
         return aria_role
 
-    tag = elem.get("tag", "").lower()
+    tag = str(elem.get("tag") or "").lower()
     if tag == "input":
-        input_type = elem.get("type", "text").lower()
+        input_type = str(elem.get("type") or "text").lower()
         return _INPUT_TYPE_ROLE.get(input_type, "textbox")
 
     return _TAG_TO_ROLE.get(tag, "element")
 
 
+def _is_actionable(elem: dict[str, Any], role: str) -> bool:
+    tag = str(elem.get("tag") or "").lower()
+    return (
+        role in _ACTIONABLE_ROLES
+        or tag in _ACTIONABLE_TAGS
+        or bool(elem.get("clickable"))
+    )
+
+
 def _build_strategies(elem: dict[str, Any]) -> list[LocatorStrategy]:
     """Build ordered locator strategies for a web element."""
     strategies: list[LocatorStrategy] = []
-
-    css = elem.get("css", "")
+    css = str(elem.get("css") or "")
     if css:
         strategies.append(LocatorStrategy(by="css selector", value=css))
 
-    # XPath fallback via text for links/buttons
-    tag = elem.get("tag", "").lower()
-    name = (elem.get("name") or "").strip()
+    tag = str(elem.get("tag") or "").lower()
+    name = str(elem.get("name") or "").strip()
     if name and tag in ("a", "button"):
         short = name[:50]
         if len(name) <= 50:
             strategies.append(
-                LocatorStrategy(by="link text" if tag == "a" else "xpath",
-                                value=short if tag == "a" else f"//{tag}[normalize-space()='{short}']")
+                LocatorStrategy(
+                    by="link text" if tag == "a" else "xpath",
+                    value=short if tag == "a" else f"//{tag}[normalize-space()='{short}']",
+                )
             )
         else:
             strategies.append(
-                LocatorStrategy(by="partial link text" if tag == "a" else "xpath",
-                                value=short if tag == "a" else f"//{tag}[contains(normalize-space(),'{short}')]")
+                LocatorStrategy(
+                    by="partial link text" if tag == "a" else "xpath",
+                    value=short if tag == "a" else f"//{tag}[contains(normalize-space(),'{short}')]",
+                )
+            )
+    elif name:
+        literal = _xpath_literal(name[:50])
+        role = str(elem.get("role") or "").lower()
+        if role and role != "element":
+            strategies.append(
+                LocatorStrategy(
+                    by="xpath",
+                    value=f"//*[@role={_xpath_literal(role)} and (@aria-label={literal} or normalize-space()={literal})]",
+                )
+            )
+        else:
+            strategies.append(
+                LocatorStrategy(
+                    by="xpath",
+                    value=f"//*[@aria-label={literal} or normalize-space()={literal}]",
+                )
             )
 
-    # Coordinate fallback
-    bounds = elem.get("bounds", {})
-    if isinstance(bounds, dict):
-        x1 = bounds.get("x1", 0)
-        y1 = bounds.get("y1", 0)
-        x2 = bounds.get("x2", 0)
-        y2 = bounds.get("y2", 0)
-        cx = (x1 + x2) // 2
-        cy = (y1 + y2) // 2
-        if cx > 0 or cy > 0:
-            strategies.append(LocatorStrategy(by="coordinates", value=f"{cx},{cy}"))
-
+    bounds = _extract_bounds(elem)
+    x1, y1, x2, y2 = bounds
+    cx = (x1 + x2) // 2
+    cy = (y1 + y2) // 2
+    if cx > 0 or cy > 0:
+        strategies.append(LocatorStrategy(by="coordinates", value=f"{cx},{cy}"))
     return strategies
 
 
@@ -253,114 +352,73 @@ def _extract_bounds(elem: dict[str, Any]) -> tuple[int, int, int, int]:
     bounds = elem.get("bounds", {})
     if isinstance(bounds, dict):
         return (
-            int(bounds.get("x1", 0)),
-            int(bounds.get("y1", 0)),
-            int(bounds.get("x2", 0)),
-            int(bounds.get("y2", 0)),
+            int(bounds.get("x1", 0) or 0),
+            int(bounds.get("y1", 0) or 0),
+            int(bounds.get("x2", 0) or 0),
+            int(bounds.get("y2", 0) or 0),
         )
     return (0, 0, 0, 0)
 
 
-# ============================================================
-# WebSnapshotGenerator
-# ============================================================
+def _xpath_literal(value: str) -> str:
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    parts = value.split("'")
+    return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
 
 
 class WebSnapshotGenerator:
-    """Generate AccessibilitySnapshot from WebView DOM content."""
+    """Generate WebSnapshot from WebView DOM content."""
 
     def generate_from_dom(
         self,
-        dom_elements: list[dict[str, Any]],
+        dom_tree: dict[str, Any] | list[dict[str, Any]],
         context: str,
         url: str = "",
         title: str = "",
         scope: str = "full",
         *,
         depth: int | None = None,
+        max_nodes: int | None = None,
         boxes: bool = False,
-    ) -> tuple[AccessibilitySnapshot, dict[str, RefEntry]]:
-        """Build snapshot from JS-extracted DOM element dicts."""
-        elements: list[SnapshotElement] = []
-        ref_map: dict[str, RefEntry] = {}
+    ) -> tuple[WebSnapshot, dict[str, Any]]:
+        """Build a tree-first WebSnapshot from JS-extracted DOM data."""
+        del scope, boxes
         used_refs: set[str] = set()
+        counter = _NodeCounter(limit=max_nodes or _DEFAULT_MAX_NODES)
+        max_depth = depth if depth is not None else _DEFAULT_MAX_DEPTH
 
-        container = SnapshotContainer(
-            ref="web_document",
-            region="content",
-            title=title or "",
-            scrollable=True,
-            scroll_direction="vertical",
+        if isinstance(dom_tree, list):
+            dom_tree = {
+                "tag": "body",
+                "role": "document",
+                "name": title,
+                "children": dom_tree,
+                "truncated": False,
+            }
+
+        root = self._build_node(
+            dom_tree,
+            depth=0,
+            max_depth=max_depth,
+            used_refs=used_refs,
+            counter=counter,
+            force_document=True,
         )
-
-        for i, elem in enumerate(dom_elements[:_MAX_ELEMENTS]):
-            if depth is not None and i >= depth:
-                break
-
-            role = _determine_role(elem)
-            base_ref = _derive_ref(elem, role)
-            ref = _make_unique(base_ref, used_refs)
-            used_refs.add(ref)
-
-            name = (elem.get("aria_label") or elem.get("name") or
-                    elem.get("placeholder") or "")
-            value = elem.get("value") or None
-            bounds = _extract_bounds(elem)
-
-            state_list: list[str] = []
-            if elem.get("disabled"):
-                state_list.append("disabled")
-            else:
-                state_list.append("enabled")
-            if elem.get("checked"):
-                state_list.append("checked")
-            if elem.get("selected"):
-                state_list.append("selected")
-            if elem.get("readonly"):
-                state_list.append("readonly")
-
-            snap_elem = SnapshotElement(
-                ref=ref,
-                role=role,
-                name=name,
-                value=value,
-                state=state_list,
-                bounds=bounds,
-                container_ref="web_document",
-            )
-            elements.append(snap_elem)
-            container.children_refs.append(ref)
-
-            strategies = _build_strategies(elem)
-            ref_entry = RefEntry(
-                strategies=strategies,
-                expected_bounds=bounds,
-                role=role,
-                name=name,
-                context=context,
-                source_type="web",
-            )
-            ref_map[ref] = ref_entry
-
-        screen_id = compute_screen_id(elements)
-        app_info = f"{context} {url}" if url else context
-
-        nav: dict[str, Any] = {}
-        # back=true is common for WebViews
-        if url:
-            nav["back"] = True
-
-        snapshot_obj = AccessibilitySnapshot(
-            screen_id=screen_id,
-            app_info=app_info,
-            containers=[container],
-            elements=elements,
-            nav=nav,
+        root.role = "document"
+        if title and not root.name:
+            root.name = title
+        truncated = bool(dom_tree.get("truncated")) or counter.truncated
+        snapshot = WebSnapshot.from_root(
+            root=root,
             context=context,
-            source_type="web",
+            url=url,
+            title=title,
+            truncated=truncated,
         )
-
-        return snapshot_obj, ref_map
+        return snapshot, snapshot.to_ref_map()
 
     def generate(
         self,
@@ -371,129 +429,192 @@ class WebSnapshotGenerator:
         scope: str = "full",
         *,
         depth: int | None = None,
+        max_nodes: int | None = None,
         boxes: bool = False,
-    ) -> tuple[AccessibilitySnapshot, dict[str, RefEntry]]:
-        """Fallback: parse raw HTML and extract actionable elements."""
-        parser = _HTMLSnapshotParser()
+    ) -> tuple[WebSnapshot, dict[str, Any]]:
+        """Fallback: parse raw HTML into the same WebSnapshot shape."""
+        parser = _HTMLSnapshotParser(max_nodes=max_nodes or _DEFAULT_MAX_NODES)
         parser.feed(html_source)
+        root = parser.root
+        if title and not root.get("name"):
+            root["name"] = title
         return self.generate_from_dom(
-            parser.elements, context, url, title, scope,
-            depth=depth, boxes=boxes,
+            root,
+            context,
+            url,
+            title,
+            scope,
+            depth=depth,
+            max_nodes=max_nodes,
+            boxes=boxes,
+        )
+
+    def _build_node(
+        self,
+        elem: dict[str, Any],
+        *,
+        depth: int,
+        max_depth: int,
+        used_refs: set[str],
+        counter: "_NodeCounter",
+        force_document: bool = False,
+    ) -> WebSnapshotNode:
+        if not counter.consume():
+            return WebSnapshotNode(role="text", name="...", omitted=True)
+        if depth > max_depth:
+            counter.truncated = True
+            return WebSnapshotNode(role="text", name="...", omitted=True)
+
+        role = "document" if force_document else _determine_role(elem)
+        name = str(elem.get("aria_label") or elem.get("name") or elem.get("placeholder") or "")
+        value = str(elem.get("value") or "") or None
+        state_list: list[str] = []
+        if elem.get("disabled"):
+            state_list.append("disabled")
+        elif role in _ACTIONABLE_ROLES:
+            state_list.append("enabled")
+        if elem.get("checked"):
+            state_list.append("checked")
+        if elem.get("selected"):
+            state_list.append("selected")
+        if elem.get("readonly"):
+            state_list.append("readonly")
+
+        ref: str | None = None
+        strategies: list[LocatorStrategy] = []
+        if not force_document and _is_actionable(elem, role):
+            ref = _make_unique(_derive_ref(elem, role), used_refs)
+            used_refs.add(ref)
+            strategies = _build_strategies(elem)
+
+        children = [
+            self._build_node(
+                child,
+                depth=depth + 1,
+                max_depth=max_depth,
+                used_refs=used_refs,
+                counter=counter,
+            )
+            for child in elem.get("children", [])
+            if isinstance(child, dict)
+        ]
+        if role == "element" and name and not ref:
+            role = "group" if children else "text"
+
+        return WebSnapshotNode(
+            role=role,
+            name=name,
+            ref=ref,
+            tag=str(elem.get("tag") or ""),
+            value=value,
+            state=state_list,
+            bounds=_extract_bounds(elem),
+            strategies=strategies,
+            children=children,
+            omitted=bool(elem.get("omitted")),
         )
 
 
-# ============================================================
-# HTML fallback parser
-# ============================================================
+class _NodeCounter:
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.count = 0
+        self.truncated = False
+
+    def consume(self) -> bool:
+        if self.count >= self.limit:
+            self.truncated = True
+            return False
+        self.count += 1
+        return True
 
 
 class _HTMLSnapshotParser(html.parser.HTMLParser):
-    """Lightweight HTML parser that extracts actionable elements."""
+    """Minimal stack-based HTML fallback that preserves hierarchy."""
 
-    _ACTIONABLE_TAGS = frozenset({
-        "a", "button", "input", "textarea", "select",
-        "img", "label", "h1", "h2", "h3", "h4", "h5", "h6",
-    })
-
-    def __init__(self) -> None:
+    def __init__(self, max_nodes: int) -> None:
         super().__init__()
-        self.elements: list[dict[str, str]] = []
-        self._current_tag: str = ""
-        self._current_attrs: dict[str, str] = {}
-        self._text_buf: list[str] = []
-        self._capturing = False
+        self.max_nodes = max_nodes
+        self.node_count = 0
+        self.root: dict[str, Any] = {
+            "tag": "body",
+            "role": "document",
+            "name": "",
+            "children": [],
+            "truncated": False,
+        }
+        self._stack: list[dict[str, Any]] = [self.root]
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attrs_dict = {k: (v or "") for k, v in attrs}
-        tag_lower = tag.lower()
-
-        is_actionable = (
-            tag_lower in self._ACTIONABLE_TAGS
-            or attrs_dict.get("role")
-            or attrs_dict.get("aria-label")
-            or attrs_dict.get("data-testid")
-            or attrs_dict.get("onclick")
-            or attrs_dict.get("tabindex")
-        )
-
-        if is_actionable and len(self.elements) < _MAX_ELEMENTS:
-            self._capturing = True
-            self._current_tag = tag_lower
-            self._current_attrs = {
-                "tag": tag_lower,
-                "id": attrs_dict.get("id", ""),
-                "test_id": attrs_dict.get("data-testid", ""),
-                "aria_label": attrs_dict.get("aria-label", ""),
-                "role": attrs_dict.get("role", ""),
-                "type": attrs_dict.get("type", ""),
-                "href": attrs_dict.get("href", ""),
-                "value": attrs_dict.get("value", ""),
-                "placeholder": attrs_dict.get("placeholder", ""),
-                "name": "",  # will be set from text content
-                "css": "",
-                "bounds": {},
-                "disabled": "true" if "disabled" in attrs_dict else "",
-                "checked": "true" if "checked" in attrs_dict else "",
-                "readonly": "true" if "readonly" in attrs_dict else "",
-            }
-            # Build CSS selector
-            if attrs_dict.get("id"):
-                self._current_attrs["css"] = f"#{attrs_dict['id']}"
-            elif attrs_dict.get("data-testid"):
-                self._current_attrs["css"] = f'[data-testid="{attrs_dict["data-testid"]}"]'
-            elif attrs_dict.get("name"):
-                self._current_attrs["css"] = f'{tag_lower}[name="{attrs_dict["name"]}"]'
-
-            self._text_buf = []
-
-    def handle_data(self, data: str) -> None:
-        if self._capturing:
-            self._text_buf.append(data.strip())
-
-    def handle_endtag(self, tag: str) -> None:
-        if self._capturing and tag.lower() == self._current_tag:
-            text = " ".join(t for t in self._text_buf if t)[:100]
-            self._current_attrs["name"] = text
-            self.elements.append(self._current_attrs)
-            self._capturing = False
-            self._current_tag = ""
-            self._current_attrs = {}
-            self._text_buf = []
+        self._push_node(tag, attrs, self_closing=False)
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        # Self-closing tags like <input />, <img />
-        attrs_dict = {k: (v or "") for k, v in attrs}
+        self._push_node(tag, attrs, self_closing=True)
+
+    def handle_data(self, data: str) -> None:
+        text = " ".join(data.split())
+        if not text:
+            return
+        parent = self._stack[-1]
+        if parent.get("name"):
+            parent["name"] = f"{parent['name']} {text}"[:120]
+        else:
+            parent["name"] = text[:120]
+
+    def handle_endtag(self, tag: str) -> None:
         tag_lower = tag.lower()
+        for index in range(len(self._stack) - 1, 0, -1):
+            if self._stack[index].get("tag") == tag_lower:
+                del self._stack[index:]
+                return
 
-        is_actionable = (
-            tag_lower in self._ACTIONABLE_TAGS
-            or attrs_dict.get("role")
-            or attrs_dict.get("aria-label")
-            or attrs_dict.get("data-testid")
-        )
+    def _push_node(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+        *,
+        self_closing: bool,
+    ) -> None:
+        if self.node_count >= self.max_nodes:
+            self.root["truncated"] = True
+            return
+        attrs_dict = {key: (value or "") for key, value in attrs}
+        tag_lower = tag.lower()
+        if tag_lower in {"html", "body"}:
+            return
+        node = {
+            "tag": tag_lower,
+            "id": attrs_dict.get("id", ""),
+            "test_id": attrs_dict.get("data-testid", ""),
+            "aria_label": attrs_dict.get("aria-label", ""),
+            "role": attrs_dict.get("role", ""),
+            "type": attrs_dict.get("type", ""),
+            "href": attrs_dict.get("href", ""),
+            "value": attrs_dict.get("value", ""),
+            "placeholder": attrs_dict.get("placeholder", ""),
+            "name": attrs_dict.get("alt", "") or attrs_dict.get("aria-label", ""),
+            "css": _css_from_attrs(tag_lower, attrs_dict),
+            "bounds": {},
+            "disabled": "disabled" in attrs_dict,
+            "checked": "checked" in attrs_dict,
+            "selected": "selected" in attrs_dict,
+            "readonly": "readonly" in attrs_dict,
+            "clickable": "onclick" in attrs_dict or "tabindex" in attrs_dict,
+            "children": [],
+        }
+        self._stack[-1]["children"].append(node)
+        self.node_count += 1
+        if not self_closing and tag_lower not in {"br", "img", "input", "meta", "link"}:
+            self._stack.append(node)
 
-        if is_actionable and len(self.elements) < _MAX_ELEMENTS:
-            elem = {
-                "tag": tag_lower,
-                "id": attrs_dict.get("id", ""),
-                "test_id": attrs_dict.get("data-testid", ""),
-                "aria_label": attrs_dict.get("aria-label", ""),
-                "role": attrs_dict.get("role", ""),
-                "type": attrs_dict.get("type", ""),
-                "href": attrs_dict.get("href", ""),
-                "value": attrs_dict.get("value", ""),
-                "placeholder": attrs_dict.get("placeholder", ""),
-                "name": attrs_dict.get("alt", "") or attrs_dict.get("aria-label", ""),
-                "css": "",
-                "bounds": {},
-                "disabled": "true" if "disabled" in attrs_dict else "",
-                "checked": "true" if "checked" in attrs_dict else "",
-                "readonly": "true" if "readonly" in attrs_dict else "",
-            }
-            if attrs_dict.get("id"):
-                elem["css"] = f"#{attrs_dict['id']}"
-            elif attrs_dict.get("data-testid"):
-                elem["css"] = f'[data-testid="{attrs_dict["data-testid"]}"]'
-            elif attrs_dict.get("name"):
-                elem["css"] = f'{tag_lower}[name="{attrs_dict["name"]}"]'
-            self.elements.append(elem)
+
+def _css_from_attrs(tag: str, attrs: dict[str, str]) -> str:
+    if attrs.get("id"):
+        return f"#{attrs['id']}"
+    if attrs.get("data-testid"):
+        return f'[data-testid="{attrs["data-testid"]}"]'
+    if attrs.get("name"):
+        return f'{tag}[name="{attrs["name"]}"]'
+    if tag == "a" and attrs.get("href"):
+        return f'a[href="{attrs["href"]}"]'
+    return ""

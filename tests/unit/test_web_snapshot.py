@@ -1,10 +1,9 @@
-"""Tests for WebSnapshotGenerator."""
+"""Tests for tree-first WebSnapshot generation."""
 
 from __future__ import annotations
 
-import pytest
-
-from appium_cli.core.snapshot import LocatorStrategy, RefEntry
+from appium_cli.core.snapshot import AccessibilitySnapshot, LocatorStrategy, RefEntry
+from appium_cli.core.web_snapshot import WebSnapshot, WebSnapshotNode
 from appium_cli.core.web_snapshot_generator import (
     WebSnapshotGenerator,
     _derive_ref,
@@ -25,8 +24,7 @@ class TestToSnake:
         assert _to_snake("   ") == ""
 
     def test_truncates(self):
-        result = _to_snake("a" * 100)
-        assert len(result) == 40
+        assert len(_to_snake("a" * 100)) == 40
 
 
 class TestDeriveRef:
@@ -98,97 +96,243 @@ class TestDetermineRole:
         assert _determine_role({"tag": "div"}) == "element"
 
 
+class TestWebSnapshotModel:
+    def test_renders_indented_tree(self):
+        snap = WebSnapshot.from_root(
+            context="CHROMIUM",
+            url="https://example.com",
+            title="Example",
+            root=WebSnapshotNode(
+                role="document",
+                name="Example",
+                children=[
+                    WebSnapshotNode(
+                        role="link",
+                        name="Details",
+                        ref="web_details",
+                        children=[WebSnapshotNode(role="text", name="Click")],
+                    )
+                ],
+            ),
+        )
+
+        text = snap.to_text()
+        assert "context: CHROMIUM" in text
+        assert '- link "Details" [ref:web_details]' in text
+        assert '  - link "Details" [ref:web_details]' in text
+        assert '    - text "Click"' in text
+
+    def test_ref_map_is_derived_from_tree(self):
+        node = WebSnapshotNode(
+            role="button",
+            name="Submit",
+            ref="web_submit",
+            strategies=[LocatorStrategy(by="css selector", value="#submit")],
+        )
+        snap = WebSnapshot.from_root(context="CHROMIUM", root=WebSnapshotNode(role="document", children=[node]))
+
+        ref_map = snap.to_ref_map()
+        assert ref_map["web_submit"].context == "CHROMIUM"
+        assert ref_map["web_submit"].source_type == "web"
+        assert ref_map["web_submit"].strategies[0].value == "#submit"
+
+    def test_inputs_scope_renders_textboxes_only(self):
+        snap = WebSnapshot.from_root(
+            context="CHROMIUM",
+            root=WebSnapshotNode(
+                role="document",
+                children=[
+                    WebSnapshotNode(role="textbox", name="Search", ref="web_search"),
+                    WebSnapshotNode(role="button", name="Submit", ref="web_submit"),
+                ],
+            ),
+        )
+        text = snap.to_text(scope="inputs")
+        assert 'textbox "Search"' in text
+        assert 'button "Submit"' not in text
+
+    def test_find_text_returns_nearest_actionable_ancestor(self):
+        snap = WebSnapshot.from_root(
+            context="CHROMIUM",
+            root=WebSnapshotNode(
+                role="document",
+                children=[
+                    WebSnapshotNode(
+                        role="link",
+                        name="News article",
+                        ref="web_news_article",
+                        children=[WebSnapshotNode(role="heading", name="Breaking News")],
+                    )
+                ],
+            ),
+        )
+
+        matches = snap.find_text("Breaking")
+        assert len(matches) == 1
+        assert matches[0].node.role == "heading"
+        assert matches[0].target is not None
+        assert matches[0].target.ref == "web_news_article"
+
+
 class TestWebSnapshotGeneratorFromDom:
     def setup_method(self):
         self.gen = WebSnapshotGenerator()
 
-    def test_generates_snapshot_with_web_prefix(self):
-        elements = [
-            {"tag": "a", "id": "", "test_id": "", "aria_label": "", "name": "Home",
-             "value": "", "type": "", "href": "/", "css": "", "bounds": {},
-             "disabled": False, "checked": False, "selected": False, "readonly": False},
-            {"tag": "button", "id": "submitBtn", "test_id": "", "aria_label": "", "name": "Submit",
-             "value": "", "type": "", "href": "", "css": "#submitBtn", "bounds": {},
-             "disabled": False, "checked": False, "selected": False, "readonly": False},
-        ]
-        snap, ref_map = self.gen.generate_from_dom(elements, "CHROMIUM", "https://example.com", "Example")
+    def test_generates_tree_with_actionable_parent_ref(self):
+        tree = {
+            "tag": "body",
+            "role": "document",
+            "name": "Example",
+            "children": [
+                {
+                    "tag": "a",
+                    "id": "",
+                    "test_id": "",
+                    "aria_label": "",
+                    "name": "News article",
+                    "value": "",
+                    "type": "",
+                    "href": "/news",
+                    "css": 'a[href="/news"]',
+                    "bounds": {},
+                    "children": [
+                        {"tag": "h2", "role": "heading", "name": "News article", "children": []}
+                    ],
+                }
+            ],
+        }
+        snap, ref_map = self.gen.generate_from_dom(tree, "CHROMIUM", "https://example.com", "Example")
 
         assert snap.context == "CHROMIUM"
         assert snap.source_type == "web"
         assert snap.screen_id
-        assert len(snap.elements) == 2
-        assert all(e.ref.startswith("web_") for e in snap.elements)
-        assert "web_submitbtn" in ref_map
-        assert ref_map["web_submitbtn"].context == "CHROMIUM"
-        assert ref_map["web_submitbtn"].source_type == "web"
+        link = snap.root.children[0]
+        heading = link.children[0]
+        assert link.ref is not None
+        assert link.ref in ref_map
+        assert heading.role == "heading"
+        assert heading.ref is None
 
     def test_dedup_suffixes(self):
-        elements = [
-            {"tag": "a", "id": "", "test_id": "", "aria_label": "", "name": "Link",
-             "value": "", "type": "", "href": "/1", "css": "", "bounds": {}},
-            {"tag": "a", "id": "", "test_id": "", "aria_label": "", "name": "Link",
-             "value": "", "type": "", "href": "/2", "css": "", "bounds": {}},
-        ]
-        snap, ref_map = self.gen.generate_from_dom(elements, "CHROMIUM")
+        tree = {
+            "tag": "body",
+            "role": "document",
+            "children": [
+                {"tag": "a", "name": "Link", "href": "/1", "children": []},
+                {"tag": "a", "name": "Link", "href": "/2", "children": []},
+            ],
+        }
+        snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
 
-        refs = [e.ref for e in snap.elements]
+        refs = [node.ref for node in snap.root.children]
         assert refs[0] != refs[1]
         assert refs[1].endswith("_2")
 
-    def test_depth_limits_elements(self):
-        elements = [
-            {"tag": "a", "id": f"el{i}", "test_id": "", "aria_label": "", "name": f"Link {i}",
-             "value": "", "type": "", "href": "", "css": f"#el{i}", "bounds": {}}
-            for i in range(20)
-        ]
-        snap, ref_map = self.gen.generate_from_dom(elements, "CHROMIUM", depth=5)
-        assert len(snap.elements) == 5
-        assert len(ref_map) == 5
+    def test_depth_limits_tree(self):
+        tree = {
+            "tag": "body",
+            "role": "document",
+            "children": [
+                {
+                    "tag": "section",
+                    "children": [
+                        {"tag": "a", "name": "Deep Link", "href": "/deep", "children": []}
+                    ],
+                }
+            ],
+        }
+        snap, ref_map = self.gen.generate_from_dom(tree, "CHROMIUM", depth=1)
+
+        assert snap.truncated is True
+        assert not ref_map
+        assert "- ..." in snap.to_text()
+
+    def test_max_nodes_limits_tree(self):
+        tree = {
+            "tag": "body",
+            "role": "document",
+            "children": [
+                {"tag": "a", "id": f"el{i}", "name": f"Link {i}", "children": []}
+                for i in range(20)
+            ],
+        }
+        snap, ref_map = self.gen.generate_from_dom(tree, "CHROMIUM", max_nodes=5)
+        assert snap.truncated is True
+        assert len(ref_map) <= 4
 
     def test_css_strategy_generated(self):
-        elements = [
-            {"tag": "button", "id": "btn1", "test_id": "", "aria_label": "", "name": "Click",
-             "value": "", "type": "", "href": "", "css": "#btn1", "bounds": {}},
-        ]
-        _, ref_map = self.gen.generate_from_dom(elements, "CHROMIUM")
+        tree = {
+            "tag": "body",
+            "role": "document",
+            "children": [
+                {"tag": "button", "id": "btn1", "name": "Click", "css": "#btn1", "bounds": {}, "children": []}
+            ],
+        }
+        _, ref_map = self.gen.generate_from_dom(tree, "CHROMIUM")
         entry = list(ref_map.values())[0]
-        css_strategies = [s for s in entry.strategies if s.by == "css selector"]
+        css_strategies = [strategy for strategy in entry.strategies if strategy.by == "css selector"]
         assert len(css_strategies) == 1
         assert css_strategies[0].value == "#btn1"
 
-    def test_snapshot_text_includes_context_lines(self):
-        elements = [
-            {"tag": "button", "id": "btn1", "test_id": "", "aria_label": "", "name": "OK",
-             "value": "", "type": "", "href": "", "css": "#btn1", "bounds": {}},
-        ]
-        snap, _ = self.gen.generate_from_dom(elements, "CHROMIUM", "https://example.com")
-        text = snap.to_text()
-        assert "context: CHROMIUM" in text
-        assert "source: web" in text
+    def test_named_role_gets_xpath_strategy(self):
+        tree = {
+            "tag": "body",
+            "children": [
+                {"tag": "div", "role": "button", "name": "Close", "children": []}
+            ],
+        }
+        _, ref_map = self.gen.generate_from_dom(tree, "CHROMIUM")
+        entry = ref_map["web_btn_close"]
+        assert any(strategy.by == "xpath" and "@role='button'" in strategy.value for strategy in entry.strategies)
 
     def test_element_states(self):
-        elements = [
-            {"tag": "input", "id": "chk1", "test_id": "", "aria_label": "", "name": "",
-             "value": "", "type": "checkbox", "href": "", "css": "#chk1", "bounds": {},
-             "disabled": True, "checked": True, "selected": False, "readonly": False},
-        ]
-        snap, _ = self.gen.generate_from_dom(elements, "CHROMIUM")
-        el = snap.elements[0]
-        assert "disabled" in el.state
-        assert "checked" in el.state
+        tree = {
+            "tag": "body",
+            "children": [
+                {
+                    "tag": "input",
+                    "id": "chk1",
+                    "type": "checkbox",
+                    "disabled": True,
+                    "checked": True,
+                    "children": [],
+                }
+            ],
+        }
+        snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
+        node = snap.root.children[0]
+        assert "disabled" in node.state
+        assert "checked" in node.state
 
     def test_nav_back_set_when_url(self):
-        snap, _ = self.gen.generate_from_dom([], "CHROMIUM", url="https://example.com")
+        snap, _ = self.gen.generate_from_dom({"tag": "body", "children": []}, "CHROMIUM", url="https://example.com")
         assert snap.nav.get("back") is True
 
-    def test_container_ref_is_web_document(self):
-        elements = [
-            {"tag": "a", "id": "lnk", "test_id": "", "aria_label": "", "name": "Go",
-             "value": "", "type": "", "href": "/", "css": "#lnk", "bounds": {}},
-        ]
-        snap, _ = self.gen.generate_from_dom(elements, "CHROMIUM")
-        assert snap.elements[0].container_ref == "web_document"
-        assert snap.containers[0].ref == "web_document"
+    def test_boxes_render_bounds(self):
+        tree = {
+            "tag": "body",
+            "children": [
+                {
+                    "tag": "button",
+                    "id": "btn",
+                    "name": "OK",
+                    "bounds": {"x1": 1, "y1": 2, "x2": 3, "y2": 4},
+                    "children": [],
+                }
+            ],
+        }
+        snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
+        assert "bounds=(1, 2, 3, 4)" in snap.to_text(boxes=True)
+
+    def test_generic_named_leaf_renders_as_text(self):
+        tree = {
+            "tag": "body",
+            "children": [
+                {"tag": "p", "name": "Plain paragraph", "children": []}
+            ],
+        }
+        snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
+        assert '- text "Plain paragraph"' in snap.to_text()
 
 
 class TestWebSnapshotGeneratorFromHTML:
@@ -205,27 +349,24 @@ class TestWebSnapshotGeneratorFromHTML:
         """
         snap, ref_map = self.gen.generate(html, "WEBVIEW_com.example", "https://example.com")
 
-        assert len(snap.elements) >= 2
         assert snap.context == "WEBVIEW_com.example"
         assert snap.source_type == "web"
-        assert all(e.ref.startswith("web_") for e in snap.elements)
+        assert "- element" not in snap.to_text()
+        assert all(ref.startswith("web_") for ref in ref_map)
+        assert "web_submit" in ref_map
 
     def test_parses_data_testid(self):
         html = '<html><body><button data-testid="login-btn">Login</button></body></html>'
-        snap, ref_map = self.gen.generate(html, "CHROMIUM")
-
+        _, ref_map = self.gen.generate(html, "CHROMIUM")
         assert "web_login_btn" in ref_map
 
     def test_parses_aria_label(self):
         html = '<html><body><div role="button" aria-label="Close">X</div></body></html>'
-        snap, ref_map = self.gen.generate(html, "CHROMIUM")
-
+        _, ref_map = self.gen.generate(html, "CHROMIUM")
         assert "web_close" in ref_map
 
 
 class TestRefEntryDefaults:
-    """Verify backward compatibility of RefEntry context fields."""
-
     def test_default_context_is_native(self):
         entry = RefEntry(
             strategies=[LocatorStrategy(by="id", value="test")],
@@ -250,24 +391,13 @@ class TestRefEntryDefaults:
 
 
 class TestAccessibilitySnapshotDefaults:
-    """Verify backward compatibility of AccessibilitySnapshot context fields."""
-
     def test_default_context_is_native(self):
-        from appium_cli.core.snapshot import AccessibilitySnapshot
         snap = AccessibilitySnapshot(screen_id="abc123")
         assert snap.context == "NATIVE_APP"
         assert snap.source_type == "native"
 
     def test_native_snapshot_text_has_no_context_line(self):
-        from appium_cli.core.snapshot import AccessibilitySnapshot
         snap = AccessibilitySnapshot(screen_id="abc123")
         text = snap.to_text()
         assert "context:" not in text
         assert "source:" not in text
-
-    def test_web_snapshot_text_has_context_line(self):
-        from appium_cli.core.snapshot import AccessibilitySnapshot
-        snap = AccessibilitySnapshot(screen_id="abc123", context="CHROMIUM", source_type="web")
-        text = snap.to_text()
-        assert "context: CHROMIUM" in text
-        assert "source: web" in text

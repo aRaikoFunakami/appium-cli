@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from appium_cli.core.web_snapshot import WebSnapshot
 from appium_cli.daemon import state
 
 
@@ -15,6 +16,8 @@ def list_containers() -> str:
     snapshot, error = _snapshot_or_error()
     if error:
         return error
+    if isinstance(snapshot, WebSnapshot):
+        return "WebView snapshots use the DOM tree as structure; container commands are native-only."
     if not snapshot.containers:
         return "コンテナが検出されませんでした。"
     lines = [f"Containers on screen ({len(snapshot.containers)} total):", ""]
@@ -38,6 +41,8 @@ def find_container(text: str, role_hint: str = "") -> str:
     snapshot, error = _snapshot_or_error()
     if error:
         return error
+    if isinstance(snapshot, WebSnapshot):
+        return "WebView snapshots use the DOM tree as structure; find_container is native-only."
     search = text.lower()
     matched_refs = {
         element.container_ref
@@ -66,6 +71,8 @@ def within_container(container_ref: str, role: str = "", position: str = "first"
     snapshot, error = _snapshot_or_error()
     if error:
         return error
+    if isinstance(snapshot, WebSnapshot):
+        return "WebView snapshots use the DOM tree as structure; within_container is native-only."
     normalized = container_ref.strip().strip("[]").removeprefix("ref:")
     container = next((item for item in snapshot.containers if item.ref == normalized), None)
     if container is None:
@@ -97,11 +104,26 @@ def assert_visible(text: str = "", ref: str = "") -> str:
         return "ERROR: text または ref のいずれかを指定してください。"
     if ref:
         normalized = ref.strip().strip("[]").removeprefix("ref:")
+        if isinstance(snapshot, WebSnapshot):
+            node = snapshot.find_ref(normalized)
+            if node:
+                return f"visible=true\n{node.to_text()}"
+            return f"visible=false\nref '{normalized}' が見つかりません。"
         element = next((item for item in snapshot.elements if item.ref == normalized), None)
         if element:
             return f"visible=true\n{element.to_text()}"
         return f"visible=false\nref '{normalized}' が見つかりません。"
     search = text.lower()
+    if isinstance(snapshot, WebSnapshot):
+        matches = snapshot.find_text(text)
+        if not matches:
+            return f"visible=false\n'{text}' が見つかりません。"
+        lines = [f"visible=true ({len(matches)} 件)"]
+        for match in matches[:5]:
+            target_ref = match.target.ref if match.target and match.target.ref else ""
+            suffix = f" -> action target [ref:{target_ref}]" if target_ref and target_ref != match.node.ref else ""
+            lines.append(f"  {match.node.to_text()}{suffix}")
+        return "\n".join(lines)
     found = [item.to_text() for item in snapshot.elements if search in item.name.lower() or search in (item.value or "").lower()]
     if not found:
         return f"visible=false\n'{text}' が見つかりません。"

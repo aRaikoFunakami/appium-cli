@@ -113,6 +113,22 @@ def tap(ref: str) -> str:
     try:
         if _is_web_ref(ref):
             element = _resolve_element(ref)
+            if isinstance(element, _CoordinateElement):
+                _require_driver().execute_script(
+                    """
+                    const x = arguments[0] - window.scrollX;
+                    const y = arguments[1] - window.scrollY;
+                    const el = document.elementFromPoint(x, y);
+                    if (!el) {
+                        throw new Error(`No element at (${arguments[0]}, ${arguments[1]})`);
+                    }
+                    el.click();
+                    """,
+                    element.x,
+                    element.y,
+                )
+                time.sleep(0.5)
+                return _ok_with_snapshot(_ref_context(ref))
             element.click()
             time.sleep(0.5)
             return _ok_with_snapshot(_ref_context(ref))

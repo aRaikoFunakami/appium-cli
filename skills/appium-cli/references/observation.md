@@ -60,7 +60,7 @@ Prefer `snapshot` and refs before taking screenshots. `screenshot` returns the s
 
 ## WebView snapshots
 
-When a WebView or Chrome context is available, use `--context=webview` to get a DOM-based snapshot with `web_` prefixed refs:
+When a WebView or Chrome context is available, use `--context=webview` to get an indented DOM tree with `web_` prefixed refs on actionable nodes:
 
 ```bash
 appium-cli snapshot --context=webview
@@ -70,8 +70,11 @@ appium-cli web_snapshot  # equivalent alias
 Web snapshots use CSS selector and XPath locator strategies instead of native resource-id/accessibility_id. Options:
 
 - `--context=native|current|webview|auto|<name>` — choose which context to snapshot (default: `native`)
-- `--depth=N` — limit the number of extracted web elements
+- `--depth=N` — limit WebView tree depth
+- `--max-nodes=N` — limit total WebView nodes
 - `--boxes` — include bounding box coordinates in output
 - `--filename=<path>` — save snapshot output to a file
+
+Nested text and headings usually do not carry refs. Use the nearest parent link/button/input ref shown in the tree when acting.
 
 See [WebView reference](webview.md) for the full WebView workflow.

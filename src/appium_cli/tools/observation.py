@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from appium_cli.core.snapshot import compress_xml
+from appium_cli.core.web_snapshot import WebSnapshot
 from appium_cli.core.web_snapshot_generator import DOM_EXTRACTION_SCRIPT, WebSnapshotGenerator
 from appium_cli.daemon import state
 from appium_cli.tools.contexts import (
@@ -32,9 +33,13 @@ def _require_driver():
 
 
 def _register_snapshot(
-    context: str, snapshot_obj: Any, ref_map: dict[str, Any]
+    context: str, snapshot_obj: Any, ref_map: dict[str, Any] | None = None
 ) -> None:
     """Store snapshot as current and in per-context maps."""
+    if ref_map is None and isinstance(snapshot_obj, WebSnapshot):
+        ref_map = snapshot_obj.to_ref_map()
+    if ref_map is None:
+        ref_map = {}
     state.current_snapshot = snapshot_obj
     state.current_ref_map = ref_map
     state.snapshots_by_context[context] = snapshot_obj
@@ -74,6 +79,7 @@ def _refresh_web_snapshot(
     context: str,
     scope: str,
     depth: int | None = None,
+    max_nodes: int | None = None,
     boxes: bool = False,
 ) -> str:
     """Generate a web DOM snapshot."""
@@ -89,30 +95,32 @@ def _refresh_web_snapshot(
         pass
 
     # Try JS DOM extraction first
-    dom_elements: list[dict] | None = None
+    dom_tree: dict[str, Any] | list[dict[str, Any]] | None = None
     try:
-        raw = driver.execute_script(DOM_EXTRACTION_SCRIPT)
+        raw = driver.execute_script(DOM_EXTRACTION_SCRIPT, depth or 15, max_nodes or 300)
         if isinstance(raw, str):
-            dom_elements = json.loads(raw)
-        elif isinstance(raw, list):
-            dom_elements = raw
+            dom_tree = json.loads(raw)
+        elif isinstance(raw, (dict, list)):
+            dom_tree = raw
     except Exception as exc:
         logger.debug("JS DOM extraction failed, falling back to HTML parse: %s", exc)
 
-    if dom_elements is not None:
+    if dom_tree is not None:
         snapshot_obj, ref_map = _web_snapshot_generator.generate_from_dom(
-            dom_elements, context, url, title, scope,
-            depth=depth, boxes=boxes,
+            dom_tree, context, url, title, scope,
+            depth=depth, max_nodes=max_nodes, boxes=boxes,
         )
     else:
         # Fallback to HTML parsing
         html_source = driver.page_source or ""
         snapshot_obj, ref_map = _web_snapshot_generator.generate(
             html_source, context, url, title, scope,
-            depth=depth, boxes=boxes,
+            depth=depth, max_nodes=max_nodes, boxes=boxes,
         )
 
     _register_snapshot(context, snapshot_obj, ref_map)
+    if isinstance(snapshot_obj, WebSnapshot):
+        return snapshot_obj.to_text(scope=scope if scope != "full" else None, boxes=boxes)
     return snapshot_obj.to_text(scope=scope if scope != "full" else None)
 
 
@@ -121,6 +129,7 @@ def refresh_snapshot(
     context: str = "native",
     restore_context: bool = True,
     depth: int | None = None,
+    max_nodes: int | None = None,
     boxes: bool = False,
     filename: str = "",
 ) -> str:
@@ -130,7 +139,8 @@ def refresh_snapshot(
         scope: snapshot scope filter
         context: "native", "current", "webview", "auto", or exact context name
         restore_context: switch back to original context after snapshot
-        depth: max elements for web snapshots
+        depth: max tree depth for web snapshots
+        max_nodes: max nodes for web snapshots
         boxes: include bounding boxes (web snapshots)
         filename: save output to file
     """
@@ -139,7 +149,7 @@ def refresh_snapshot(
 
     if is_web_context(target):
         with using_context(target, driver, restore=restore_context):
-            result = _refresh_web_snapshot(driver, target, scope, depth, boxes)
+            result = _refresh_web_snapshot(driver, target, scope, depth, max_nodes, boxes)
     else:
         with using_context(target, driver, restore=restore_context):
             result = _refresh_native_snapshot(driver, scope)
@@ -155,23 +165,32 @@ def snapshot(
     scope: str = "full",
     context: str = "native",
     depth: int | None = None,
+    max_nodes: int | None = None,
     boxes: bool = False,
     filename: str = "",
 ) -> str:
     """Public snapshot entry point."""
     return refresh_snapshot(
-        scope, context=context, depth=depth, boxes=boxes, filename=filename,
+        scope, context=context, depth=depth, max_nodes=max_nodes, boxes=boxes, filename=filename,
     )
 
 
 def web_snapshot(
     scope: str = "full",
     depth: int | None = None,
+    max_nodes: int | None = None,
     boxes: bool = False,
     filename: str = "",
 ) -> str:
     """Convenience alias for ``snapshot --context=webview``."""
-    return snapshot(scope, context="webview", depth=depth, boxes=boxes, filename=filename)
+    return snapshot(
+        scope,
+        context="webview",
+        depth=depth,
+        max_nodes=max_nodes,
+        boxes=boxes,
+        filename=filename,
+    )
 
 
 def _normalize_ref(ref: str) -> str:
@@ -183,12 +202,16 @@ def _find_element(ref: str):
     snapshot_obj = state.current_snapshot
     if not snapshot_obj:
         return None
+    if isinstance(snapshot_obj, WebSnapshot):
+        return snapshot_obj.find_ref(normalized)
     return next((element for element in snapshot_obj.elements if element.ref == normalized), None)
 
 
 def describe(ref: str) -> str:
     if state.current_snapshot is None:
         return "ERROR: No snapshot available. Run snapshot() first."
+    if isinstance(state.current_snapshot, WebSnapshot):
+        return state.current_snapshot.describe_ref(ref)
     target = _find_element(ref)
     if not target:
         normalized = _normalize_ref(ref)
@@ -224,6 +247,21 @@ def find_by_text(text: str, scope: str = "full") -> str:
         return "ERROR: No snapshot available. Run snapshot() first."
 
     snapshot_obj = state.current_snapshot
+    if isinstance(snapshot_obj, WebSnapshot):
+        matches = snapshot_obj.find_text(text, inputs_only=scope == "inputs")
+        if not matches:
+            return f"No elements matching '{text}' found."
+        lines = [f"Search results for '{text}' ({len(matches)} matches):"]
+        for match in matches[:10]:
+            target_ref = match.target.ref if match.target and match.target.ref else ""
+            ref_part = f"[ref:{target_ref}] " if target_ref else ""
+            action_part = "" if target_ref == match.node.ref else f" -> action target [ref:{target_ref}]" if target_ref else ""
+            lines.append(
+                f"  {ref_part}{match.node.role} \"{match.node.name}\" "
+                f"(score={match.score}){action_part}"
+            )
+        return "\n".join(lines)
+
     search_lower = text.lower()
     candidates: list[dict] = []
     target_elements = snapshot_obj.elements

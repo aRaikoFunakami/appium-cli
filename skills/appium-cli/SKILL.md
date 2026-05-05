@@ -48,7 +48,7 @@ appium-cli session stop
 ```bash
 appium-cli snapshot
 appium-cli snapshot --context=webview
-appium-cli web_snapshot
+appium-cli web_snapshot --depth=15 --max-nodes=300
 appium-cli describe btn_7
 appium-cli find_by_text "Storage"
 appium-cli screenshot
@@ -180,8 +180,8 @@ Prefer visible snapshot refs over locator tools. Do not call `find_by_text` to r
 For Chrome or apps with embedded WebViews:
 
 1. Run `appium-cli list_contexts` to check for `WEBVIEW_*` or `CHROMIUM` contexts.
-2. Run `appium-cli web_snapshot` to get DOM-based refs with `web_` prefix.
-3. Use `click`, `fill`, `select` with web refs. Touch gestures are not available in WebView.
+2. Run `appium-cli web_snapshot` to get an indented DOM tree with `web_` refs on actionable nodes.
+3. Use `click`, `fill`, `select` with web refs. Nested headings/text usually do not have refs; use the parent link/button ref shown above them. Touch gestures are not available in WebView.
 4. Run `appium-cli native_switch` and `snapshot` to return to native UI.
 
 Web refs are only valid in the WebView context where they were captured. After navigation or reload, take a new `web_snapshot`.

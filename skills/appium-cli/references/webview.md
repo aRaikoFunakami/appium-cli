@@ -11,7 +11,7 @@ appium-cli list_contexts
 # Switch to WebView
 appium-cli webview_switch
 
-# Take a web snapshot (DOM-based refs with web_ prefix)
+# Take a web snapshot (indented DOM tree with web_ refs)
 appium-cli snapshot --context=webview
 # or equivalently:
 appium-cli web_snapshot
@@ -39,8 +39,10 @@ appium-cli webview_status         # Diagnostic: WebView availability, URL, title
 ## WebView observation
 
 ```bash
-appium-cli snapshot --context=webview   # DOM-based snapshot with web_ refs
+appium-cli snapshot --context=webview   # Tree snapshot with web_ refs
 appium-cli web_snapshot                 # Alias for snapshot --context=webview
+appium-cli web_snapshot --depth=10      # Limit tree depth
+appium-cli web_snapshot --max-nodes=200 # Limit total nodes
 appium-cli webview_url                  # Current page URL
 appium-cli webview_title                # Current page title
 appium-cli get_page_source --context=webview  # Raw HTML source
@@ -53,15 +55,21 @@ screen: CHROMIUM https://www.yahoo.co.jp/
 screen_id: a3f2c1
 context: CHROMIUM
 source: web
+title: Yahoo! JAPAN
+url: https://www.yahoo.co.jp/
 
-── [ref:web_document] content ("Yahoo! JAPAN") [scrollable→vertical] ──
-[ref:web_search_form] textbox "検索" value=""
-[ref:web_link_news_1] link "主要ニュース見出し..."
-[ref:web_btn_login] button "ログイン"
-[ref:web_img_logo] image "Yahoo! JAPAN"
+- document "Yahoo! JAPAN"
+  - textbox "検索" [ref:web_search_form]
+  - link "主要ニュース見出し..." [ref:web_link_news_1]
+    - heading "主要ニュース見出し..."
+    - text "5/5(火) 18:30"
+  - button "ログイン" [ref:web_btn_login]
+  - image "Yahoo! JAPAN"
 ```
 
-All web refs start with `web_` to distinguish them from native refs.
+All web refs start with `web_` to distinguish them from native refs. Refs are assigned to actionable/input/selectable nodes such as links, buttons, textboxes, and selects. Non-actionable headings/text are rendered as children without misleading click refs; click the nearest parent link/button ref.
+
+Large pages are pruned by default (`--depth=15`, `--max-nodes=300`). Hidden, zero-area, and `aria-hidden=true` nodes are omitted. Use `--boxes` when bounds are useful for debugging.
 
 ## Web ref naming
 

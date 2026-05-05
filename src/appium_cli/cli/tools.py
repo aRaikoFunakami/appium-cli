@@ -46,7 +46,8 @@ def get_device_info(
 def snapshot(
     scope: Annotated[str, typer.Option("--scope", help="Snapshot scope.")] = "full",
     context: Annotated[str, typer.Option("--context", help="Context: native, webview, auto, current, or exact name.")] = "native",
-    depth: Annotated[int | None, typer.Option("--depth", help="Limit web snapshot to N elements.")] = None,
+    depth: Annotated[int | None, typer.Option("--depth", help="Limit web snapshot tree to N levels.")] = None,
+    max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit web snapshot to N nodes.")] = None,
     boxes: Annotated[bool, typer.Option("--boxes", help="Include bounding boxes in web snapshot.")] = False,
     filename: Annotated[str, typer.Option("--filename", help="Save snapshot to file.")] = "",
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
@@ -56,6 +57,8 @@ def snapshot(
     args: dict[str, Any] = {"scope": scope, "context": context}
     if depth is not None:
         args["depth"] = depth
+    if max_nodes is not None:
+        args["max_nodes"] = max_nodes
     if boxes:
         args["boxes"] = boxes
     if filename:
@@ -354,7 +357,8 @@ def webview_status(
 
 def web_snapshot(
     scope: Annotated[str, typer.Option("--scope", help="Snapshot scope.")] = "full",
-    depth: Annotated[int | None, typer.Option("--depth", help="Limit to N elements.")] = None,
+    depth: Annotated[int | None, typer.Option("--depth", help="Limit tree to N levels.")] = None,
+    max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit to N nodes.")] = None,
     boxes: Annotated[bool, typer.Option("--boxes", help="Include bounding boxes.")] = False,
     filename: Annotated[str, typer.Option("--filename", help="Save snapshot to file.")] = "",
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
@@ -363,6 +367,8 @@ def web_snapshot(
     args: dict[str, Any] = {"scope": scope}
     if depth is not None:
         args["depth"] = depth
+    if max_nodes is not None:
+        args["max_nodes"] = max_nodes
     if boxes:
         args["boxes"] = boxes
     if filename:
