@@ -25,35 +25,43 @@ This ensures that even when multiple elements share the same resource-id (e.g. a
 appium-cli snapshot
 appium-cli tap tabbackground_4
 appium-cli type_text input_search "hello" --submit
-appium-cli scroll up --ref=recycler_view
-appium-cli scroll left --ref=rv_tab_menu
-appium-cli swipe left
+appium-cli scroll_down recycler_view
+appium-cli scroll_left rv_tab_menu
+appium-cli swipe_left
 appium-cli press_key back
 appium-cli wait 1
 ```
 
 ## Safe scrolling
 
-Prefer scoped scrolling with `--ref`:
+Prefer scoped scrolling with a ref:
 
 ```bash
 appium-cli snapshot
-appium-cli scroll up --ref=main_content_scrollable_container
+appium-cli scroll_down main_content_scrollable_container
 appium-cli snapshot
 ```
 
-Use the container marked `[scrollable→vertical]` or `[scrollable→horizontal]` in the snapshot. Omitting `--ref` scrolls from a generic screen area and may target the wrong region or trigger system UI such as notifications/quick settings.
+Use the container marked `[scrollable→vertical]` or `[scrollable→horizontal]` in the snapshot. Omitting the ref scrolls the full visible screen. Use no-ref only when you intend a full-screen scroll and no obvious scrollable container exists.
 
-For `scroll`, directions are finger movement directions. `scroll up` is a finger-up gesture and usually reveals lower list content; `scroll down` moves back toward the top. Internally Appium `scrollGesture` receives the reversed content direction.
+Directional aliases take an optional ref:
+
+```bash
+# Scroll inside a known container
+appium-cli scroll_down recycler_view
+
+# Scroll the whole visible screen
+appium-cli scroll_down
+```
+
+For compatibility, `scroll <direction> --ref=<ref>` still works, but prefer `scroll_down <ref>` style in new workflows.
 
 ## Common mistakes
 
-`scroll` is direction-first and takes the target container through `--ref`.
-
 ```bash
-# Wrong: ref before direction
-appium-cli scroll recycler_view up
-
-# Right
+# Avoid legacy direction-first syntax in new workflows
 appium-cli scroll up --ref=recycler_view
+
+# Preferred
+appium-cli scroll_down recycler_view
 ```

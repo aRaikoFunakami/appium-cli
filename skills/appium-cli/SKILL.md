@@ -20,7 +20,7 @@ appium-cli get_device_info
 appium-cli snapshot
 appium-cli find_by_text "Log in"
 appium-cli tap tabbackground_4
-appium-cli scroll up --ref=recycler_view
+appium-cli scroll_down recycler_view
 appium-cli snapshot
 ```
 
@@ -59,11 +59,11 @@ appium-cli get_page_source
 appium-cli tap btn_7
 appium-cli type_text input_search "hello" --submit
 
-# direction-first gestures; pass the target container with --ref
-appium-cli scroll up --ref=recycler_view
-appium-cli scroll down --ref=main_content_scrollable_container
-appium-cli swipe left
-appium-cli swipe left --ref=carousel
+# directional aliases; pass a ref to scope, omit ref for full screen
+appium-cli scroll_down recycler_view
+appium-cli scroll_up main_content_scrollable_container
+appium-cli swipe_left
+appium-cli swipe_left carousel
 
 appium-cli press_key back
 appium-cli wait 1
@@ -75,11 +75,17 @@ appium-cli wait 1
 appium-cli long_press btn_photo
 appium-cli double_tap btn_photo
 appium-cli drag btn_photo 500 900
-appium-cli fling up
-appium-cli fling down --ref=recycler_view
+appium-cli fling_up
+appium-cli fling_down recycler_view
 appium-cli pinch_open image_preview
 appium-cli pinch_close image_preview
 ```
+
+Directional commands take an optional ref:
+
+- `scroll_down recycler_view` scrolls inside the container identified by `recycler_view`.
+- `scroll_down` scrolls the full visible screen.
+- Prefer a visible scrollable container ref when the snapshot shows one. Omit ref only for full-screen scrolling when no obvious scrollable container exists.
 
 ### Containers and verification
 
@@ -121,7 +127,7 @@ appium-cli scroll_to_element xpath "//*[@text='Target']"
 
 - Ref-first actions pass the ref as the first positional argument: `tap <ref>`, `long_press <ref>`, `pinch_open <ref>`.
 - Ref plus value actions pass the ref first, then the value: `type_text <ref> <text>`.
-- Direction-first gestures pass direction first and the target as an option: `scroll <direction> --ref=<scrollable-ref>`, `swipe <direction> [--ref=<ref>]`, `fling <direction> [--ref=<ref>]`.
+- Directional aliases encode direction in the command and take an optional ref: `scroll_down [ref]`, `swipe_left [ref]`, `fling_up [ref]`. Omit ref only for full-screen gestures.
 - Legacy locator tools use `<by> <value>` positionals; extra behavior is usually an option, for example `scroll_element <by> <value> --direction=up`.
 
 ## Workflow

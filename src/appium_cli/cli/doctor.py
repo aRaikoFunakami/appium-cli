@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
 import subprocess
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import asdict, dataclass
+from typing import Annotated, Literal
 
 import typer
 
@@ -116,14 +117,32 @@ def _checks() -> list[Check]:
     ]
 
 
-def doctor() -> None:
+def doctor(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print structured JSON output."),
+    ] = False,
+) -> None:
     """Inspect the local Appium environment without changing it."""
 
     checks = _checks()
+    ok = not any(check.status == "FAIL" for check in checks)
+    if json_output:
+        payload = {
+            "ok": ok,
+            "checks": [asdict(check) for check in checks],
+        }
+        if not ok:
+            payload["exit_code"] = exit_codes.GENERAL_ERROR
+        typer.echo(json.dumps(payload, indent=2))
+        if not ok:
+            raise typer.Exit(exit_codes.GENERAL_ERROR)
+        return
+
     for check in checks:
         typer.echo(f"{check.status}: {check.name}: {check.message}")
         if check.hint and check.status in ("WARN", "FAIL"):
             typer.echo(f"  Hint: {check.hint}")
 
-    if any(check.status == "FAIL" for check in checks):
+    if not ok:
         raise typer.Exit(exit_codes.GENERAL_ERROR)

@@ -100,9 +100,9 @@ appium-cli get_page_source
 ```bash
 appium-cli tap e12
 appium-cli type_text e8 "hello" --submit
-appium-cli scroll up
-appium-cli scroll up --ref=e20
-appium-cli swipe left
+appium-cli scroll_down
+appium-cli scroll_down e20
+appium-cli swipe_left
 appium-cli press_key back
 appium-cli wait 1
 ```
@@ -113,10 +113,13 @@ appium-cli wait 1
 appium-cli long_press e12
 appium-cli double_tap e12
 appium-cli drag e12 500 900
-appium-cli fling up
+appium-cli fling_up
+appium-cli fling_up e20
 appium-cli pinch_open e12
 appium-cli pinch_close e12
 ```
+
+Directional aliases take an optional ref. Passing a ref scopes the gesture to that element/container; omitting it performs the gesture on the full visible screen.
 
 ### Containers and verification
 
@@ -179,10 +182,13 @@ Prefer snapshot refs for new workflows. Use legacy locator tools for compatibili
 
 Default stdout preserves each smartestiroid tool's return value.
 
-`--json` wraps the daemon response:
+Every command accepts `--json`. For smartestiroid-compatible tool commands, `--json` wraps the daemon response without changing the default stdout. For lifecycle/status commands, `--json` emits structured command metadata.
 
 ```bash
 appium-cli get_device_info --json
+appium-cli doctor --json
+appium-cli server status --json
+appium-cli session status --json
 ```
 
 Session-not-running tool calls exit with code `3`. Shell-disabled remote Appium failures use exit code `8`.

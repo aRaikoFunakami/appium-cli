@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Iterable, Literal
@@ -19,6 +20,10 @@ Target = Literal["project", "claude-code", "copilot-cli", "all"]
 class CopyItem:
     relative_path: Path
     content: bytes
+
+
+class SkillInstallError(RuntimeError):
+    pass
 
 
 def _iter_files(root) -> Iterable[CopyItem]:
@@ -70,22 +75,30 @@ def _destinations(target: Target) -> list[Path]:
     return destinations
 
 
-def _install_to(destination: Path, files: list[CopyItem], *, dry_run: bool, force: bool) -> None:
-    typer.echo(f"{'would install' if dry_run else 'installing'}: {destination}")
+def _install_to(destination: Path, files: list[CopyItem], *, dry_run: bool, force: bool, emit_human: bool = True) -> dict:
+    if emit_human:
+        typer.echo(f"{'would install' if dry_run else 'installing'}: {destination}")
+    result = {"destination": str(destination), "dry_run": dry_run, "files": []}
     for item in files:
         target = destination / item.relative_path
-        typer.echo(f"  {item.relative_path}")
+        file_status = "would_install" if dry_run else "installed"
+        if emit_human:
+            typer.echo(f"  {item.relative_path}")
         if dry_run:
+            result["files"].append({"path": str(item.relative_path), "status": file_status})
             continue
         if target.exists():
             existing = target.read_bytes()
             if existing == item.content:
+                result["files"].append({"path": str(item.relative_path), "status": "skipped"})
                 continue
             if not force:
-                typer.echo(f"ERROR: {target} differs; rerun with --force to overwrite", err=True)
-                raise typer.Exit(exit_codes.GENERAL_ERROR)
+                raise SkillInstallError(f"{target} differs; rerun with --force to overwrite")
+            file_status = "overwritten"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(item.content)
+        result["files"].append({"path": str(item.relative_path), "status": file_status})
+    return result
 
 
 def install(
@@ -105,18 +118,35 @@ def install(
         bool,
         typer.Option("--force", help="Overwrite files that differ from bundled skill files."),
     ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print structured JSON output."),
+    ] = False,
 ) -> None:
     """Install optional appium-cli assets."""
 
     if not skills:
-        typer.echo("ERROR: only --skills is currently supported", err=True)
+        if json_output:
+            typer.echo(json.dumps({"ok": False, "error": "only --skills is currently supported", "exit_code": exit_codes.GENERAL_ERROR}, indent=2))
+        else:
+            typer.echo("ERROR: only --skills is currently supported", err=True)
         raise typer.Exit(exit_codes.GENERAL_ERROR)
 
-    source = _skill_source()
-    files = list(_iter_files(source))
-    if not files:
-        typer.echo("ERROR: bundled appium-cli skill is empty", err=True)
+    try:
+        source = _skill_source()
+        files = list(_iter_files(source))
+        if not files:
+            raise SkillInstallError("bundled appium-cli skill is empty")
+        results = [
+            _install_to(destination, files, dry_run=dry_run, force=force, emit_human=not json_output)
+            for destination in _destinations(target)
+        ]
+    except (FileNotFoundError, SkillInstallError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"ok": False, "error": str(exc), "exit_code": exit_codes.GENERAL_ERROR}, indent=2))
+        else:
+            typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(exit_codes.GENERAL_ERROR)
 
-    for destination in _destinations(target):
-        _install_to(destination, files, dry_run=dry_run, force=force)
+    if json_output:
+        typer.echo(json.dumps({"ok": True, "target": target, "results": results}, indent=2))

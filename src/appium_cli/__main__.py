@@ -28,6 +28,10 @@ from appium_cli.cli.tools import (
     find_element,
     find_container,
     fling,
+    fling_down,
+    fling_left,
+    fling_right,
+    fling_up,
     get_current_app,
     get_device_info,
     get_orientation,
@@ -44,12 +48,20 @@ from appium_cli.cli.tools import (
     restart_app,
     screenshot,
     scroll,
+    scroll_down,
     scroll_element,
+    scroll_left,
+    scroll_right,
     scroll_to_element,
+    scroll_up,
     set_orientation,
     send_keys,
     snapshot,
     swipe,
+    swipe_down,
+    swipe_left,
+    swipe_right,
+    swipe_up,
     tap,
     terminate_app,
     type_text,
@@ -151,13 +163,25 @@ app.command(name="get_device_info")(get_device_info)
 app.command(name="tap")(tap)
 app.command(name="type_text")(type_text)
 app.command(name="scroll")(scroll)
+app.command(name="scroll_up")(scroll_up)
+app.command(name="scroll_down")(scroll_down)
+app.command(name="scroll_left")(scroll_left)
+app.command(name="scroll_right")(scroll_right)
 app.command(name="swipe")(swipe)
+app.command(name="swipe_up")(swipe_up)
+app.command(name="swipe_down")(swipe_down)
+app.command(name="swipe_left")(swipe_left)
+app.command(name="swipe_right")(swipe_right)
 app.command(name="press_key")(press_key)
 app.command(name="wait")(wait)
 app.command(name="long_press")(long_press)
 app.command(name="double_tap")(double_tap)
 app.command(name="drag")(drag)
 app.command(name="fling")(fling)
+app.command(name="fling_up")(fling_up)
+app.command(name="fling_down")(fling_down)
+app.command(name="fling_left")(fling_left)
+app.command(name="fling_right")(fling_right)
 app.command(name="pinch_open")(pinch_open)
 app.command(name="pinch_close")(pinch_close)
 app.command(name="list_containers")(list_containers)

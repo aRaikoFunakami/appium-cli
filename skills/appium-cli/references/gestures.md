@@ -6,22 +6,24 @@ Gesture commands also use refs from `snapshot`.
 appium-cli long_press btn_photo
 appium-cli double_tap btn_photo
 appium-cli drag btn_photo 500 900
-appium-cli fling up
-appium-cli fling down --ref=recycler_view
+appium-cli fling_up
+appium-cli fling_down recycler_view
 appium-cli pinch_open image_preview
 appium-cli pinch_close image_preview
 ```
 
 Use gestures only when simpler actions such as `tap`, `type_text`, or `scroll` are insufficient.
 
-## Argument order
+## Directional gestures
 
-Most gesture commands are ref-first, but `fling` is direction-first:
+Use direction-specific aliases. The optional ref scopes the gesture; omitting ref gestures on the full visible screen.
 
 ```bash
-# Wrong
-appium-cli fling recycler_view down
+# Full-screen fling
+appium-cli fling_up
 
-# Right
-appium-cli fling down --ref=recycler_view
+# Fling inside a container
+appium-cli fling_down recycler_view
 ```
+
+Compatibility command `fling <direction> --ref=<ref>` still works, but prefer `fling_down <ref>` style in new workflows.

@@ -26,14 +26,14 @@ Choose the clickable row/button ref from the snapshot. If the visible label is a
 
 ```bash
 appium-cli snapshot
-appium-cli scroll up --ref=recycler_view
+appium-cli scroll_down recycler_view
 appium-cli snapshot
 appium-cli tap btn_12
 ```
 
 Use the scrollable container ref marked `[scrollable→vertical]` or `[scrollable→horizontal]`. Do not tap a ref from before the scroll; run `snapshot` again and use the new current ref.
 
-`scroll` is direction-first. Use `appium-cli scroll up --ref=recycler_view`, not `appium-cli scroll recycler_view up`.
+Use `appium-cli scroll_down recycler_view` to scroll inside a known container. Use `appium-cli scroll_down` without a ref only when you intend to scroll the full visible screen.
 
 ## Settings/storage style workflow
 

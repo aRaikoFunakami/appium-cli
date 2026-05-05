@@ -19,5 +19,6 @@ def test_skill_top_level_documents_command_catalog() -> None:
     assert "## Commands" in text
     assert "### Core actions" in text
     assert "## Argument order rules" in text
-    assert "appium-cli scroll up --ref=recycler_view" in text
+    assert "appium-cli scroll_down recycler_view" in text
+    assert "`scroll_down` scrolls the full visible screen" in text
     assert "appium-cli scroll_element xpath \"//*[@scrollable='true']\" --direction=up" in text

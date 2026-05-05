@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from typer.testing import CliRunner
 
@@ -37,3 +38,18 @@ def test_install_skills_force_writes_files(monkeypatch, tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert Path(".agents/skills/appium-cli/SKILL.md").is_file()
         assert Path(".agents/skills/appium-cli/references/device-info.md").is_file()
+
+
+def test_install_skills_json_output(monkeypatch, tmp_path: Path) -> None:
+    source = _make_skill_source(tmp_path)
+    monkeypatch.setattr(install_module, "skills_source_root", lambda: source)
+    runner = CliRunner()
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["install", "--skills", "--target=project", "--dry-run", "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["ok"] is True
+        assert payload["target"] == "project"
+        assert payload["results"][0]["files"][0]["status"] == "would_install"
+        assert not Path(".agents").exists()

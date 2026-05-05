@@ -4,6 +4,7 @@ Use these commands before starting a mobile automation session.
 
 ```bash
 appium-cli doctor
+appium-cli doctor --json
 appium-cli devices
 appium-cli devices --platform android
 appium-cli devices --platform ios

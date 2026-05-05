@@ -51,6 +51,11 @@ User responsibility:
   - If smartestiroid returns a JSON string, print that JSON string.
   - Example: `screenshot` must default to `{"type":"screenshot","image_base64":"...","region":"..."}`.
 - `--json` may wrap CLI metadata, but it must not replace the default smartestiroid-compatible output.
+- Every CLI command must accept `--json`. For smartestiroid-compatible tool commands, default stdout remains the tool return value and `--json` wraps metadata. For environment, status, lifecycle, and install commands, `--json` emits structured command metadata.
+- LLM-facing ref commands should prefer `command <ref>`. Directional aliases use `command [ref]`, where omitted ref means full-screen gesture:
+  - `scroll_down recycler_view` scrolls inside the container ref.
+  - `scroll_down` scrolls the full visible screen.
+  - Keep compatibility commands such as `scroll <direction> --ref=...`, but do not prefer them in README, SKILL files, or tests.
 - Strip smartestiroid-only logging/reporting concerns:
   - Remove `SLog` dependencies.
   - Remove screenshot saving/report side effects unless directly required by the tool output.
@@ -63,8 +68,8 @@ User responsibility:
 Maintain these implemented command groups, excluding LLM/dialog-agent internals:
 
 - Observation: `snapshot`, `describe`, `find_by_text`, `screenshot`, `get_page_source`
-- Basic actions: `tap`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`
-- Gestures: `long_press`, `double_tap`, `drag`, `fling`, `pinch_open`, `pinch_close`
+- Basic actions: `tap`, `type_text`, `scroll`, `scroll_up`, `scroll_down`, `scroll_left`, `scroll_right`, `swipe`, `swipe_up`, `swipe_down`, `swipe_left`, `swipe_right`, `press_key`, `wait`
+- Gestures: `long_press`, `double_tap`, `drag`, `fling`, `fling_up`, `fling_down`, `fling_left`, `fling_right`, `pinch_open`, `pinch_close`
 - Containers: `list_containers`, `find_container`, `within_container`
 - Legacy navigation: `scroll_element`, `scroll_to_element`, `wait_short_loading`
 - Legacy locator interaction: `find_element`, `click_element`, `get_text`, `press_keycode`, legacy `double_tap`, `send_keys`

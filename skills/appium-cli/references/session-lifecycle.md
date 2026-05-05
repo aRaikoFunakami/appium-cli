@@ -4,6 +4,7 @@
 
 ```bash
 appium-cli server status
+appium-cli server status --json
 appium-cli server start --port 4723
 appium-cli server start --no-allow-adb-shell
 appium-cli server stop
@@ -15,6 +16,7 @@ Session commands keep WebDriver state alive across tool invocations:
 
 ```bash
 appium-cli session status
+appium-cli session status --json
 appium-cli session start
 appium-cli session stop
 ```

@@ -33,6 +33,10 @@ from appium_cli.utils.paths import (
 app = typer.Typer(help="Manage the persistent Appium WebDriver session daemon.")
 
 
+def _echo_json(payload: dict) -> None:
+    typer.echo(json.dumps(payload, indent=2))
+
+
 def _pid_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -68,19 +72,31 @@ def _select_udid(explicit_udid: str | None) -> str:
 
 
 @app.command("status")
-def status() -> None:
+def status(
+    json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
+) -> None:
     """Show daemon/WebDriver session status."""
 
     try:
         response = request("get_driver_status")
-    except (FileNotFoundError, ConnectionError, OSError, RuntimeError):
-        typer.echo("running: false")
+    except (FileNotFoundError, ConnectionError, OSError, RuntimeError) as exc:
+        if json_output:
+            _echo_json({"ok": False, "running": False, "error": "Session daemon is not running", "detail": str(exc), "exit_code": exit_codes.STOPPED})
+        else:
+            typer.echo("running: false")
         raise typer.Exit(exit_codes.STOPPED)
 
     data = response.get("data", {})
     if not response.get("ok") or not data.get("ready", response.get("text") == "Driver is initialized and ready"):
-        typer.echo("running: false")
+        if json_output:
+            _echo_json({"ok": False, "running": False, "status": response.get("text", ""), "data": data, "exit_code": exit_codes.STOPPED})
+        else:
+            typer.echo("running: false")
         raise typer.Exit(exit_codes.STOPPED)
+
+    if json_output:
+        _echo_json({"ok": True, "running": True, **data})
+        return
 
     typer.echo("running: true")
     typer.echo(f"session_id: {data.get('session_id', 'unknown')}")
@@ -98,10 +114,14 @@ def start(
         bool,
         typer.Option("--allow-adb-shell/--no-allow-adb-shell", help="Allow mobile: shell when starting Appium."),
     ] = True,
+    json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
     """Start the daemon-owned WebDriver session."""
 
     if _daemon_running():
+        if json_output:
+            _echo_json({"ok": True, "already_running": True, "running": True})
+            return
         typer.echo("Session daemon is already running.")
         return
 
@@ -118,7 +138,10 @@ def start(
         server_state = start_server(port=port, allow_adb_shell=allow_adb_shell)
         selected_udid = _select_udid(udid)
     except Exception as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
+        if json_output:
+            _echo_json({"ok": False, "error": str(exc), "exit_code": exit_codes.GENERAL_ERROR})
+        else:
+            typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(exit_codes.GENERAL_ERROR) from exc
 
     command = [
@@ -146,32 +169,48 @@ def start(
     deadline = time.time() + 60
     while time.time() < deadline:
         if process.poll() is not None:
-            typer.echo(
-                f"ERROR: session daemon exited early with code {process.returncode}. See {daemon_log_path(sid)}",
-                err=True,
-            )
+            message = f"session daemon exited early with code {process.returncode}. See {daemon_log_path(sid)}"
+            if json_output:
+                _echo_json({"ok": False, "error": message, "exit_code": exit_codes.GENERAL_ERROR, "daemon_returncode": process.returncode, "log_path": str(daemon_log_path(sid))})
+            else:
+                typer.echo(f"ERROR: {message}", err=True)
             raise typer.Exit(exit_codes.GENERAL_ERROR)
         if _daemon_running():
             write_current_session(sid)
+            if json_output:
+                _echo_json({"ok": True, "started": True, "running": True, "udid": selected_udid, "pid": process.pid, "session_id": sid, "server_url": server_state.url})
+                return
             typer.echo(f"Started session daemon for {selected_udid} (pid={process.pid}, session={sid})")
             return
         time.sleep(0.5)
 
     process.terminate()
-    typer.echo(f"ERROR: session daemon did not become ready. See {daemon_log_path(sid)}", err=True)
+    message = f"session daemon did not become ready. See {daemon_log_path(sid)}"
+    if json_output:
+        _echo_json({"ok": False, "error": message, "exit_code": exit_codes.GENERAL_ERROR, "log_path": str(daemon_log_path(sid))})
+    else:
+        typer.echo(f"ERROR: {message}", err=True)
     raise typer.Exit(exit_codes.GENERAL_ERROR)
 
 
 @app.command("stop")
-def stop() -> None:
+def stop(
+    json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
+) -> None:
     """Stop the daemon-owned WebDriver session."""
 
     if not _daemon_running():
+        if json_output:
+            _echo_json({"ok": True, "running": False, "stopped": False, "message": "Session daemon is not running."})
+            return
         typer.echo("Session daemon is not running.")
         return
     response = request("shutdown")
     if not response.get("ok"):
-        typer.echo(f"ERROR: {response.get('error', 'shutdown failed')}", err=True)
+        if json_output:
+            _echo_json({"ok": False, "error": response.get("error", "shutdown failed"), "exit_code": response.get("exit_code", exit_codes.GENERAL_ERROR)})
+        else:
+            typer.echo(f"ERROR: {response.get('error', 'shutdown failed')}", err=True)
         raise typer.Exit(response.get("exit_code", exit_codes.GENERAL_ERROR))
 
     deadline = time.time() + 15
@@ -183,4 +222,7 @@ def stop() -> None:
     session_socket_path().unlink(missing_ok=True)
     session_pid_path().unlink(missing_ok=True)
     clear_current_session()
+    if json_output:
+        _echo_json({"ok": True, "running": False, "stopped": True, "pid": pid})
+        return
     typer.echo("Stopped session daemon.")

@@ -57,6 +57,14 @@ def _write_state(state: ServerState) -> None:
     server_state_path().write_text(json.dumps(asdict(state), indent=2), encoding="utf-8")
 
 
+def _state_payload(state: ServerState) -> dict:
+    return asdict(state)
+
+
+def _echo_json(payload: dict) -> None:
+    typer.echo(json.dumps(payload, indent=2))
+
+
 def _server_responds(port: int, timeout: float = 1.0) -> bool:
     try:
         with urllib.request.urlopen(_status_url(port), timeout=timeout) as response:
@@ -139,10 +147,20 @@ def start_server(port: int = 4723, allow_adb_shell: bool = True) -> ServerState:
 @app.command("status")
 def status(
     port: Annotated[int, typer.Option("--port", help="Appium server port.")] = 4723,
+    json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
     """Show Appium server status."""
 
     state = get_status(port)
+    if json_output:
+        payload = {"ok": state.running, **_state_payload(state)}
+        if not state.running:
+            payload["exit_code"] = exit_codes.STOPPED
+        _echo_json(payload)
+        if not state.running:
+            raise typer.Exit(exit_codes.STOPPED)
+        return
+
     typer.echo(f"running: {str(state.running).lower()}")
     typer.echo(f"ownership: {state.ownership}")
     typer.echo(f"port: {state.port}")
@@ -164,6 +182,7 @@ def start(
             help="Allow Appium mobile: shell when this command starts a new server.",
         ),
     ] = True,
+    json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
     """Start or reuse the singleton Appium server."""
 
@@ -171,28 +190,45 @@ def start(
     try:
         state = start_server(port, allow_adb_shell)
     except RuntimeError as exc:
-        typer.echo(f"ERROR: {exc}", err=True)
+        if json_output:
+            _echo_json({"ok": False, "error": str(exc), "exit_code": exit_codes.GENERAL_ERROR})
+        else:
+            typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(exit_codes.GENERAL_ERROR) from exc
 
     if current.running:
+        if json_output:
+            _echo_json({"ok": True, "already_running": True, "started": False, **_state_payload(state)})
+            return
         typer.echo(f"Appium server already running at {state.url} (ownership={state.ownership})")
         return
 
+    if json_output:
+        _echo_json({"ok": True, "already_running": False, "started": True, **_state_payload(state)})
+        return
     typer.echo(f"Started Appium server at {state.url} (pid={state.pid})")
 
 
 @app.command("stop")
-def stop() -> None:
+def stop(
+    json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
+) -> None:
     """Stop only the Appium server started by appium-cli."""
 
     saved = _read_state()
     if saved.get("ownership") != "self":
+        if json_output:
+            _echo_json({"ok": True, "stopped": False, "ownership": saved.get("ownership", "none"), "message": "No self-owned Appium server to stop."})
+            return
         typer.echo("No self-owned Appium server to stop.")
         return
 
     pid = saved.get("pid")
     if not isinstance(pid, int) or not _pid_running(pid):
         server_state_path().unlink(missing_ok=True)
+        if json_output:
+            _echo_json({"ok": True, "stopped": True, "already_stopped": True, "pid": pid})
+            return
         typer.echo("Self-owned Appium server is already stopped.")
         return
 
@@ -201,9 +237,16 @@ def stop() -> None:
     while time.time() < deadline:
         if not _pid_running(pid):
             server_state_path().unlink(missing_ok=True)
+            if json_output:
+                _echo_json({"ok": True, "stopped": True, "pid": pid})
+                return
             typer.echo("Stopped self-owned Appium server.")
             return
         time.sleep(0.2)
 
-    typer.echo(f"ERROR: Appium process {pid} did not stop after SIGTERM", err=True)
+    message = f"Appium process {pid} did not stop after SIGTERM"
+    if json_output:
+        _echo_json({"ok": False, "error": message, "pid": pid, "exit_code": exit_codes.GENERAL_ERROR})
+    else:
+        typer.echo(f"ERROR: {message}", err=True)
     raise typer.Exit(exit_codes.GENERAL_ERROR)

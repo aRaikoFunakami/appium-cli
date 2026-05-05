@@ -92,10 +92,11 @@ def _suggest_direction_first(command: str, args: list[str]) -> UsageSuggestion |
     if direction not in DIRECTIONS or ref in DIRECTIONS:
         return None
 
-    suggestion = f"appium-cli {command} {quote(direction)} --ref={quote(ref)}"
+    alias = f"{command}_{direction}"
+    suggestion = f"appium-cli {alias} {quote(ref)}"
     return UsageSuggestion(
-        command=command,
-        message=f"unexpected argument order for {command}; {command} takes direction first and ref via --ref",
+        command=alias,
+        message=f"unexpected argument order for {command}; use the normalized {alias} <ref> form",
         suggestion=suggestion,
     )
 

@@ -48,7 +48,7 @@ Example:
 
 How to use this output:
 
-- `recycler_view` is the scrollable list container. Use it for scoped scrolling: `appium-cli scroll up --ref=recycler_view`.
+- `recycler_view` is the scrollable list container. Use it for scoped scrolling: `appium-cli scroll_down recycler_view`.
 - `title_7` is visible text, but it may not be the tappable target.
 - `btn_7` is the associated clickable row/button ref. Prefer it for `tap`.
 - Refs come from the latest snapshot only. After a tap, scroll, back, dialog, or app switch, run `snapshot` again before reusing refs.

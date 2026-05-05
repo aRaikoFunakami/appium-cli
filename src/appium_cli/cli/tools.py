@@ -100,8 +100,40 @@ def scroll(direction: str, ref: Annotated[str, typer.Option("--ref")] = "", perc
     _daemon_request("scroll", json_output, {"direction": direction, "ref": ref, "percent": percent})
 
 
+def scroll_up(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("scroll", json_output, {"direction": "up", "ref": ref, "percent": percent})
+
+
+def scroll_down(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("scroll", json_output, {"direction": "down", "ref": ref, "percent": percent})
+
+
+def scroll_left(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("scroll", json_output, {"direction": "left", "ref": ref, "percent": percent})
+
+
+def scroll_right(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("scroll", json_output, {"direction": "right", "ref": ref, "percent": percent})
+
+
 def swipe(direction: str, ref: Annotated[str, typer.Option("--ref")] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     _daemon_request("swipe", json_output, {"direction": direction, "ref": ref, "percent": percent})
+
+
+def swipe_up(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("swipe", json_output, {"direction": "up", "ref": ref, "percent": percent})
+
+
+def swipe_down(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("swipe", json_output, {"direction": "down", "ref": ref, "percent": percent})
+
+
+def swipe_left(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("swipe", json_output, {"direction": "left", "ref": ref, "percent": percent})
+
+
+def swipe_right(ref: Annotated[str, typer.Argument()] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("swipe", json_output, {"direction": "right", "ref": ref, "percent": percent})
 
 
 def press_key(key: str, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
@@ -129,6 +161,22 @@ def drag(ref: str, end_x: int, end_y: int, speed: Annotated[int | None, typer.Op
 
 def fling(direction: str, ref: Annotated[str, typer.Option("--ref")] = "", speed: Annotated[int | None, typer.Option("--speed")] = None, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     _daemon_request("fling", json_output, {"direction": direction, "ref": ref, "speed": speed})
+
+
+def fling_up(ref: Annotated[str, typer.Argument()] = "", speed: Annotated[int | None, typer.Option("--speed")] = None, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("fling", json_output, {"direction": "up", "ref": ref, "speed": speed})
+
+
+def fling_down(ref: Annotated[str, typer.Argument()] = "", speed: Annotated[int | None, typer.Option("--speed")] = None, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("fling", json_output, {"direction": "down", "ref": ref, "speed": speed})
+
+
+def fling_left(ref: Annotated[str, typer.Argument()] = "", speed: Annotated[int | None, typer.Option("--speed")] = None, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("fling", json_output, {"direction": "left", "ref": ref, "speed": speed})
+
+
+def fling_right(ref: Annotated[str, typer.Argument()] = "", speed: Annotated[int | None, typer.Option("--speed")] = None, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("fling", json_output, {"direction": "right", "ref": ref, "speed": speed})
 
 
 def pinch_open(ref: str, percent: Annotated[float, typer.Option("--percent")] = 0.5, speed: Annotated[int | None, typer.Option("--speed")] = None, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:

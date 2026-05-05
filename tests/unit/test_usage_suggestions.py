@@ -12,22 +12,22 @@ def test_suggests_scroll_ref_direction_order() -> None:
     suggestion = suggest_usage(["scroll", "recycler_view", "up"])
 
     assert suggestion is not None
-    assert suggestion.suggestion == "appium-cli scroll up --ref=recycler_view"
-    assert "direction first" in suggestion.message
+    assert suggestion.suggestion == "appium-cli scroll_up recycler_view"
+    assert "normalized scroll_up <ref>" in suggestion.message
 
 
 def test_suggests_swipe_ref_direction_order() -> None:
     suggestion = suggest_usage(["swipe", "recycler_view", "left"])
 
     assert suggestion is not None
-    assert suggestion.suggestion == "appium-cli swipe left --ref=recycler_view"
+    assert suggestion.suggestion == "appium-cli swipe_left recycler_view"
 
 
 def test_suggests_fling_ref_direction_order() -> None:
     suggestion = suggest_usage(["fling", "recycler_view", "down"])
 
     assert suggestion is not None
-    assert suggestion.suggestion == "appium-cli fling down --ref=recycler_view"
+    assert suggestion.suggestion == "appium-cli fling_down recycler_view"
 
 
 def test_suggests_scroll_element_direction_option() -> None:
@@ -49,8 +49,8 @@ def test_format_suggestion_mentions_help() -> None:
 
     assert suggestion is not None
     message = format_suggestion(suggestion)
-    assert "Did you mean: appium-cli scroll up --ref=recycler_view" in message
-    assert "appium-cli scroll --help" in message
+    assert "Did you mean: appium-cli scroll_up recycler_view" in message
+    assert "appium-cli scroll_up --help" in message
 
 
 def test_main_preflight_exits_before_typer(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -61,4 +61,4 @@ def test_main_preflight_exits_before_typer(monkeypatch: pytest.MonkeyPatch, caps
 
     assert exc_info.value.code == 2
     captured = capsys.readouterr()
-    assert "Did you mean: appium-cli scroll up --ref=recycler_view" in captured.err
+    assert "Did you mean: appium-cli scroll_up recycler_view" in captured.err
