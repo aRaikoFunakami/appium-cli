@@ -81,9 +81,9 @@ _ACTIONABLE_ROLES = {
 _ACTIONABLE_TAGS = {"a", "button", "input", "textarea", "select", "option"}
 
 DOM_EXTRACTION_SCRIPT = """
-(function() {
-    var maxDepth = arguments[0] || 15;
-    var maxNodes = arguments[1] || 300;
+return (function(maxDepth, maxNodes) {
+    maxDepth = maxDepth || 15;
+    maxNodes = maxNodes || 300;
     var seen = 0;
     var truncated = false;
 
@@ -230,7 +230,7 @@ DOM_EXTRACTION_SCRIPT = """
     root.name = document.title || root.name || '';
     root.truncated = truncated;
     return JSON.stringify(root);
-})();
+})(arguments[0], arguments[1]);
 """
 
 _SAFE_CHARS_RE = re.compile(r"[^a-z0-9_]")
