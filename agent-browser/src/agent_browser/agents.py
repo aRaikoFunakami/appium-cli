@@ -21,6 +21,15 @@ from agent_browser.schemas import MemoryEvent
 logger = logging.getLogger(__name__)
 
 
+def _model_settings_for_model(model: str) -> ModelSettings:
+    """Return model settings compatible with the selected model."""
+
+    kwargs: dict[str, object] = {"parallel_tool_calls": False}
+    if not model.startswith("gpt-5"):
+        kwargs["temperature"] = 0.2
+    return ModelSettings(**kwargs)
+
+
 _BASE_POLICY = dedent(
     """
     You are an expert mobile browser automation agent. You drive a real Android
@@ -182,7 +191,7 @@ def create_browser_agent(
         # parallel_tool_calls=False forces the model to observe -> act
         # sequentially, which avoids issuing fill/tap with stale refs from
         # before a context switch (a real failure mode observed in testing).
-        model_settings=ModelSettings(temperature=0.2, parallel_tool_calls=False),
+        model_settings=_model_settings_for_model(config.model),
         # Stop the run as soon as the agent calls browser_result. Its return
         # value (RESULT_RECORDED ...) is treated as the final output.
         tool_use_behavior=StopAtTools(stop_at_tool_names=["browser_result"]),
