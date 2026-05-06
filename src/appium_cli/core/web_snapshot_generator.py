@@ -150,6 +150,7 @@ DOM_EXTRACTION_SCRIPT = """
         return clean(
             el.getAttribute('aria-label') ||
             el.getAttribute('alt') ||
+            el.getAttribute('title') ||
             el.getAttribute('placeholder') ||
             (tag === 'input' ? el.value : '') ||
             (['link', 'button', 'heading', 'label', 'option', 'tab', 'menuitem'].includes(role) ? el.innerText : '') ||
@@ -483,9 +484,10 @@ class WebSnapshotGenerator:
         ref: str | None = None
         strategies: list[LocatorStrategy] = []
         if not force_document and _is_actionable(elem, role):
-            ref = _make_unique(_derive_ref(elem, role), used_refs)
-            used_refs.add(ref)
             strategies = _build_strategies(elem)
+            if strategies:
+                ref = _make_unique(_derive_ref(elem, role), used_refs)
+                used_refs.add(ref)
 
         children = [
             self._build_node(
