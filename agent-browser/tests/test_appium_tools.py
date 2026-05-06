@@ -16,6 +16,7 @@ from agents.tool_context import ToolContext
 
 from agent_browser.appium_tools import (
     BrowserAgentContext,
+    MAX_TOOL_RESULT_CHARS,
     _invoke_appium_tool,
     all_tools,
     make_appium_tools,
@@ -188,12 +189,25 @@ class TestFixesV2:
 
     @pytest.mark.asyncio
     async def test_observation_tool_not_trimmed(self, tmp_path) -> None:
-        """Observation tools (web_snapshot) should keep their full output."""
+        """Observation tools should keep useful output but respect the token budget."""
         ctx = _ctx(tmp_path)
-        big_snapshot = "screen: CHROMIUM_123 https://yahoo.co.jp\nscreen_id: xyz789\n" + "textbox ref:web__14\n" * 500
+        big_snapshot = (
+            "screen: CHROMIUM_123 https://yahoo.co.jp\n"
+            "screen_id: xyz789\n"
+            + "textbox ref:web__14\n" * 2000
+        )
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": big_snapshot, "data": {}}
             result = await _invoke_appium_tool("web_snapshot", json.dumps({}), ctx)
-        # Full output should be preserved (not stripped)
         assert "screen_id: xyz789" in result
-        assert len(result) > 3000
+        assert len(result) <= MAX_TOOL_RESULT_CHARS
+        assert "... [truncated " in result
+
+    @pytest.mark.asyncio
+    async def test_web_eval_result_respects_token_budget(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": "x" * 30000, "data": {}}
+            result = await _invoke_appium_tool("web_eval", json.dumps({"script": "return []"}), ctx)
+        assert len(result) <= MAX_TOOL_RESULT_CHARS
+        assert "... [truncated " in result

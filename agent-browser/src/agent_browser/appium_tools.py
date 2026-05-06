@@ -40,12 +40,10 @@ from agent_browser.schemas import (
 logger = logging.getLogger(__name__)
 
 
-# Maximum number of characters returned to the model per tool call. Snapshots
-# of large pages (e.g. yahoo.co.jp) easily exceed 6KB; truncating too early
-# causes the agent to loop on increasing snapshot depth without ever seeing
-# the target element. gpt-4.1 has a 1M context window, so 30KB per call is
-# safe and avoids that failure mode.
-MAX_TOOL_RESULT_CHARS = 30000
+# Maximum number of characters returned to the model per tool call. Keep this
+# large enough for mobile snapshots, but small enough that repeated
+# web_snapshot/web_eval calls do not dominate the next request's input tokens.
+MAX_TOOL_RESULT_CHARS = 12000
 
 # appium-cli tool functions return "FAILED: ..." strings on error (not
 # exceptions). The daemon wraps these as ok=True. We detect and flip.

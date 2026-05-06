@@ -81,6 +81,33 @@ def test_duplicate_resource_id_disambiguation():
     ]
 
 
+def test_descriptive_refs_truncate_at_128_chars_without_changing_resource_ids():
+    long_content_desc = "Content " + ("Description " * 20)
+    long_name = "Name " + ("Label " * 30)
+    long_resource_tail = "resource_" + ("identifier_" * 20)
+    xml = f"""<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.LinearLayout" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,0][1080,1920]" displayed="true">
+    <node index="0" text="" resource-id="" class="android.widget.ImageButton" package="com.example.app" content-desc="{long_content_desc}" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,0][100,100]" displayed="true"/>
+    <node index="1" text="{long_name}" resource-id="" class="android.widget.Button" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,100][100,200]" displayed="true"/>
+    <node index="2" text="" resource-id="com.example.app:id/{long_resource_tail}" class="android.widget.Button" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,200][100,300]" displayed="true"/>
+  </node>
+</hierarchy>
+"""
+    snap = NativeSnapshotGenerator().generate(xml)
+    refs = {node.ref for node in _walk(snap.root) if node.ref}
+
+    content_desc_ref = NativeSnapshotGenerator._to_snake_case(long_content_desc)[:128]
+    name_ref = f"btn_{NativeSnapshotGenerator._to_snake_case(long_name)[:128]}"
+    resource_ref = NativeSnapshotGenerator._to_snake_case(long_resource_tail)
+    assert content_desc_ref in refs
+    assert name_ref in refs
+    assert resource_ref in refs
+    assert len(content_desc_ref) == 128
+    assert len(name_ref) == 132
+    assert len(resource_ref) > 128
+
+
 def test_recycler_view_rows_get_refs_text_does_not():
     snap = NativeSnapshotGenerator().generate(load("recycler_view.xml"))
     rows = [n for n in _walk(snap.root) if n.role == "row"]

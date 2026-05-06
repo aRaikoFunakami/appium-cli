@@ -6,6 +6,8 @@ from contextlib import nullcontext
 
 from appium_cli.core.native_snapshot import NativeSnapshot, NativeSnapshotNode
 from appium_cli.core.snapshot import LocatorStrategy
+from appium_cli.core.web_snapshot import WebSnapshot, WebSnapshotNode
+from appium_cli.core.web_snapshot_generator import WEB_DEFAULT_MAX_DEPTH, WEB_DEFAULT_MAX_NODES
 from appium_cli.daemon import state
 from appium_cli.tools import container, observation
 
@@ -140,6 +142,57 @@ def test_find_by_text_inputs_only_returns_no_match():
     assert "No elements" in out
 
 
+def test_find_by_text_shows_up_to_100_matches():
+    root = NativeSnapshotNode(
+        role="container",
+        children=[
+            NativeSnapshotNode(role="button", name="Item", ref=f"item{i}")
+            for i in range(105)
+        ],
+    )
+    state.current_snapshot = NativeSnapshot.from_root(root=root)
+
+    out = observation.find_by_text("Item")
+
+    assert "Search results for 'Item' (total=105, shown=100):" in out
+    assert "[ref:item99]" in out
+    assert "[ref:item100]" not in out
+    assert "... 5 more matches not shown." in out
+
+
+def test_container_output_limit_constants_match_contract():
+    assert container.LIST_CONTAINERS_SAMPLE_LIMIT == 20
+    assert container.WITHIN_CONTAINER_CANDIDATE_LIMIT == 100
+    assert container.ASSERT_VISIBLE_MATCH_LIMIT == 100
+
+
+def test_get_page_source_native_raw_option(monkeypatch):
+    xml = (
+        '<hierarchy index="0">'
+        '<node text="" enabled="true" clickable="false" resource-id="id" />'
+        "</hierarchy>"
+    )
+
+    class FakeDriver:
+        page_source = xml
+
+    state.driver = FakeDriver()
+    monkeypatch.setattr(observation, "resolve_context", lambda context, driver: "NATIVE_APP")
+    monkeypatch.setattr(
+        observation,
+        "using_context",
+        lambda target, driver, restore=True: nullcontext(),
+    )
+
+    compressed = observation.get_page_source()
+
+    assert compressed != xml
+    assert "index" not in compressed
+    assert "enabled" not in compressed
+    assert "clickable" not in compressed
+    assert observation.get_page_source(raw=True) == xml
+
+
 # ---------------------------------------------------------------------------
 # container.list_containers
 # ---------------------------------------------------------------------------
@@ -162,6 +215,27 @@ def test_list_containers_empty():
     root = NativeSnapshotNode(role="container", bounds=(0, 0, 100, 100))
     state.current_snapshot = NativeSnapshot.from_root(root=root)
     assert "コンテナが検出されませんでした" in container.list_containers()
+
+
+def test_list_containers_shows_20_sample_children_and_remaining_count():
+    children = [
+        NativeSnapshotNode(role="row", name=f"Item {index}", ref=f"item_{index}")
+        for index in range(1, 23)
+    ]
+    list_container = NativeSnapshotNode(
+        role="list",
+        ref="recycler",
+        container_kind="list",
+        children=children,
+    )
+    root = NativeSnapshotNode(role="container", children=[list_container])
+    state.current_snapshot = NativeSnapshot.from_root(root=root)
+
+    out = container.list_containers()
+
+    assert "Item 20" in out
+    assert "Item 21" not in out
+    assert "... 2 more children not shown." in out
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +301,28 @@ def test_within_container_accepts_bracket_form():
     assert "storage_row" in out
 
 
+def test_within_container_shows_100_candidates_and_remaining_count():
+    children = [
+        NativeSnapshotNode(role="row", name=f"Item {index}", ref=f"item_{index}")
+        for index in range(1, 102)
+    ]
+    list_container = NativeSnapshotNode(
+        role="list",
+        ref="recycler",
+        container_kind="list",
+        children=children,
+    )
+    root = NativeSnapshotNode(role="container", children=[list_container])
+    state.current_snapshot = NativeSnapshot.from_root(root=root)
+
+    out = container.within_container("recycler")
+
+    assert "[ref:item_100]" in out
+    assert "[ref:item_101]" not in out
+    assert "... 1 more candidates not shown." in out
+    assert "→ Use tap(ref) with the desired ref." in out
+
+
 # ---------------------------------------------------------------------------
 # container.assert_visible
 # ---------------------------------------------------------------------------
@@ -282,6 +378,36 @@ def test_assert_visible_by_text_action_target_suffix():
     assert "action target [ref:storage_row]" in out
 
 
+def test_assert_visible_native_shows_100_matches_and_remaining_count():
+    children = [
+        NativeSnapshotNode(role="button", name="Target", ref=f"target_{index}")
+        for index in range(1, 102)
+    ]
+    root = NativeSnapshotNode(role="container", children=children)
+    state.current_snapshot = NativeSnapshot.from_root(root=root)
+
+    out = container.assert_visible(text="Target")
+
+    assert "[ref:target_100]" in out
+    assert "[ref:target_101]" not in out
+    assert "... 1 more matches not shown." in out
+
+
+def test_assert_visible_web_shows_100_matches_and_remaining_count():
+    children = [
+        WebSnapshotNode(role="button", name="Target", ref=f"target_{index}")
+        for index in range(1, 102)
+    ]
+    root = WebSnapshotNode(role="document", children=children)
+    state.current_snapshot = WebSnapshot.from_root(root=root, context="WEBVIEW_1")
+
+    out = container.assert_visible(text="Target")
+
+    assert "[ref:target_100]" in out
+    assert "[ref:target_101]" not in out
+    assert "... 1 more matches not shown." in out
+
+
 # ---------------------------------------------------------------------------
 # observation.snapshot via fake driver (refresh path)
 # ---------------------------------------------------------------------------
@@ -295,6 +421,19 @@ class _FakeDriver:
 
     def get_window_size(self):
         return {"width": 1080, "height": 1920}
+
+
+class _FakeWebDriver:
+    page_source = "<html><body><button>Fallback</button></body></html>"
+    current_url = "https://example.com"
+    title = "Example"
+
+    def __init__(self):
+        self.execute_script_calls: list[tuple[str, int, int]] = []
+
+    def execute_script(self, script: str, depth: int, max_nodes: int) -> str:
+        self.execute_script_calls.append((script, depth, max_nodes))
+        return '{"tag":"body","role":"document","name":"","children":[{"tag":"button","name":"OK","children":[]}]}'
 
 
 def test_refresh_native_snapshot_via_fake_driver(monkeypatch):
@@ -325,3 +464,51 @@ def test_refresh_native_snapshot_via_fake_driver(monkeypatch):
     # current_snapshot was registered
     assert isinstance(state.current_snapshot, NativeSnapshot)
     assert state.current_snapshot.find_ref("ok") is not None
+
+
+def test_refresh_web_snapshot_uses_generator_default_limits(monkeypatch):
+    driver = _FakeWebDriver()
+    state.reset()
+    state.driver = driver
+    monkeypatch.setattr(
+        "appium_cli.tools.observation.resolve_context", lambda c, d: "WEBVIEW_1"
+    )
+    monkeypatch.setattr(
+        "appium_cli.tools.observation.is_web_context", lambda c: True
+    )
+    monkeypatch.setattr(
+        "appium_cli.tools.observation.using_context",
+        lambda *a, **k: nullcontext(),
+    )
+
+    out = observation.snapshot(context="webview")
+
+    assert "[ref:web_btn_ok]" in out
+    assert len(driver.execute_script_calls) == 1
+    _script, depth, max_nodes = driver.execute_script_calls[0]
+    assert depth == WEB_DEFAULT_MAX_DEPTH == 15
+    assert max_nodes == WEB_DEFAULT_MAX_NODES == 300
+
+
+def test_refresh_web_snapshot_preserves_explicit_expanded_limits(monkeypatch):
+    driver = _FakeWebDriver()
+    state.reset()
+    state.driver = driver
+    monkeypatch.setattr(
+        "appium_cli.tools.observation.resolve_context", lambda c, d: "WEBVIEW_1"
+    )
+    monkeypatch.setattr(
+        "appium_cli.tools.observation.is_web_context", lambda c: True
+    )
+    monkeypatch.setattr(
+        "appium_cli.tools.observation.using_context",
+        lambda *a, **k: nullcontext(),
+    )
+
+    out = observation.snapshot(context="webview", depth=50, max_nodes=2000)
+
+    assert "[ref:web_btn_ok]" in out
+    assert len(driver.execute_script_calls) == 1
+    _script, depth, max_nodes = driver.execute_script_calls[0]
+    assert depth == 50
+    assert max_nodes == 2000

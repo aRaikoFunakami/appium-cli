@@ -36,6 +36,21 @@ def test_directional_aliases_route_to_existing_daemon_tools(monkeypatch) -> None
     ]
 
 
+def test_get_page_source_exposes_raw_option(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None]] = []
+
+    def fake_request(tool: str, args: dict | None = None):
+        calls.append((tool, args))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(app, ["get_page_source", "--context", "native", "--raw"])
+
+    assert result.exit_code == 0
+    assert calls == [("get_page_source", {"context": "native", "raw": True})]
+
+
 def test_all_top_level_commands_expose_json_option() -> None:
     runner = CliRunner()
     commands = [

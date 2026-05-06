@@ -10,7 +10,12 @@ from appium_cli.core.native_snapshot import NativeSnapshot
 from appium_cli.core.native_snapshot_generator import NativeSnapshotGenerator
 from appium_cli.core.snapshot import compress_xml
 from appium_cli.core.web_snapshot import WebSnapshot
-from appium_cli.core.web_snapshot_generator import DOM_EXTRACTION_SCRIPT, WebSnapshotGenerator
+from appium_cli.core.web_snapshot_generator import (
+    DOM_EXTRACTION_SCRIPT,
+    WEB_DEFAULT_MAX_DEPTH,
+    WEB_DEFAULT_MAX_NODES,
+    WebSnapshotGenerator,
+)
 from appium_cli.daemon import state
 from appium_cli.tools.contexts import (
     NATIVE_CONTEXT,
@@ -23,6 +28,7 @@ from appium_cli.utils.errors import AppiumCliError
 from appium_cli.utils.exit_codes import FEATURE_NOT_ENABLED
 
 logger = logging.getLogger(__name__)
+_FIND_BY_TEXT_MAX_RESULTS = 100
 
 # Singleton web snapshot generator (stateless, safe to share)
 _web_snapshot_generator = WebSnapshotGenerator()
@@ -102,7 +108,11 @@ def _refresh_web_snapshot(
     # Try JS DOM extraction first
     dom_tree: dict[str, Any] | list[dict[str, Any]] | None = None
     try:
-        raw = driver.execute_script(DOM_EXTRACTION_SCRIPT, depth or 15, max_nodes or 300)
+        raw = driver.execute_script(
+            DOM_EXTRACTION_SCRIPT,
+            depth if depth is not None else WEB_DEFAULT_MAX_DEPTH,
+            max_nodes if max_nodes is not None else WEB_DEFAULT_MAX_NODES,
+        )
         if isinstance(raw, str):
             dom_tree = json.loads(raw)
         elif isinstance(raw, (dict, list)):
@@ -224,8 +234,11 @@ def find_by_text(text: str, scope: str = "full") -> str:
     matches = snapshot_obj.find_text(text, inputs_only=inputs_only)
     if not matches:
         return f"No elements matching '{text}' found."
-    lines = [f"Search results for '{text}' ({len(matches)} matches):"]
-    for match in matches[:10]:
+    shown_matches = matches[:_FIND_BY_TEXT_MAX_RESULTS]
+    lines = [
+        f"Search results for '{text}' (total={len(matches)}, shown={len(shown_matches)}):"
+    ]
+    for match in shown_matches:
         target_ref = match.target.ref if match.target and match.target.ref else ""
         if match.node.ref:
             lines.append(
@@ -239,6 +252,8 @@ def find_by_text(text: str, scope: str = "full") -> str:
             lines.append(
                 f"  {match.node.role} \"{match.node.name}\" (score={match.score})"
             )
+    if len(matches) > len(shown_matches):
+        lines.append(f"... {len(matches) - len(shown_matches)} more matches not shown.")
     return "\n".join(lines)
 
 
@@ -279,7 +294,7 @@ def screenshot(region: str = "full", filename: str = "") -> str:
     return json.dumps(result)
 
 
-def get_page_source(context: str = "native") -> str:
+def get_page_source(context: str = "native", raw: bool = False) -> str:
     """Return page source: compressed XML for native, raw HTML for web."""
     driver = _require_driver()
     target = resolve_context(context, driver)
@@ -289,7 +304,8 @@ def get_page_source(context: str = "native") -> str:
             return driver.page_source or ""
     else:
         with using_context(target, driver, restore=True):
-            return compress_xml(driver.page_source)
+            page_source = driver.page_source or ""
+            return page_source if raw else compress_xml(page_source)
 
 
 def webview_url() -> str:

@@ -100,11 +100,12 @@ def screenshot(
 
 def get_page_source(
     context: Annotated[str, typer.Option("--context", help="Context: native, webview, or exact name.")] = "native",
+    raw: Annotated[bool, typer.Option("--raw", help="Return uncompressed native XML. Web page source is always raw.")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
     """Return page source: compressed XML for native, raw HTML for web."""
 
-    _daemon_request("get_page_source", json_output, {"context": context})
+    _daemon_request("get_page_source", json_output, {"context": context, "raw": raw})
 
 
 def tap(ref: str, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:

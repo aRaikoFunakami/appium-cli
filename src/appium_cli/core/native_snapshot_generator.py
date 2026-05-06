@@ -122,6 +122,8 @@ _HORIZONTAL_SCROLL_CLASSES = frozenset(
 
 _PACKAGE_PREFIX_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*:id/")
 
+_DESCRIPTIVE_REF_MAX_LENGTH = 128
+
 _ROLE_PREFIXES: dict[str, str] = {
     "button": "btn",
     "textbox": "input",
@@ -656,12 +658,12 @@ class NativeSnapshotGenerator:
             return self._unique_ref(base)
 
         if node.content_desc:
-            base = self._to_snake_case(node.content_desc)[:16]
+            base = self._to_snake_case(node.content_desc)[:_DESCRIPTIVE_REF_MAX_LENGTH]
             return self._unique_ref(base)
 
         if node.name:
             prefix = _ROLE_PREFIXES.get(node.role, node.role)
-            name_part = self._to_snake_case(node.name)[:16]
+            name_part = self._to_snake_case(node.name)[:_DESCRIPTIVE_REF_MAX_LENGTH]
             base = f"{prefix}_{name_part}" if name_part else prefix
             return self._unique_ref(base)
 

@@ -24,6 +24,11 @@ _ACTIONABLE_ROLES = {
     "textbox",
 }
 
+_TRUNCATION_WARNING = (
+    "WARNING: Snapshot output is truncated; some nodes are omitted. "
+    "Increase --max-nodes/--depth or narrow the scope."
+)
+
 
 @dataclass
 class WebSnapshotNode:
@@ -162,6 +167,7 @@ class WebSnapshot:
             lines.append(f"url: {self.url}")
         if self.truncated:
             lines.append("truncated: true")
+            lines.append(_TRUNCATION_WARNING)
         lines.append("")
 
         max_depth = None

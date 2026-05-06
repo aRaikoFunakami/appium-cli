@@ -243,6 +243,19 @@ def test_to_text_renders_header_and_tree():
     assert "alerts:" in out
 
 
+def test_to_text_warns_when_truncated():
+    root = _make_node(
+        role="container",
+        children=[_make_node(role="button", name="OK", ref="ok")],
+    )
+    snap = NativeSnapshot.from_root(root=root, truncated=True)
+    out = snap.to_text()
+
+    assert "truncated: true" in out
+    assert "WARNING: Snapshot output is truncated; some nodes are omitted." in out
+    assert "Increase --max-nodes/--depth or narrow the scope." in out
+
+
 def test_to_text_scope_inputs():
     tb = _make_node(role="textbox", name="Email", ref="email")
     btn = _make_node(role="button", name="Submit", ref="submit")

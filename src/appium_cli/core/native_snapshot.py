@@ -24,6 +24,11 @@ _ACTIONABLE_ROLES = {
 
 _LAYER_CONTAINER_KINDS = {"dialog", "overlay", "sheet"}
 
+_TRUNCATION_WARNING = (
+    "WARNING: Snapshot output is truncated; some nodes are omitted. "
+    "Increase --max-nodes/--depth or narrow the scope."
+)
+
 
 @dataclass
 class NativeSnapshotNode:
@@ -278,6 +283,7 @@ class NativeSnapshot:
             lines.append(f"app_info: {self.app_info}")
         if self.truncated:
             lines.append("truncated: true")
+            lines.append(_TRUNCATION_WARNING)
         lines.append("")
 
         max_depth: int | None = None

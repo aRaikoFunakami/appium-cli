@@ -115,6 +115,13 @@ class TestSchemaStructure:
         assert tool is not None
         assert "required" not in tool.parameters or tool.parameters.get("required") == []
 
+    def test_get_page_source_schema_includes_raw(self) -> None:
+        tool = get_tool("get_page_source")
+        assert tool is not None
+        raw = tool.parameters["properties"]["raw"]
+        assert raw["type"] == "boolean"
+        assert raw["default"] is False
+
 
 class TestKnownDaemonTools:
     def test_includes_base_tools(self) -> None:

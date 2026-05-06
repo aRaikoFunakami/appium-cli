@@ -120,7 +120,8 @@ _add("screenshot", "Take a screenshot and return base64 JSON.",
 _add("get_page_source", "Return page source: compressed XML for native, raw HTML for web.",
      parameters=_schema({
          "context": _str_param("Context: native, webview, or exact name.", default="native"),
-     }))
+         "raw": _bool_param("Return uncompressed native XML. Web page source is always raw."),
+      }))
 
 _add("webview_url", "Return the current WebView URL.")
 _add("webview_title", "Return the current WebView page title.")

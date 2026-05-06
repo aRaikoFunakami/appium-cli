@@ -9,8 +9,11 @@ from typing import Any
 from .snapshot import LocatorStrategy
 from .web_snapshot import WebSnapshot, WebSnapshotNode
 
-_DEFAULT_MAX_DEPTH = 15
-_DEFAULT_MAX_NODES = 300
+WEB_DEFAULT_MAX_DEPTH = 15
+WEB_DEFAULT_MAX_NODES = 300
+WEB_REF_TEXT_LIMIT = 128
+WEB_LOCATOR_TEXT_LIMIT = 128
+WEB_DOM_TEXT_LIMIT = 1000
 _WEB_PREFIX = "web_"
 
 _TAG_TO_ROLE: dict[str, str] = {
@@ -82,14 +85,14 @@ _ACTIONABLE_TAGS = {"a", "button", "input", "textarea", "select", "option"}
 
 DOM_EXTRACTION_SCRIPT = """
 return (function(maxDepth, maxNodes) {
-    maxDepth = maxDepth || 15;
-    maxNodes = maxNodes || 300;
+    maxDepth = maxDepth || __WEB_DEFAULT_MAX_DEPTH__;
+    maxNodes = maxNodes || __WEB_DEFAULT_MAX_NODES__;
     var seen = 0;
     var truncated = false;
 
     function clean(text, limit) {
         if (!text) return '';
-        return String(text).replace(/\\s+/g, ' ').trim().substring(0, limit || 120);
+        return String(text).replace(/\\s+/g, ' ').trim().substring(0, limit || __WEB_DOM_TEXT_LIMIT__);
     }
 
     function directText(el) {
@@ -97,11 +100,11 @@ return (function(maxDepth, maxNodes) {
         for (var i = 0; i < el.childNodes.length; i++) {
             var child = el.childNodes[i];
             if (child.nodeType === Node.TEXT_NODE) {
-                var text = clean(child.nodeValue, 120);
+                var text = clean(child.nodeValue, __WEB_DOM_TEXT_LIMIT__);
                 if (text) parts.push(text);
             }
         }
-        return clean(parts.join(' '), 120);
+        return clean(parts.join(' '), __WEB_DOM_TEXT_LIMIT__);
     }
 
     function isHidden(el) {
@@ -155,7 +158,7 @@ return (function(maxDepth, maxNodes) {
             (tag === 'input' ? el.value : '') ||
             (['link', 'button', 'heading', 'label', 'option', 'tab', 'menuitem'].includes(role) ? el.innerText : '') ||
             directText(el),
-            120
+            __WEB_DOM_TEXT_LIMIT__
         );
     }
 
@@ -231,7 +234,9 @@ return (function(maxDepth, maxNodes) {
     root.truncated = truncated;
     return JSON.stringify(root);
 })(arguments[0], arguments[1]);
-"""
+""".replace("__WEB_DEFAULT_MAX_DEPTH__", str(WEB_DEFAULT_MAX_DEPTH)).replace(
+    "__WEB_DEFAULT_MAX_NODES__", str(WEB_DEFAULT_MAX_NODES)
+).replace("__WEB_DOM_TEXT_LIMIT__", str(WEB_DOM_TEXT_LIMIT))
 
 _SAFE_CHARS_RE = re.compile(r"[^a-z0-9_]")
 _MULTI_UNDERSCORE_RE = re.compile(r"_{2,}")
@@ -242,7 +247,7 @@ def _to_snake(text: str) -> str:
     lower = text.lower().strip()
     safe = _SAFE_CHARS_RE.sub("_", lower)
     safe = _MULTI_UNDERSCORE_RE.sub("_", safe).strip("_")
-    return safe[:40] if safe else ""
+    return safe[:WEB_REF_TEXT_LIMIT] if safe else ""
 
 
 def _derive_ref(elem: dict[str, Any], role: str) -> str:
@@ -257,10 +262,10 @@ def _derive_ref(elem: dict[str, Any], role: str) -> str:
     prefix = _ROLE_PREFIX.get(role, role)
     name = str(elem.get("name") or "").strip()
     if name:
-        return _WEB_PREFIX + prefix + "_" + _to_snake(name)[:25]
+        return _WEB_PREFIX + prefix + "_" + _to_snake(name)[:WEB_REF_TEXT_LIMIT]
     placeholder = str(elem.get("placeholder") or "").strip()
     if placeholder:
-        return _WEB_PREFIX + prefix + "_" + _to_snake(placeholder)[:25]
+        return _WEB_PREFIX + prefix + "_" + _to_snake(placeholder)[:WEB_REF_TEXT_LIMIT]
     return _WEB_PREFIX + prefix
 
 
@@ -307,8 +312,8 @@ def _build_strategies(elem: dict[str, Any]) -> list[LocatorStrategy]:
     tag = str(elem.get("tag") or "").lower()
     name = str(elem.get("name") or "").strip()
     if name and tag in ("a", "button"):
-        short = name[:50]
-        if len(name) <= 50:
+        short = name[:WEB_LOCATOR_TEXT_LIMIT]
+        if len(name) <= WEB_LOCATOR_TEXT_LIMIT:
             strategies.append(
                 LocatorStrategy(
                     by="link text" if tag == "a" else "xpath",
@@ -323,7 +328,7 @@ def _build_strategies(elem: dict[str, Any]) -> list[LocatorStrategy]:
                 )
             )
     elif name:
-        literal = _xpath_literal(name[:50])
+        literal = _xpath_literal(name[:WEB_LOCATOR_TEXT_LIMIT])
         role = str(elem.get("role") or "").lower()
         if role and role != "element":
             strategies.append(
@@ -388,8 +393,8 @@ class WebSnapshotGenerator:
         """Build a tree-first WebSnapshot from JS-extracted DOM data."""
         del scope, boxes
         used_refs: set[str] = set()
-        counter = _NodeCounter(limit=max_nodes or _DEFAULT_MAX_NODES)
-        max_depth = depth if depth is not None else _DEFAULT_MAX_DEPTH
+        counter = _NodeCounter(limit=max_nodes or WEB_DEFAULT_MAX_NODES)
+        max_depth = depth if depth is not None else WEB_DEFAULT_MAX_DEPTH
 
         if isinstance(dom_tree, list):
             dom_tree = {
@@ -434,7 +439,7 @@ class WebSnapshotGenerator:
         boxes: bool = False,
     ) -> tuple[WebSnapshot, dict[str, Any]]:
         """Fallback: parse raw HTML into the same WebSnapshot shape."""
-        parser = _HTMLSnapshotParser(max_nodes=max_nodes or _DEFAULT_MAX_NODES)
+        parser = _HTMLSnapshotParser(max_nodes=max_nodes or WEB_DEFAULT_MAX_NODES)
         parser.feed(html_source)
         root = parser.root
         if title and not root.get("name"):
@@ -559,9 +564,9 @@ class _HTMLSnapshotParser(html.parser.HTMLParser):
             return
         parent = self._stack[-1]
         if parent.get("name"):
-            parent["name"] = f"{parent['name']} {text}"[:120]
+            parent["name"] = f"{parent['name']} {text}"[:WEB_DOM_TEXT_LIMIT]
         else:
-            parent["name"] = text[:120]
+            parent["name"] = text[:WEB_DOM_TEXT_LIMIT]
 
     def handle_endtag(self, tag: str) -> None:
         tag_lower = tag.lower()

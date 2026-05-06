@@ -7,6 +7,11 @@ from appium_cli.core.web_snapshot import WebSnapshot
 from appium_cli.daemon import state
 
 
+LIST_CONTAINERS_SAMPLE_LIMIT = 20
+WITHIN_CONTAINER_CANDIDATE_LIMIT = 100
+ASSERT_VISIBLE_MATCH_LIMIT = 100
+
+
 def _snapshot_or_error():
     if state.current_snapshot is None:
         return None, "ERROR: スナップショットがありません。先に snapshot() を呼んでください。"
@@ -25,6 +30,10 @@ def _container_children(node: NativeSnapshotNode) -> list[NativeSnapshotNode]:
         if descendant.ref:
             result.append(descendant)
     return result
+
+
+def _remaining_line(total: int, shown: int, label: str) -> str:
+    return f"... {total - shown} more {label} not shown."
 
 
 def list_containers() -> str:
@@ -47,9 +56,18 @@ def list_containers() -> str:
             lines.append("   scrollable: no")
         visible_children = _container_children(container)
         lines.append(f"   children: {len(visible_children)} visible/total")
-        sample = [child.name for child in visible_children[:3] if child.name]
+        shown_children = min(len(visible_children), LIST_CONTAINERS_SAMPLE_LIMIT)
+        sample = [
+            child.name
+            for child in visible_children[:LIST_CONTAINERS_SAMPLE_LIMIT]
+            if child.name
+        ]
         if sample:
             lines.append("   sample: " + ", ".join(sample))
+        if len(visible_children) > shown_children:
+            lines.append(
+                "   " + _remaining_line(len(visible_children), shown_children, "children")
+            )
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -109,7 +127,12 @@ def within_container(container_ref: str, role: str = "", position: str = "first"
     if len(elements) == 1:
         return elements[0].to_line()
     lines = [f"{len(elements)} 件の候補:"]
-    lines.extend(f"  {item.to_line()}" for item in elements[:10])
+    shown_elements = min(len(elements), WITHIN_CONTAINER_CANDIDATE_LIMIT)
+    lines.extend(
+        f"  {item.to_line()}" for item in elements[:WITHIN_CONTAINER_CANDIDATE_LIMIT]
+    )
+    if len(elements) > shown_elements:
+        lines.append(_remaining_line(len(elements), shown_elements, "candidates"))
     lines.append("→ Use tap(ref) with the desired ref.")
     return "\n".join(lines)
 
@@ -136,17 +159,23 @@ def assert_visible(text: str = "", ref: str = "") -> str:
         if not matches:
             return f"visible=false\n'{text}' が見つかりません。"
         lines = [f"visible=true ({len(matches)} 件)"]
-        for match in matches[:5]:
+        shown_matches = min(len(matches), ASSERT_VISIBLE_MATCH_LIMIT)
+        for match in matches[:ASSERT_VISIBLE_MATCH_LIMIT]:
             target_ref = match.target.ref if match.target and match.target.ref else ""
             suffix = f" -> action target [ref:{target_ref}]" if target_ref and target_ref != match.node.ref else ""
             lines.append(f"  {match.node.to_text()}{suffix}")
+        if len(matches) > shown_matches:
+            lines.append(_remaining_line(len(matches), shown_matches, "matches"))
         return "\n".join(lines)
     matches = snapshot.find_text(text)
     if not matches:
         return f"visible=false\n'{text}' が見つかりません。"
     lines = [f"visible=true ({len(matches)} 件)"]
-    for match in matches[:5]:
+    shown_matches = min(len(matches), ASSERT_VISIBLE_MATCH_LIMIT)
+    for match in matches[:ASSERT_VISIBLE_MATCH_LIMIT]:
         target_ref = match.target.ref if match.target and match.target.ref else ""
         suffix = f" -> action target [ref:{target_ref}]" if target_ref and target_ref != match.node.ref else ""
         lines.append(f"  {match.node.to_line()}{suffix}")
+    if len(matches) > shown_matches:
+        lines.append(_remaining_line(len(matches), shown_matches, "matches"))
     return "\n".join(lines)
