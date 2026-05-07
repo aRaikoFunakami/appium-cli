@@ -170,16 +170,31 @@ class WebSnapshot:
             lines.append(_TRUNCATION_WARNING)
         lines.append("")
 
+        render_scope = scope
         max_depth = None
-        if scope and scope.startswith("depth:"):
+        if scope and ",depth:" in scope:
+            render_scope, depth_text = scope.rsplit(",depth:", 1)
+            try:
+                max_depth = int(depth_text)
+            except ValueError:
+                max_depth = None
+        elif scope and scope.startswith("depth:"):
             try:
                 max_depth = int(scope.split(":", 1)[1])
             except ValueError:
                 max_depth = None
-        if scope == "inputs":
+        if render_scope == "inputs":
             for node in self.iter_nodes():
                 if node.role == "textbox":
                     lines.append(node.to_line(include_bounds=boxes))
+        elif render_scope and render_scope.startswith("ref:"):
+            target_ref = render_scope.split(":", 1)[1]
+            subtree_root = self.find_ref(target_ref) or self.root
+            self._render_node(subtree_root, lines, indent=0, boxes=boxes, max_depth=max_depth)
+        elif render_scope and render_scope.startswith("near:"):
+            target_ref = render_scope.split(":", 1)[1]
+            subtree_root = self._find_near_ref_root(target_ref) or self.root
+            self._render_node(subtree_root, lines, indent=0, boxes=boxes, max_depth=max_depth)
         else:
             self._render_node(self.root, lines, indent=0, boxes=boxes, max_depth=max_depth)
 
@@ -241,6 +256,28 @@ class WebSnapshot:
         walk(self.root, None)
         matches.sort(key=lambda item: item.score, reverse=True)
         return matches
+
+    def _find_near_ref_root(self, ref: str) -> WebSnapshotNode | None:
+        """Return the nearest useful ancestor for a ref, or the ref node itself."""
+        clean = ref.strip().strip("[]").removeprefix("ref:")
+        path: list[WebSnapshotNode] = []
+
+        def walk(node: WebSnapshotNode) -> bool:
+            path.append(node)
+            if node.ref == clean:
+                return True
+            for child in node.children:
+                if walk(child):
+                    return True
+            path.pop()
+            return False
+
+        if not walk(self.root):
+            return None
+        for ancestor in reversed(path[:-1]):
+            if not _is_transparent_wrapper(ancestor):
+                return ancestor
+        return path[-1]
 
     @staticmethod
     def _render_node(

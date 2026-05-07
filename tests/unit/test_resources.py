@@ -16,9 +16,12 @@ def test_skill_top_level_documents_command_catalog() -> None:
     root = skills_source_root()
     text = (Path(root) / "appium-cli" / "SKILL.md").read_text(encoding="utf-8")
 
-    assert "## Commands" in text
-    assert "### Core actions" in text
-    assert "## Argument order rules" in text
+    assert "## Observation commands" in text
+    assert "## Actions" in text
+    assert "## Core workflow" in text
+    assert "appium-cli --raw snapshot > before.yml" in text
+    assert "appium-cli snapshot_show latest" in text
+    assert "appium-cli snapshot_refs latest --role=button" in text
+    assert "appium-cli web_query \"input,button,a\"" in text
     assert "appium-cli scroll_down recycler_view" in text
-    assert "`scroll_down` scrolls the full visible screen" in text
-    assert "appium-cli scroll_element xpath \"//*[@scrollable='true']\" --direction=up" in text
+    assert "Action commands automatically append a post-action snapshot" in text

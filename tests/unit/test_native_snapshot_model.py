@@ -310,6 +310,23 @@ def test_to_text_scope_near_ref():
     assert "Outside" not in out
 
 
+def test_to_text_scope_ref_renders_exact_subtree_with_depth():
+    great = _make_node(role="text", name="great")
+    child = _make_node(role="text", name="child", children=[great])
+    row = _make_node(role="row", name="row", ref="row1", children=[child])
+    other = _make_node(role="button", name="Outside", ref="out")
+    root = _make_node(role="container", children=[row, other])
+    snap = NativeSnapshot.from_root(root=root)
+
+    out = snap.to_text(scope="ref:row1,depth:0")
+
+    assert "row1" in out
+    assert "child" not in out
+    assert "great" not in out
+    assert "Outside" not in out
+    assert "- ..." in out
+
+
 def test_compute_diff_added_removed_changed():
     root_a = _make_node(
         role="container",

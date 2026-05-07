@@ -13,10 +13,10 @@ from appium_cli.cli.server import ServerState
 
 
 def test_directional_aliases_route_to_existing_daemon_tools(monkeypatch) -> None:
-    calls: list[tuple[str, dict | None]] = []
+    calls: list[tuple[str, dict | None, bool]] = []
 
-    def fake_request(tool: str, args: dict | None = None):
-        calls.append((tool, args))
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
         return {"ok": True, "text": "OK", "data": {}}
 
     monkeypatch.setattr(tools_module, "request", fake_request)
@@ -30,17 +30,17 @@ def test_directional_aliases_route_to_existing_daemon_tools(monkeypatch) -> None
     assert result.exit_code == 0
 
     assert calls == [
-        ("scroll", {"direction": "down", "ref": "recycler_view", "percent": 0.5}),
-        ("swipe", {"direction": "left", "ref": "", "percent": 0.8}),
-        ("fling", {"direction": "up", "ref": "recycler_view", "speed": 1000}),
+        ("scroll", {"direction": "down", "ref": "recycler_view", "percent": 0.5}, False),
+        ("swipe", {"direction": "left", "ref": "", "percent": 0.8}, False),
+        ("fling", {"direction": "up", "ref": "recycler_view", "speed": 1000}, False),
     ]
 
 
 def test_get_page_source_exposes_raw_option(monkeypatch) -> None:
-    calls: list[tuple[str, dict | None]] = []
+    calls: list[tuple[str, dict | None, bool]] = []
 
-    def fake_request(tool: str, args: dict | None = None):
-        calls.append((tool, args))
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
         return {"ok": True, "text": "OK", "data": {}}
 
     monkeypatch.setattr(tools_module, "request", fake_request)
@@ -48,7 +48,130 @@ def test_get_page_source_exposes_raw_option(monkeypatch) -> None:
     result = CliRunner().invoke(app, ["get_page_source", "--context", "native", "--raw"])
 
     assert result.exit_code == 0
-    assert calls == [("get_page_source", {"context": "native", "raw": True})]
+    assert calls == [("get_page_source", {"context": "native", "raw": True}, False)]
+
+
+def test_global_raw_before_command_passes_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "snapshot text", "data": {"wrapped": True}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(app, ["--raw", "snapshot"])
+
+    assert result.exit_code == 0
+    assert result.output == "snapshot text\n"
+    assert calls == [("snapshot", {"scope": "full", "context": "native"}, True)]
+
+
+def test_snapshot_positional_target_passes_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "snapshot text", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(
+        app, ["--raw", "snapshot", "ok", "--depth", "1", "--filename", "scoped.yml"]
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "snapshot",
+            {
+                "scope": "full",
+                "context": "native",
+                "target": "ok",
+                "depth": 1,
+                "filename": "scoped.yml",
+            },
+            True,
+        )
+    ]
+
+
+def test_web_snapshot_positional_target_passes_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "snapshot text", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(app, ["--raw", "web_snapshot", "web_ok", "--depth", "2"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("web_snapshot", {"scope": "full", "target": "web_ok", "depth": 2}, True)
+    ]
+
+
+def test_snapshot_artifact_navigation_commands_route_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+    runner = CliRunner()
+
+    assert runner.invoke(
+        app, ["snapshot_show", "latest", "--artifact", "refs", "--ref", "ok"]
+    ).exit_code == 0
+    assert runner.invoke(
+        app, ["snapshot_search", "Storage", "--snapshot", "latest", "--role", "row"]
+    ).exit_code == 0
+    assert runner.invoke(app, ["--raw", "snapshot_refs", "latest", "ok"]).exit_code == 0
+
+    assert calls == [
+        ("snapshot_show", {"snapshot_id": "latest", "artifact": "refs", "ref": "ok"}, False),
+        ("snapshot_search", {"text": "Storage", "snapshot_id": "latest", "role": "row"}, False),
+        ("snapshot_refs", {"snapshot_id": "latest", "ref": "ok", "role": ""}, True),
+    ]
+
+
+def test_locator_query_commands_route_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+    runner = CliRunner()
+
+    assert runner.invoke(app, ["--raw", "generate_locator", "ok"]).exit_code == 0
+    assert runner.invoke(
+        app, ["web_query", "input[name=q]", "--attrs", "data-testid,autocomplete", "--limit", "5"]
+    ).exit_code == 0
+
+    assert calls == [
+        ("generate_locator", {"ref": "ok"}, True),
+        ("web_query", {"selector": "input[name=q]", "attrs": "data-testid,autocomplete", "limit": 5}, False),
+    ]
+
+
+def test_global_raw_takes_precedence_over_json_for_tool_output(monkeypatch) -> None:
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        assert tool == "get_device_info"
+        assert args is None
+        assert raw is True
+        return {"ok": True, "text": "Device Information:\nModel: Pixel\n", "data": {"model": "Pixel"}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(app, ["--raw", "get_device_info", "--json"])
+
+    assert result.exit_code == 0
+    assert result.output == "Device Information:\nModel: Pixel\n"
 
 
 def test_all_top_level_commands_expose_json_option() -> None:
@@ -57,6 +180,11 @@ def test_all_top_level_commands_expose_json_option() -> None:
         "doctor",
         "devices",
         "snapshot",
+        "snapshot_show",
+        "snapshot_search",
+        "snapshot_refs",
+        "generate_locator",
+        "web_query",
         "describe",
         "find_by_text",
         "screenshot",

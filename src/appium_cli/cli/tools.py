@@ -7,21 +7,23 @@ from typing import Annotated, Any
 
 import typer
 
+from appium_cli.cli.runtime import get_raw_output
 from appium_cli.daemon.client import request
 from appium_cli.utils import exit_codes
 
 
 def _daemon_request(tool: str, json_output: bool, args: dict | None = None) -> None:
+    raw_output = get_raw_output()
     try:
-        response = request(tool, args=args)
+        response = request(tool, args=args, raw=raw_output)
     except (FileNotFoundError, ConnectionError, OSError) as exc:
-        if json_output:
+        if json_output and not raw_output:
             typer.echo(json.dumps({"ok": False, "error": "Session daemon is not running", "detail": str(exc)}))
         else:
             typer.echo("ERROR: Session daemon is not running", err=True)
         raise typer.Exit(exit_codes.STOPPED) from exc
 
-    if json_output:
+    if json_output and not raw_output:
         typer.echo(json.dumps(response, indent=2))
     elif response.get("ok"):
         typer.echo(response.get("text", ""), nl=not str(response.get("text", "")).endswith("\n"))
@@ -44,6 +46,7 @@ def get_device_info(
 
 
 def snapshot(
+    target: Annotated[str, typer.Argument(help="Element ref to scope the snapshot around.")] = "",
     scope: Annotated[str, typer.Option("--scope", help="Snapshot scope.")] = "full",
     context: Annotated[str, typer.Option("--context", help="Context: native, webview, auto, current, or exact name.")] = "native",
     depth: Annotated[int | None, typer.Option("--depth", help="Limit web snapshot tree to N levels.")] = None,
@@ -55,6 +58,8 @@ def snapshot(
     """Get an accessibility snapshot with refs."""
 
     args: dict[str, Any] = {"scope": scope, "context": context}
+    if target:
+        args["target"] = target
     if depth is not None:
         args["depth"] = depth
     if max_nodes is not None:
@@ -64,6 +69,71 @@ def snapshot(
     if filename:
         args["filename"] = filename
     _daemon_request("snapshot", json_output, args)
+
+
+def snapshot_show(
+    snapshot_id: Annotated[str, typer.Argument(help="Snapshot id or 'latest'.")] = "latest",
+    artifact: Annotated[str, typer.Option("--artifact", help="Artifact: compact, full, refs, index, or meta.")] = "compact",
+    ref: Annotated[str, typer.Option("--ref", help="Show detail for one ref from the snapshot.")] = "",
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """Show a persisted snapshot artifact without refreshing device state."""
+
+    _daemon_request(
+        "snapshot_show",
+        json_output,
+        {"snapshot_id": snapshot_id, "artifact": artifact, "ref": ref},
+    )
+
+
+def snapshot_search(
+    text: Annotated[str, typer.Argument(help="Text to search in the latest snapshot artifacts.")],
+    snapshot_id: Annotated[str, typer.Option("--snapshot", help="Snapshot id or 'latest'.")] = "latest",
+    role: Annotated[str, typer.Option("--role", help="Filter results by role.")] = "",
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """Search persisted snapshot index/ref artifacts without refreshing device state."""
+
+    _daemon_request(
+        "snapshot_search",
+        json_output,
+        {"text": text, "snapshot_id": snapshot_id, "role": role},
+    )
+
+
+def snapshot_refs(
+    snapshot_id: Annotated[str, typer.Argument(help="Snapshot id or 'latest'.")] = "latest",
+    ref: Annotated[str, typer.Argument(help="Optional ref to show in detail.")] = "",
+    role: Annotated[str, typer.Option("--role", help="Filter listed refs by role.")] = "",
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """List refs or show a single ref from a persisted snapshot artifact."""
+
+    _daemon_request(
+        "snapshot_refs",
+        json_output,
+        {"snapshot_id": snapshot_id, "ref": ref, "role": role},
+    )
+
+
+def generate_locator(
+    ref: Annotated[str, typer.Argument(help="Element ref to generate a locator for.")],
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """Generate the best stored durable locator for a ref."""
+
+    _daemon_request("generate_locator", json_output, {"ref": ref})
+
+
+def web_query(
+    selector: Annotated[str, typer.Argument(help="CSS selector to query in the current WebView/Chrome DOM.")],
+    attrs: Annotated[str, typer.Option("--attrs", help="Comma-separated extra attributes to include.")] = "",
+    limit: Annotated[int, typer.Option("--limit", help="Maximum number of matches to return.")] = 20,
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """Query the current WebView/Chrome DOM by CSS selector."""
+
+    _daemon_request("web_query", json_output, {"selector": selector, "attrs": attrs, "limit": limit})
 
 
 def describe(
@@ -357,6 +427,7 @@ def webview_status(
 
 
 def web_snapshot(
+    target: Annotated[str, typer.Argument(help="Element ref to scope the WebView snapshot around.")] = "",
     scope: Annotated[str, typer.Option("--scope", help="Snapshot scope.")] = "full",
     depth: Annotated[int | None, typer.Option("--depth", help="Limit tree to N levels.")] = None,
     max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit web snapshot tree to N nodes.")] = None,
@@ -366,6 +437,8 @@ def web_snapshot(
 ) -> None:
     """Take a WebView DOM snapshot (alias for snapshot --context=webview)."""
     args: dict[str, Any] = {"scope": scope}
+    if target:
+        args["target"] = target
     if depth is not None:
         args["depth"] = depth
     if max_nodes is not None:

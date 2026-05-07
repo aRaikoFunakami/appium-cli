@@ -11,10 +11,15 @@ from typing import Any
 from appium_cli.utils.paths import session_socket_path
 
 
-def request(tool: str, args: dict[str, Any] | None = None, socket_path: Path | None = None) -> dict[str, Any]:
+def request(
+    tool: str,
+    args: dict[str, Any] | None = None,
+    socket_path: Path | None = None,
+    raw: bool = False,
+) -> dict[str, Any]:
     if socket_path is None:
         socket_path = session_socket_path()
-    payload = {"id": str(uuid.uuid4()), "tool": tool, "args": args or {}}
+    payload = {"id": str(uuid.uuid4()), "tool": tool, "args": args or {}, "raw": raw}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.connect(str(socket_path))
         client.sendall((json.dumps(payload) + "\n").encode("utf-8"))

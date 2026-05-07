@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from appium_cli.daemon import state
+from appium_cli.tools.actions import _ok_with_snapshot
 from appium_cli.tools.contexts import is_web_context
 from appium_cli.utils.errors import AppiumCliError
 from appium_cli.utils.exit_codes import FEATURE_NOT_ENABLED
@@ -27,9 +28,9 @@ def goto(url: str) -> str:
     driver.get(url)
     try:
         actual_url = driver.current_url or url
-        return f"Navigated to {actual_url}"
+        return _ok_with_snapshot(message=f"Navigated to {actual_url}")
     except Exception:
-        return f"Navigated to {url}"
+        return _ok_with_snapshot(message=f"Navigated to {url}")
 
 
 def go_back() -> str:
@@ -38,9 +39,9 @@ def go_back() -> str:
     driver.back()
     try:
         url = driver.current_url or ""
-        return f"Navigated back to {url}" if url else "Navigated back"
+        return _ok_with_snapshot(message=f"Navigated back to {url}" if url else "Navigated back")
     except Exception:
-        return "Navigated back"
+        return _ok_with_snapshot(message="Navigated back")
 
 
 def go_forward() -> str:
@@ -49,9 +50,9 @@ def go_forward() -> str:
     driver.forward()
     try:
         url = driver.current_url or ""
-        return f"Navigated forward to {url}" if url else "Navigated forward"
+        return _ok_with_snapshot(message=f"Navigated forward to {url}" if url else "Navigated forward")
     except Exception:
-        return "Navigated forward"
+        return _ok_with_snapshot(message="Navigated forward")
 
 
 def reload() -> str:
@@ -60,6 +61,6 @@ def reload() -> str:
     driver.refresh()
     try:
         url = driver.current_url or ""
-        return f"Reloaded {url}" if url else "Reloaded"
+        return _ok_with_snapshot(message=f"Reloaded {url}" if url else "Reloaded")
     except Exception:
-        return "Reloaded"
+        return _ok_with_snapshot(message="Reloaded")

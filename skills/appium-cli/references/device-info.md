@@ -1,12 +1,13 @@
 # Device Info
 
-Use `get_device_info` after a session is running.
+Use `get_device_info` after a session is running to inspect device and foreground app state.
 
 ```bash
 appium-cli get_device_info
+appium-cli get_device_info --json
 ```
 
-The output is smartestiroid-compatible:
+The default output is smartestiroid-compatible:
 
 ```text
 Device Information:
@@ -23,4 +24,4 @@ Orientation: ...
 Is Locked: ...
 ```
 
-This command observes properties through Appium and Android shell commands. It does not modify the device.
+This is read-only. It observes properties through Appium and Android shell support; it does not modify the device. Use `snapshot` afterward when you need actionable refs or UI artifacts.

@@ -70,14 +70,18 @@ def _ref_context(ref: str) -> str:
     return entry.context
 
 
-def _ok_with_snapshot(context: str | None = None) -> str:
-    """Return OK + refreshed snapshot in the appropriate context."""
+def _ok_with_snapshot(context: str | None = None, message: str = "OK") -> str:
+    """Return an action success message plus post-action snapshot metadata."""
     try:
         ctx = context or state.current_context
         snap_context = "webview" if is_web_context(ctx) else "native"
-        return "OK\n" + refresh_snapshot(context=snap_context)
+        result = refresh_snapshot(context=snap_context, raw=False)
+        if state.action_raw_output:
+            return message
+        return f"{message}\n{result.text}" if message else result.text
     except Exception as exc:
-        return f"OK\nWARNING: snapshot refresh failed: {exc}"
+        warning = f"WARNING: snapshot refresh failed: {exc}"
+        return f"{message}\n{warning}" if message else warning
 
 
 def _resolve_element(ref: str) -> Any:
@@ -232,7 +236,7 @@ def scroll(direction: str, ref: str = "", percent: float = 0.8) -> str:
         can_scroll_more = _require_driver().execute_script("mobile: scrollGesture", params)
         time.sleep(0.5)
         ctx = _ref_context(ref) if ref else state.current_context
-        return _ok_with_snapshot(ctx) + f"\ncan_scroll_more: {can_scroll_more}"
+        return _ok_with_snapshot(ctx, message=f"OK\ncan_scroll_more: {can_scroll_more}")
     except ElementNotFoundError as exc:
         return _failed(str(exc))
     except AppiumCliError:
@@ -415,7 +419,7 @@ def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
             params.update(_screen_rect())
         can_scroll_more = _require_driver().execute_script("mobile: flingGesture", params)
         time.sleep(0.5)
-        return _ok_with_snapshot() + f"\ncan_scroll_more: {can_scroll_more}"
+        return _ok_with_snapshot(message=f"OK\ncan_scroll_more: {can_scroll_more}")
     except ElementNotFoundError as exc:
         return _failed(str(exc))
     except AppiumCliError:

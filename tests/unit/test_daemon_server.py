@@ -1,3 +1,5 @@
+import io
+import json
 import threading
 import time
 from pathlib import Path
@@ -38,3 +40,33 @@ class BrokenConnection:
 
 def test_send_response_ignores_client_disconnect() -> None:
     assert _send_response(BrokenConnection(), {"id": "1", "ok": True}) is False
+
+
+def test_client_request_includes_raw_flag(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc_info):
+            return False
+
+        def connect(self, path: str) -> None:
+            captured["path"] = path
+
+        def sendall(self, payload: bytes) -> None:
+            captured["payload"] = json.loads(payload.decode("utf-8"))
+
+        def makefile(self, *_args, **_kwargs):
+            return io.StringIO('{"ok": true, "text": "OK", "data": {}}\n')
+
+    monkeypatch.setattr("socket.socket", lambda *_args, **_kwargs: FakeSocket())
+
+    response = request("snapshot", args={"scope": "full"}, socket_path=Path("session.sock"), raw=True)
+
+    assert response["ok"] is True
+    assert captured["path"] == "session.sock"
+    assert captured["payload"]["tool"] == "snapshot"
+    assert captured["payload"]["args"] == {"scope": "full"}
+    assert captured["payload"]["raw"] is True

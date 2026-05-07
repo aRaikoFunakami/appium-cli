@@ -122,6 +122,29 @@ class TestSchemaStructure:
         assert raw["type"] == "boolean"
         assert raw["default"] is False
 
+    def test_snapshot_navigation_schemas(self) -> None:
+        show = get_tool("snapshot_show")
+        search = get_tool("snapshot_search")
+        refs = get_tool("snapshot_refs")
+        assert show is not None
+        assert search is not None
+        assert refs is not None
+        assert show.parameters["properties"]["artifact"]["enum"] == [
+            "compact", "full", "refs", "index", "meta"
+        ]
+        assert "text" in search.parameters["required"]
+        assert refs.parameters["properties"]["role"]["type"] == "string"
+
+    def test_locator_query_schemas(self) -> None:
+        locator = get_tool("generate_locator")
+        query = get_tool("web_query")
+        assert locator is not None
+        assert query is not None
+        assert locator.parameters["required"] == ["ref"]
+        assert query.parameters["required"] == ["selector"]
+        assert query.parameters["properties"]["attrs"]["type"] == "string"
+        assert query.parameters["properties"]["limit"]["default"] == 20
+
 
 class TestKnownDaemonTools:
     def test_includes_base_tools(self) -> None:
@@ -143,6 +166,7 @@ class TestExpectedToolsCoverage:
 
     EXPECTED_DAEMON_TOOLS = {
         "snapshot", "describe", "find_by_text", "screenshot", "get_page_source",
+        "snapshot_show", "snapshot_search", "snapshot_refs", "generate_locator", "web_query",
         "list_contexts", "get_context", "switch_context", "native_switch",
         "webview_switch", "webview_status", "web_snapshot", "webview_url", "webview_title",
         "goto", "go_back", "go_forward", "reload",

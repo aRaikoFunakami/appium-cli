@@ -10,11 +10,15 @@ context-aware switching before resolution; bounds skip for (0,0,0,0).
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.common.by import By
+
+from appium_cli.utils.paths import latest_snapshot_path, snapshot_artifact_dir, snapshot_artifact_path
 
 from .snapshot import LocatorStrategy, RefEntry
 
@@ -32,6 +36,28 @@ class ElementNotFoundError(Exception):
         super().__init__(
             f"ref '{ref}' cannot be resolved. {details}"
         )
+
+
+@dataclass(frozen=True)
+class ParsedRef:
+    """A normalized ref, optionally qualified by snapshot id."""
+
+    ref: str
+    snapshot_id: str | None = None
+
+    @property
+    def display(self) -> str:
+        return f"{self.snapshot_id}:{self.ref}" if self.snapshot_id else self.ref
+
+
+def parse_ref(ref: str) -> ParsedRef:
+    """Normalize ``[ref:x]``, ``ref:x``, ``x``, and ``snapshot-id:x`` forms."""
+    clean = ref.strip().strip("[]").removeprefix("ref:")
+    if ":" in clean:
+        snapshot_id, short_ref = clean.split(":", 1)
+        if snapshot_id and short_ref:
+            return ParsedRef(ref=short_ref, snapshot_id=snapshot_id)
+    return ParsedRef(ref=clean)
 
 
 class _CoordinateElement:
@@ -66,10 +92,31 @@ class RefResolver:
 
     def __init__(self) -> None:
         self._ref_map: dict[str, RefEntry] = {}
+        self._current_snapshot_id: str | None = None
+        self._current_snapshot_metadata: dict[str, Any] = {}
+        self._artifact_ref_maps: dict[str, dict[str, RefEntry]] = {}
+        self._artifact_metadata: dict[str, dict[str, Any]] = {}
 
-    def register_all(self, ref_map: dict[str, RefEntry]) -> None:
+    def register_all(
+        self,
+        ref_map: dict[str, RefEntry],
+        *,
+        snapshot_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Replace the entire ref map."""
         self._ref_map = dict(ref_map)
+        if snapshot_id is not None:
+            self.mark_current_snapshot(snapshot_id, metadata)
+
+    def mark_current_snapshot(
+        self,
+        snapshot_id: str | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Record which snapshot id the current in-memory refs came from."""
+        self._current_snapshot_id = snapshot_id
+        self._current_snapshot_metadata = dict(metadata or {})
 
     def register_context(self, context: str, ref_map: dict[str, RefEntry]) -> None:
         """Replace only refs belonging to *context*, keep others."""
@@ -81,10 +128,17 @@ class RefResolver:
         self._ref_map.update(ref_map)
 
     def has(self, ref: str) -> bool:
-        return ref in self._ref_map
+        try:
+            return self.require_registered(ref) is not None
+        except ElementNotFoundError:
+            return False
 
     def get_entry(self, ref: str) -> RefEntry | None:
-        return self._ref_map.get(ref)
+        try:
+            parsed, entry = self.require_registered(ref)
+            return entry
+        except ElementNotFoundError:
+            return None
 
     def list_refs(self) -> list[str]:
         return list(self._ref_map.keys())
@@ -109,15 +163,10 @@ class RefResolver:
         Raises:
             ElementNotFoundError: all strategies failed
         """
-        ref = ref.strip("[]").removeprefix("ref:")
-        entry = self._ref_map.get(ref)
-        if not entry:
-            raise ElementNotFoundError(
-                ref, "Not registered. Run snapshot() to refresh."
-            )
+        parsed, entry = self.require_registered(ref)
 
         if not driver:
-            raise ElementNotFoundError(ref, "Driver is not initialized.")
+            raise ElementNotFoundError(parsed.display, "Driver is not initialized.")
 
         # Switch to the ref's context if needed
         self._ensure_context(driver, entry.context)
@@ -142,10 +191,185 @@ class RefResolver:
                 errors.append(f"{strategy.by}={strategy.value}: {e}")
 
         raise ElementNotFoundError(
-            ref,
+            parsed.display,
             f"All strategies failed. Run snapshot() to refresh."
             f" Tried: {'; '.join(errors)}",
         )
+
+    def require_registered(self, ref: str) -> tuple[ParsedRef, RefEntry]:
+        """Return a registered entry or raise with stale/current snapshot details."""
+        parsed = parse_ref(ref)
+        if parsed.snapshot_id:
+            self._ensure_qualified_snapshot_available(parsed)
+            ref_map = (
+                self._ref_map
+                if parsed.snapshot_id == self._current_snapshot_id
+                else self._artifact_ref_maps.get(parsed.snapshot_id, {})
+            )
+        else:
+            ref_map = self._ref_map
+        entry = ref_map.get(parsed.ref)
+        if entry is not None:
+            return parsed, entry
+        raise ElementNotFoundError(parsed.display, self._unknown_ref_details(parsed))
+
+    def _ensure_qualified_snapshot_available(self, parsed: ParsedRef) -> None:
+        snapshot_id = parsed.snapshot_id
+        if snapshot_id == self._current_snapshot_id:
+            return
+        if snapshot_id in self._artifact_ref_maps:
+            return
+
+        refs_json = self._read_refs_json(snapshot_id)
+        if refs_json is None:
+            latest_hint = self._latest_hint()
+            raise ElementNotFoundError(
+                parsed.display,
+                f"Snapshot '{snapshot_id}' artifacts were not found. {latest_hint}",
+            )
+
+        metadata = {
+            key: refs_json[key]
+            for key in ("snapshot_id", "source", "screen_id", "context")
+            if key in refs_json
+        }
+        if not self._is_latest_snapshot(metadata):
+            latest_hint = self._latest_hint(metadata)
+            raise ElementNotFoundError(
+                parsed.display,
+                f"Snapshot '{snapshot_id}' is stale or not current for its context. {latest_hint}",
+            )
+
+        self._artifact_ref_maps[snapshot_id] = self._deserialize_ref_map(refs_json)
+        self._artifact_metadata[snapshot_id] = metadata
+
+    def _unknown_ref_details(self, parsed: ParsedRef) -> str:
+        if parsed.snapshot_id:
+            return (
+                f"Ref '{parsed.ref}' is not present in snapshot '{parsed.snapshot_id}'. "
+                "Run snapshot() to refresh or choose a ref from that snapshot's refs artifact."
+            )
+
+        details = ["Not registered in the current in-memory snapshot."]
+        if self._current_snapshot_id:
+            details.append(f"Current in-memory snapshot is '{self._current_snapshot_id}'.")
+
+        owner = self._find_latest_snapshot_containing_ref(parsed.ref)
+        if owner:
+            sid = owner.get("snapshot_id", "unknown")
+            context = owner.get("context")
+            context_hint = f" (context {context})" if context else ""
+            details.append(
+                f"Ref exists in latest snapshot '{sid}'{context_hint}; use '{sid}:{parsed.ref}' "
+                "or run snapshot() in that context before using a short ref."
+            )
+        else:
+            details.append(self._latest_hint())
+        return " ".join(part for part in details if part)
+
+    @staticmethod
+    def _read_json(path: Any) -> dict[str, Any] | None:
+        try:
+            if not path.exists():
+                return None
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except (OSError, json.JSONDecodeError, TypeError):
+            return None
+
+    @classmethod
+    def _read_refs_json(cls, snapshot_id: str | None) -> dict[str, Any] | None:
+        if not snapshot_id:
+            return None
+        return cls._read_json(snapshot_artifact_path(snapshot_id, "refs"))
+
+    @classmethod
+    def _read_latest(cls, source: str | None = None, context: str | None = None) -> dict[str, Any] | None:
+        return cls._read_json(latest_snapshot_path(source=source, context=context))
+
+    def _is_latest_snapshot(self, metadata: dict[str, Any]) -> bool:
+        snapshot_id = metadata.get("snapshot_id")
+        if not snapshot_id:
+            return False
+        candidates = [
+            self._read_latest(),
+            self._read_latest(
+                source=str(metadata.get("source") or "") or None,
+                context=str(metadata.get("context") or "") or None,
+            ),
+        ]
+        return any(item and item.get("snapshot_id") == snapshot_id for item in candidates)
+
+    def _latest_hint(self, metadata: dict[str, Any] | None = None) -> str:
+        latest = self._read_latest()
+        scoped = None
+        if metadata:
+            scoped = self._read_latest(
+                source=str(metadata.get("source") or "") or None,
+                context=str(metadata.get("context") or "") or None,
+            )
+
+        hints = []
+        if latest and latest.get("snapshot_id"):
+            hints.append(f"latest snapshot is '{latest['snapshot_id']}'")
+        latest_id = latest.get("snapshot_id") if latest else None
+        if scoped and scoped.get("snapshot_id") and scoped.get("snapshot_id") != latest_id:
+            context = scoped.get("context") or (metadata.get("context") if metadata else None)
+            scoped_label = f"latest context snapshot is '{scoped['snapshot_id']}'"
+            if context:
+                scoped_label += f" for context {context}"
+            hints.append(scoped_label)
+        if not hints:
+            return "Run snapshot() to refresh."
+        return "; ".join(hints) + "."
+
+    def _find_latest_snapshot_containing_ref(self, ref: str) -> dict[str, Any] | None:
+        seen: set[str] = set()
+        snapshot_dir = snapshot_artifact_dir()
+        pointers = [latest_snapshot_path()]
+        try:
+            pointers.extend(sorted(snapshot_dir.glob("latest-*.json")))
+        except OSError:
+            pass
+        for pointer in pointers:
+            latest = self._read_json(pointer)
+            snapshot_id = str((latest or {}).get("snapshot_id") or "")
+            if not snapshot_id or snapshot_id in seen:
+                continue
+            seen.add(snapshot_id)
+            refs_json = self._read_refs_json(snapshot_id)
+            refs = refs_json.get("refs", {}) if refs_json else {}
+            if isinstance(refs, dict) and ref in refs:
+                return refs_json
+        return None
+
+    @staticmethod
+    def _deserialize_ref_map(refs_json: dict[str, Any]) -> dict[str, RefEntry]:
+        refs = refs_json.get("refs", {})
+        if not isinstance(refs, dict):
+            return {}
+        result: dict[str, RefEntry] = {}
+        for ref, raw_entry in refs.items():
+            if not isinstance(raw_entry, dict):
+                continue
+            strategies = [
+                LocatorStrategy(by=str(strategy.get("by", "")), value=str(strategy.get("value", "")))
+                for strategy in raw_entry.get("strategies", [])
+                if isinstance(strategy, dict)
+            ]
+            bounds = raw_entry.get("expected_bounds", (0, 0, 0, 0))
+            if not isinstance(bounds, (list, tuple)) or len(bounds) != 4:
+                bounds = (0, 0, 0, 0)
+            result[str(ref)] = RefEntry(
+                strategies=strategies,
+                expected_bounds=tuple(int(value) for value in bounds),
+                role=str(raw_entry.get("role", "")),
+                name=str(raw_entry.get("name", "")),
+                context=str(raw_entry.get("context") or refs_json.get("context") or "NATIVE_APP"),
+                source_type=str(raw_entry.get("source_type") or refs_json.get("source") or "native"),
+                action_target_ref=raw_entry.get("action_target_ref"),
+            )
+        return result
 
     def resolve_or_none(self, ref: str, driver: Any) -> Any | None:
         try:
@@ -259,3 +483,7 @@ class RefResolver:
 
     def clear(self) -> None:
         self._ref_map.clear()
+        self._current_snapshot_id = None
+        self._current_snapshot_metadata = {}
+        self._artifact_ref_maps.clear()
+        self._artifact_metadata.clear()

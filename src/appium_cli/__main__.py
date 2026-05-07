@@ -15,6 +15,7 @@ from appium_cli import __version__
 from appium_cli.cli.devices import devices
 from appium_cli.cli.doctor import doctor
 from appium_cli.cli.install import install
+from appium_cli.cli.runtime import set_raw_output
 from appium_cli.cli.server import app as server_app
 from appium_cli.cli.session import app as session_app
 from appium_cli.cli.tools import (
@@ -40,6 +41,7 @@ from appium_cli.cli.tools import (
     get_context,
     get_current_app,
     get_device_info,
+    generate_locator,
     get_orientation,
     get_page_source,
     get_text,
@@ -70,6 +72,9 @@ from appium_cli.cli.tools import (
     set_orientation,
     send_keys,
     snapshot,
+    snapshot_refs,
+    snapshot_search,
+    snapshot_show,
     switch_context,
     swipe,
     swipe_down,
@@ -82,6 +87,7 @@ from appium_cli.cli.tools import (
     wait,
     wait_short_loading,
     web_eval,
+    web_query,
     web_snapshot,
     webview_status,
     webview_switch,
@@ -175,6 +181,11 @@ app = typer.Typer(
 app.command(name="doctor")(doctor)
 app.command(name="devices")(devices)
 app.command(name="snapshot")(snapshot)
+app.command(name="snapshot_show")(snapshot_show)
+app.command(name="snapshot_search")(snapshot_search)
+app.command(name="snapshot_refs")(snapshot_refs)
+app.command(name="generate_locator")(generate_locator)
+app.command(name="web_query")(web_query)
 app.command(name="describe")(describe)
 app.command(name="find_by_text")(find_by_text)
 app.command(name="screenshot")(screenshot)
@@ -266,11 +277,19 @@ def _main(
             help="Show the appium-cli version and exit.",
         ),
     ] = False,
+    raw: Annotated[
+        bool,
+        typer.Option(
+            "--raw",
+            help="Prefer bare tool output and pass raw mode to daemon-backed commands.",
+        ),
+    ] = False,
 ) -> None:
     """Run appium-cli."""
     global _log_start_time, _log_argv
     _log_start_time = time.time()
     _log_argv = sys.argv[1:]
+    set_raw_output(raw)
 
 
 def main() -> None:

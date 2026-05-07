@@ -1,11 +1,13 @@
 """Tests for RefResolver bounds verification and multi-strategy resolution."""
 
-from unittest.mock import MagicMock, patch
+import json
+from unittest.mock import MagicMock
 
 import pytest
 
-from appium_cli.core.ref_resolver import ElementNotFoundError, RefResolver, _CoordinateElement
+from appium_cli.core.ref_resolver import ElementNotFoundError, RefResolver, _CoordinateElement, parse_ref
 from appium_cli.core.snapshot import LocatorStrategy, RefEntry
+from appium_cli.utils.paths import latest_snapshot_path, snapshot_artifact_path
 
 
 def _make_entry(
@@ -31,6 +33,34 @@ def _mock_element(x=100, y=200, w=200, h=200):
     el.size = {"width": w, "height": h}
     el.id = "fake-element-id"
     return el
+
+
+def _refs_payload(snapshot_id="snap-1", ref="btn", context="NATIVE_APP"):
+    entry = _make_entry()
+    return {
+        "snapshot_id": snapshot_id,
+        "source": "native",
+        "screen_id": "screen-1",
+        "context": context,
+        "refs": {
+            ref: {
+                "role": entry.role,
+                "name": entry.name,
+                "context": context,
+                "source_type": "native",
+                "expected_bounds": list(entry.expected_bounds),
+                "strategies": [
+                    {"by": strategy.by, "value": strategy.value}
+                    for strategy in entry.strategies
+                ],
+            }
+        },
+    }
+
+
+def _write_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 class TestRefResolverBoundsVerification:
@@ -102,6 +132,79 @@ class TestRefResolverResolution:
         result = resolver.resolve("[ref:btn]", driver)
         assert result == el
 
+    def test_resolve_accepts_current_snapshot_qualified_ref(self):
+        resolver = RefResolver()
+        entry = _make_entry(
+            bounds=(100, 200, 300, 400),
+            strategies=[
+                LocatorStrategy(by="id", value="com.example:id/btn"),
+                LocatorStrategy(by="coordinates", value="200,300"),
+            ],
+        )
+        resolver.register_all({"btn": entry}, snapshot_id="snap-current")
+
+        driver = MagicMock()
+        wrong_el = _mock_element(x=0, y=0, w=50, h=50)
+        driver.find_element.return_value = wrong_el
+
+        result = resolver.resolve("snap-current:btn", driver)
+        assert isinstance(result, _CoordinateElement)
+        assert result.x == 200
+        assert result.y == 300
+
+    def test_resolve_loads_latest_qualified_ref_from_artifact(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: tmp_path)
+        payload = _refs_payload(snapshot_id="snap-latest", ref="btn")
+        _write_json(snapshot_artifact_path("snap-latest", "refs"), payload)
+        _write_json(latest_snapshot_path(), {"snapshot_id": "snap-latest"})
+
+        resolver = RefResolver()
+        driver = MagicMock()
+        el = _mock_element()
+        driver.find_element.return_value = el
+
+        result = resolver.resolve("snap-latest:btn", driver)
+
+        assert result == el
+        assert resolver.get_entry("snap-latest:btn") is not None
+        assert resolver.get_entry("btn") is None
+
+    def test_qualified_ref_rejects_stale_snapshot(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: tmp_path)
+        payload = _refs_payload(snapshot_id="snap-old", ref="btn")
+        _write_json(snapshot_artifact_path("snap-old", "refs"), payload)
+        _write_json(latest_snapshot_path(), {"snapshot_id": "snap-new"})
+
+        resolver = RefResolver()
+        with pytest.raises(ElementNotFoundError) as exc_info:
+            resolver.resolve("snap-old:btn", MagicMock())
+
+        message = str(exc_info.value)
+        assert "snap-old:btn" in message
+        assert "stale or not current" in message
+        assert "snap-new" in message
+
+    def test_short_unknown_ref_reports_latest_context_owner(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: tmp_path)
+        payload = _refs_payload(snapshot_id="snap-web", ref="web_btn", context="WEBVIEW_1")
+        _write_json(snapshot_artifact_path("snap-web", "refs"), payload)
+        _write_json(latest_snapshot_path(source="native"), {"snapshot_id": "snap-native"})
+        _write_json(
+            latest_snapshot_path(source="native", context="WEBVIEW_1"),
+            {"snapshot_id": "snap-web", "context": "WEBVIEW_1"},
+        )
+
+        resolver = RefResolver()
+        resolver.register_all({"native_btn": _make_entry()}, snapshot_id="snap-native")
+
+        with pytest.raises(ElementNotFoundError) as exc_info:
+            resolver.require_registered("web_btn")
+
+        message = str(exc_info.value)
+        assert "current in-memory snapshot" in message
+        assert "snap-web:web_btn" in message
+        assert "WEBVIEW_1" in message
+
     def test_resolve_or_none_returns_none_on_failure(self):
         resolver = RefResolver()
         driver = MagicMock()
@@ -126,9 +229,10 @@ class TestRefResolverRegistration:
 
     def test_clear(self):
         resolver = RefResolver()
-        resolver.register_all({"a": _make_entry()})
+        resolver.register_all({"a": _make_entry()}, snapshot_id="snap")
         resolver.clear()
         assert not resolver.has("a")
+        assert resolver._current_snapshot_id is None
 
     def test_register_context_replaces_only_same_context(self):
         resolver = RefResolver()
@@ -210,3 +314,16 @@ class TestRefResolverWebStrategies:
 
         resolver.resolve("web_btn", driver)
         driver.switch_to.context.assert_called_with("CHROMIUM")
+
+
+class TestRefParsing:
+    def test_parse_short_ref_forms(self):
+        assert parse_ref("btn").ref == "btn"
+        assert parse_ref("[ref:btn]").ref == "btn"
+        assert parse_ref("ref:btn").ref == "btn"
+
+    def test_parse_snapshot_qualified_ref(self):
+        parsed = parse_ref("[ref:snap-1:btn]")
+        assert parsed.snapshot_id == "snap-1"
+        assert parsed.ref == "btn"
+        assert parsed.display == "snap-1:btn"

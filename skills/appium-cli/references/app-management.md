@@ -1,6 +1,6 @@
 # App Management
 
-App management commands operate through the active Appium session.
+App management commands operate through the active Appium session. Observe with `snapshot` after changing app state; normal action/app outputs that change UI may provide post-action snapshot artifacts where supported.
 
 ```bash
 appium-cli get_current_app
@@ -11,6 +11,9 @@ appium-cli list_apps
 appium-cli is_locked
 appium-cli get_orientation
 appium-cli set_orientation PORTRAIT
+appium-cli snapshot
 ```
 
-`list_apps` requires shell capability. Local external Appium servers may use adb fallback when safe.
+Use `activate_app` for normal app switching. Use `terminate_app` or `restart_app` only when a clean state is required, then take a fresh `snapshot` before choosing refs.
+
+`list_apps` requires shell capability. Local external Appium servers may use safe adb fallback; remote external servers without shell support fail with exit code 8.

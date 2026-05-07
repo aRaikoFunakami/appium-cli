@@ -271,7 +271,9 @@ class NativeSnapshot:
             "inputs"        -> flat list of textbox nodes
             "depth:N"       -> render but cap depth at N
             "active_layer"  -> first subtree with container_kind in dialog/overlay/sheet
+            "ref:<ref>"     -> exact ref subtree
             "near:<ref>"    -> the parent container subtree of the given ref
+            Any tree scope may end with ",depth:N" to cap rendered depth.
         """
         lines: list[str] = []
         header_app = self.app_info or self.context
@@ -286,19 +288,30 @@ class NativeSnapshot:
             lines.append(_TRUNCATION_WARNING)
         lines.append("")
 
+        render_scope = scope
         max_depth: int | None = None
-        if scope and scope.startswith("depth:"):
+        if scope and ",depth:" in scope:
+            render_scope, depth_text = scope.rsplit(",depth:", 1)
+            try:
+                max_depth = int(depth_text)
+            except ValueError:
+                max_depth = None
+        elif scope and scope.startswith("depth:"):
             try:
                 max_depth = int(scope.split(":", 1)[1])
             except ValueError:
                 max_depth = None
 
-        if scope == "inputs":
+        if render_scope == "inputs":
             for node in self.iter_nodes():
                 if node.role == "textbox":
                     lines.append(node.to_line(include_bounds=boxes))
-        elif scope and scope.startswith("near:"):
-            target_ref = scope.split(":", 1)[1]
+        elif render_scope and render_scope.startswith("ref:"):
+            target_ref = render_scope.split(":", 1)[1]
+            subtree_root = self.find_ref(target_ref) or self.root
+            _render_node(subtree_root, lines, indent=0, boxes=boxes, max_depth=max_depth)
+        elif render_scope and render_scope.startswith("near:"):
+            target_ref = render_scope.split(":", 1)[1]
             target_node = self.find_ref(target_ref)
             subtree_root: NativeSnapshotNode | None = None
             if target_node is not None:
@@ -306,7 +319,7 @@ class NativeSnapshot:
             if subtree_root is None:
                 subtree_root = self.root
             _render_node(subtree_root, lines, indent=0, boxes=boxes, max_depth=max_depth)
-        elif scope == "active_layer":
+        elif render_scope == "active_layer":
             layer = self._find_active_layer(self.root)
             target_root = layer if layer is not None else self.root
             _render_node(target_root, lines, indent=0, boxes=boxes, max_depth=max_depth)

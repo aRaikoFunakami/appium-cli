@@ -99,8 +99,42 @@ _add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=
          "depth": _int_param("Limit tree to N levels."),
          "max_nodes": _int_param("Limit tree to N nodes."),
          "boxes": _bool_param("Include element bounding boxes."),
-         "filename": _str_param("Save snapshot to file."),
+          "filename": _str_param("Save snapshot to file."),
+      }))
+
+_add("snapshot_show", "Show a persisted snapshot artifact without refreshing device state.",
+     parameters=_schema({
+         "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
+         "artifact": _str_param("Artifact to show.", default="compact",
+                                enum=["compact", "full", "refs", "index", "meta"]),
+         "ref": _str_param("Optional ref to show in detail."),
      }))
+
+_add("snapshot_search", "Search persisted snapshot index/ref artifacts without refreshing device state.",
+     parameters=_schema({
+         "text": _str_param("Text to search for."),
+         "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
+         "role": _str_param("Optional role filter."),
+     }, required=["text"]))
+
+_add("snapshot_refs", "List refs or show one ref from a persisted snapshot artifact.",
+     parameters=_schema({
+         "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
+         "ref": _str_param("Optional ref to show in detail."),
+         "role": _str_param("Optional role filter for listing refs."),
+      }))
+
+_add("generate_locator", "Generate the best stored durable locator for a ref.",
+     parameters=_schema({
+         "ref": _str_param("Element ref to generate a locator for."),
+     }, required=["ref"]))
+
+_add("web_query", "Query the current WebView/Chrome DOM by CSS selector.",
+     parameters=_schema({
+         "selector": _str_param("CSS selector to query."),
+         "attrs": _str_param("Comma-separated extra attributes to include."),
+         "limit": _int_param("Maximum number of matches to return.", default=20),
+     }, required=["selector"]))
 
 _add("describe", "Describe an element ref from the latest snapshot.",
      parameters=_schema({"ref": _str_param("Element ref to describe.")}, required=["ref"]))

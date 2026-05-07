@@ -432,6 +432,57 @@ class TestWebSnapshotGeneratorFromDom:
         snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
         assert '- text "Plain paragraph"' in snap.to_text()
 
+    def test_ref_scope_renders_exact_subtree_with_depth(self):
+        tree = {
+            "tag": "body",
+            "children": [
+                {
+                    "tag": "section",
+                    "id": "profile",
+                    "css": "#profile",
+                    "clickable": True,
+                    "children": [
+                        {"tag": "button", "id": "save", "name": "Save", "children": []},
+                        {"tag": "button", "id": "cancel", "name": "Cancel", "children": []},
+                    ],
+                },
+                {"tag": "button", "id": "outside", "name": "Outside", "children": []},
+            ],
+        }
+        snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
+
+        text = snap.to_text(scope="ref:web_profile,depth:0")
+
+        assert "[ref:web_profile]" in text
+        assert "Save" not in text
+        assert "Cancel" not in text
+        assert "Outside" not in text
+        assert "- ..." in text
+
+    def test_near_scope_renders_nearest_web_ancestor(self):
+        tree = {
+            "tag": "body",
+            "children": [
+                {
+                    "tag": "form",
+                    "id": "login-form",
+                    "css": "#login-form",
+                    "clickable": True,
+                    "children": [
+                        {"tag": "input", "id": "email", "css": "#email", "type": "text", "children": []},
+                    ],
+                },
+                {"tag": "button", "id": "outside", "name": "Outside", "children": []},
+            ],
+        }
+        snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
+
+        text = snap.to_text(scope="near:web_email")
+
+        assert "[ref:web_login_form]" in text
+        assert "[ref:web_email]" in text
+        assert "Outside" not in text
+
 
 class TestWebSnapshotGeneratorFromHTML:
     def setup_method(self):

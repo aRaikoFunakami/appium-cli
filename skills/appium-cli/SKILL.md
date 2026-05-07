@@ -6,7 +6,7 @@ allowed-tools: Bash(appium-cli:*)
 
 # Mobile Automation with appium-cli
 
-Use `appium-cli` to inspect the local Appium environment, list devices, manage the Appium server/session lifecycle, and call smartestiroid-compatible tools.
+Use `appium-cli` as an artifact-first Appium automation CLI. Observe with snapshots, act on refs from the latest snapshot, and rely on persisted artifacts for full trees, refs, search, and diffs.
 
 ## Quick start
 
@@ -15,239 +15,114 @@ appium-cli doctor
 appium-cli devices --platform android
 appium-cli server status
 appium-cli server start --port 4723
-appium-cli server start --no-chromedriver-autodownload
-appium-cli session status
-appium-cli get_device_info
-appium-cli snapshot
-appium-cli find_by_text "Log in"
-appium-cli tap tabbackground_4
-appium-cli scroll_down recycler_view
-appium-cli snapshot
-```
-
-## Commands
-
-Do not guess argument order. Before using a command for the first time, check this command catalog, the linked reference page, or `appium-cli <command> --help`.
-
-### Environment and session
-
-```bash
-appium-cli doctor
-appium-cli devices --platform android
-appium-cli server status
-appium-cli server start --port 4723
-appium-cli server start --no-chromedriver-autodownload
-appium-cli server stop
 appium-cli session status
 appium-cli session start
-appium-cli session stop
-```
 
-### Observation
-
-```bash
 appium-cli snapshot
-appium-cli snapshot --max-nodes=300 --boxes
-appium-cli snapshot --context=webview
-appium-cli web_snapshot --depth=15 --max-nodes=300
-appium-cli describe btn_7
-appium-cli find_by_text "Storage"
-appium-cli screenshot
-appium-cli screenshot --region=ref:btn_7
-appium-cli get_page_source
-appium-cli webview_url
-appium-cli webview_title
+appium-cli snapshot_refs
+appium-cli tap btn_login
+appium-cli snapshot_show latest
 ```
 
-`--max-nodes` and `--boxes` apply to both `snapshot` (native) and `web_snapshot`.
+Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. Action commands automatically append a post-action snapshot artifact link in normal output.
 
-### Core actions
+## Core workflow
+
+1. Observe: `appium-cli snapshot` or `appium-cli web_snapshot`.
+2. Inspect artifacts if needed: `snapshot_show`, `snapshot_refs`, `snapshot_search`.
+3. Act on a current ref: `tap <ref>`, `type_text <ref> <text>`, `scroll_down [ref]`.
+4. Read the post-action snapshot metadata printed by the action.
+5. Use refs from the newest snapshot only.
+
+For piping, diffs, or full tree output, use global `--raw` before the command:
 
 ```bash
-# ref-first actions
-appium-cli tap btn_7
-appium-cli click web_btn_login
-appium-cli type_text input_search "hello" --submit
-appium-cli fill web_search_form "query"
-appium-cli select web_country "JP" --by=value
+appium-cli --raw snapshot > before.yml
+appium-cli tap btn_login
+appium-cli --raw snapshot > after.yml
+diff before.yml after.yml
+```
 
-# directional aliases; pass a ref to scope, omit ref for full screen
+Raw snapshot output is the tree content. Raw actions return only a bare success/failure result and suppress post-action snapshot links.
+
+## Observation commands
+
+```bash
+appium-cli snapshot                         # native metadata + artifacts
+appium-cli snapshot main_list --depth=2     # element-scoped native snapshot
+appium-cli web_snapshot                     # WebView metadata + artifacts
+appium-cli web_snapshot web_form --depth=3  # element-scoped DOM snapshot
+appium-cli --raw snapshot > screen.yml      # full tree for piping/diffing
+appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
+
+appium-cli snapshot_show latest             # show compact artifact
+appium-cli snapshot_show latest --artifact=full
+appium-cli snapshot_show latest --ref=btn_login
+appium-cli snapshot_search "Storage" --role=row
+appium-cli snapshot_refs latest --role=button
+appium-cli generate_locator btn_login
+
+appium-cli describe btn_login
+appium-cli find_by_text "Log in"
+appium-cli screenshot                       # rarely needed
+appium-cli get_page_source                  # token-heavy diagnostic escape hatch
+```
+
+`snapshot` is primary. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
+
+## Actions
+
+```bash
+appium-cli tap btn_login
+appium-cli type_text input_email "user@example.com" --submit
 appium-cli scroll_down recycler_view
-appium-cli scroll_up main_content_scrollable_container
-appium-cli swipe_left
+appium-cli scroll_down                      # full visible screen
 appium-cli swipe_left carousel
-
 appium-cli press_key back
 appium-cli wait 1
 ```
 
-### Gestures
+Ref-first targeting is the default. Directional aliases accept an optional ref; omit it only for full-screen gestures. Compatibility commands such as `scroll down --ref=recycler_view` still exist, but prefer `scroll_down recycler_view`.
 
-```bash
-appium-cli long_press btn_photo
-appium-cli double_tap btn_photo
-appium-cli drag btn_photo 500 900
-appium-cli fling_up
-appium-cli fling_down recycler_view
-appium-cli pinch_open image_preview
-appium-cli pinch_close image_preview
-```
-
-Directional commands take an optional ref:
-
-- `scroll_down recycler_view` scrolls inside the container identified by `recycler_view`.
-- `scroll_down` scrolls the full visible screen.
-- Prefer a visible scrollable container ref when the snapshot shows one. Omit ref only for full-screen scrolling when no obvious scrollable container exists.
-
-### WebView / Chrome context
+## WebView / Chrome
 
 ```bash
 appium-cli list_contexts
-appium-cli get_context
-appium-cli switch_context webview
-appium-cli native_switch
 appium-cli webview_switch
-appium-cli webview_status
+appium-cli web_snapshot
+appium-cli web_query "input,button,a" --attrs=data-testid,autocomplete
+appium-cli web_eval "el.getAttribute('data-testid')" web_btn_submit
+appium-cli click web_btn_submit
+appium-cli fill web_search "query"
+appium-cli native_switch
 ```
 
-### WebView navigation and dialogs
+Targeting layers:
+
+1. Snapshot refs first (`web_...` refs from `web_snapshot`).
+2. WebView CSS selectors / generated locators second (`web_query`, `generate_locator`, CSS-aware commands where available).
+3. Legacy native locators only as expert-only recovery.
+
+## Environment and lifecycle
 
 ```bash
-appium-cli goto "https://example.com"
-appium-cli go_back
-appium-cli go_forward
-appium-cli reload
-appium-cli web_eval "document.title"
-appium-cli dialog_text
-appium-cli dialog_accept
-appium-cli dialog_dismiss
-```
-
-### Containers and verification
-
-```bash
-appium-cli list_containers
-appium-cli find_container "Storage"
-appium-cli within_container main_content_scrollable_container --role=button --position=first
-appium-cli assert_visible --text="Storage"
-appium-cli assert_visible --ref=btn_7
-```
-
-### App and device management
-
-```bash
+appium-cli doctor
+appium-cli devices --json
+appium-cli server start --port 4723
+appium-cli server stop
+appium-cli session start
+appium-cli session stop
 appium-cli get_device_info
-appium-cli get_current_app
-appium-cli activate_app com.android.settings
-appium-cli terminate_app com.example.app
-appium-cli restart_app com.example.app
-appium-cli list_apps
-appium-cli is_locked
-appium-cli get_orientation
-appium-cli set_orientation PORTRAIT
 ```
 
-### Legacy locator tools
-
-```bash
-appium-cli find_element xpath "//*[@text='Login']"
-appium-cli click_element id "com.example:id/button"
-appium-cli get_text accessibility_id "Login"
-appium-cli send_keys xpath "//*[@class='android.widget.EditText']" "hello"
-appium-cli press_keycode 4
-appium-cli scroll_element xpath "//*[@scrollable='true']" --direction=up
-appium-cli scroll_to_element xpath "//*[@text='Target']"
-```
-
-## Snapshot model
-
-Both `snapshot` (native) and `web_snapshot` (WebView/Chrome) return the same tree-first format: a header followed by an indented tree of nodes. There are no separate `containers` and `elements` sections, and no separate selection containers — selection state is reported inline on each node.
-
-Each line is `- <role> "<name>" [ref:...] [state...]`. A node has a ref only when it is actionable, editable, scrollable, or a recognised container (topbar, list, dialog, overlay, tabs, selection). Pure text nodes have no ref.
-
-Example native snapshot:
-
-```
-screen: NATIVE_APP
-screen_id: 8dd580
-context: NATIVE_APP
-source: native
-
-- tabs [ref:bottom_nav]
-  - tab "Home" [ref:nav_home] [selected]
-    - text "Home"
-  - tab "Search" [ref:nav_search]
-    - text "Search"
-  - tab "Profile" [ref:nav_profile]
-    - text "Profile"
-
-alerts: none
-nav: none
-```
-
-Example list / row screen:
-
-```
-screen: NATIVE_APP
-screen_id: 6b2c9e
-context: NATIVE_APP
-source: native
-
-- list [ref:recycler] [scrollable:vertical]
-  - row [ref:row]
-    - text "Row 1"
-    - text "Subtitle 1"
-  - row [ref:row_2]
-    - text "Row 2"
-    - text "Subtitle 2"
-
-alerts: none
-nav: none
-```
-
-Notes:
-
-- Selection state appears inline (e.g. `[selected]`, `[checked]`). There is no separate selection container.
-- `list_containers` walks this tree and reports nodes whose `container_kind` is set (`topbar`, `list`, `dialog`, `overlay`, `tabs`, `selection`).
-- To act on a piece of visible text that has no ref, run `appium-cli find_by_text "<text>"`. Each result is either `[ref:...] role "name"` (the matched node is itself actionable) or `role "name" -> action target [ref:...]` (the matched text is a leaf; tap the action target ref instead).
-
-## Argument order rules
-
-- Ref-first actions pass the ref as the first positional argument: `tap <ref>`, `long_press <ref>`, `pinch_open <ref>`.
-- Ref plus value actions pass the ref first, then the value: `type_text <ref> <text>`.
-- Directional aliases encode direction in the command and take an optional ref: `scroll_down [ref]`, `swipe_left [ref]`, `fling_up [ref]`. Omit ref only for full-screen gestures.
-- Legacy locator tools use `<by> <value>` positionals; extra behavior is usually an option, for example `scroll_element <by> <value> --direction=up`.
-
-## Workflow
-
-Use this loop for normal mobile automation:
-
-1. Observe: run `appium-cli snapshot` after launching an app or changing screens.
-2. Read the full snapshot output before acting. Do not rely on a single filtered line when choosing a target.
-3. Choose a ref from the latest snapshot. Refs become stale after navigation, scrolling, dialogs, or screen updates.
-4. Act on the current ref, for example `appium-cli tap btn_7`.
-5. Verify with another `snapshot`, `assert_visible`, or the visible screen title before the next action.
-
-Prefer visible snapshot refs over locator tools. Do not call `find_by_text` to re-search for an element that is already visible in the snapshot.
-
-### WebView workflow
-
-For Chrome or apps with embedded WebViews:
-
-1. Run `appium-cli list_contexts` to check for `WEBVIEW_*` or `CHROMIUM` contexts.
-2. Run `appium-cli web_snapshot` to get the same tree format as native `snapshot`, with `web_` refs on actionable nodes.
-3. Use `click`, `fill`, `select` with web refs. Pure text/heading nodes have no ref; use the parent link/button ref shown above them, or run `appium-cli find_by_text "<text>"` and follow the `action target` ref. Touch gestures are not available in WebView.
-4. Run `appium-cli native_switch` and `snapshot` to return to native UI.
-
-Web refs are only valid in the WebView context where they were captured. After navigation or reload, take a new `web_snapshot`.
+`doctor` is read-only. `server stop` only stops Appium servers started by `appium-cli`.
 
 ## Important rules
 
-- Use canonical smartestiroid tool names such as `get_device_info`, `type_text`, and `press_keycode`.
-- Do not call `adb`, `appium`, `npm`, or installation commands directly unless the user explicitly asks.
-- `doctor` is read-only and only reports problems and hints.
-- `server stop` only stops Appium servers started by `appium-cli`.
-- Edit source skill files under `skills/appium-cli/` first, then propagate with `appium-cli install --skills`. Do not edit installed files under `~/.copilot/skills/` directly.
+- Keep `--raw` global: `appium-cli --raw snapshot`, not after the command.
+- Do not call `adb`, `appium`, `npm`, or installer commands directly unless the user explicitly asks.
+- Prefer canonical snake_case tool names: `get_device_info`, `type_text`, `press_keycode`.
+- Do not edit installed skill copies under `.agents/` or `~/.copilot/`; edit `skills/appium-cli/` and run `appium-cli install --skills`.
 
 ## References
 
@@ -260,5 +135,5 @@ Web refs are only valid in the WebView context where they were captured. After n
 - [Gestures](references/gestures.md)
 - [Containers and verification](references/containers.md)
 - [App management](references/app-management.md)
-- [Legacy locator tools](references/legacy-locator.md)
 - [WebView and Chrome](references/webview.md)
+- [Legacy locator tools](references/legacy-locator.md)

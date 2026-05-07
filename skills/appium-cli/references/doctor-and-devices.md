@@ -1,6 +1,6 @@
 # Doctor and Devices
 
-Use these commands before starting a mobile automation session.
+Use these commands before starting an automation session. They are observation/diagnostic commands, not installers.
 
 ```bash
 appium-cli doctor
@@ -11,6 +11,14 @@ appium-cli devices --platform ios
 appium-cli devices --json
 ```
 
-`doctor` observes the environment and reports `PASS`, `WARN`, or `FAIL`. It never installs or fixes tools.
+`doctor` reports `PASS`, `WARN`, or `FAIL` with hints. It never installs, fixes, or changes prerequisite tools.
 
-`devices` observes `adb devices -l` for Android and `xcrun` on macOS for iOS/simulator information. Android automation commands require an Android device with status `device`.
+`devices` observes Android devices via `adb devices -l` and iOS/simulator information via `xcrun` on macOS. Android automation commands require an Android device whose status is `device`.
+
+After diagnostics pass, start/reuse the server and session, then observe with artifact-first snapshots:
+
+```bash
+appium-cli server start --port 4723
+appium-cli session start
+appium-cli snapshot
+```

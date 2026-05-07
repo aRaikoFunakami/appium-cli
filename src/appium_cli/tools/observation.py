@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from appium_cli.core.ref_resolver import ElementNotFoundError, parse_ref
 from appium_cli.core.native_snapshot import NativeSnapshot
 from appium_cli.core.native_snapshot_generator import NativeSnapshotGenerator
 from appium_cli.core.snapshot import compress_xml
+from appium_cli.core.snapshot_artifacts import SnapshotBundlePayload, create_snapshot_bundle_payload
 from appium_cli.core.web_snapshot import WebSnapshot
 from appium_cli.core.web_snapshot_generator import (
     DOM_EXTRACTION_SCRIPT,
@@ -26,6 +30,13 @@ from appium_cli.tools.contexts import (
 )
 from appium_cli.utils.errors import AppiumCliError
 from appium_cli.utils.exit_codes import FEATURE_NOT_ENABLED
+from appium_cli.utils.paths import (
+    latest_snapshot_path,
+    snapshot_artifact_path,
+    write_json_artifact,
+    write_latest_snapshot_pointer,
+    write_text_artifact,
+)
 
 logger = logging.getLogger(__name__)
 _FIND_BY_TEXT_MAX_RESULTS = 100
@@ -33,6 +44,123 @@ _FIND_BY_TEXT_MAX_RESULTS = 100
 # Singleton web snapshot generator (stateless, safe to share)
 _web_snapshot_generator = WebSnapshotGenerator()
 _native_snapshot_generator = NativeSnapshotGenerator()
+_SNAPSHOT_SHOW_ARTIFACTS = frozenset({"compact", "full", "refs", "index", "meta"})
+_WEB_QUERY_DEFAULT_LIMIT = 20
+_WEB_QUERY_MAX_LIMIT = 200
+
+WEB_QUERY_SCRIPT = r"""
+return (function(selector, attrs, limit) {
+    attrs = Array.isArray(attrs) ? attrs : [];
+    limit = Math.max(0, Math.min(Number(limit) || 20, 200));
+
+    function clean(text, max) {
+        if (!text) return '';
+        return String(text).replace(/\s+/g, ' ').trim().substring(0, max || 160);
+    }
+    function esc(value) {
+        if (window.CSS && CSS.escape) return CSS.escape(String(value));
+        return String(value).replace(/[^a-zA-Z0-9_-]/g, function(ch) {
+            return '\\' + ch.charCodeAt(0).toString(16) + ' ';
+        });
+    }
+    function quoteAttr(value) {
+        return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    }
+    function roleOf(el) {
+        var explicit = (el.getAttribute('role') || '').toLowerCase();
+        if (explicit) return explicit;
+        var tag = el.tagName.toLowerCase();
+        if (tag === 'a') return 'link';
+        if (tag === 'button') return 'button';
+        if (tag === 'textarea') return 'textbox';
+        if (tag === 'select') return 'select';
+        if (tag === 'option') return 'option';
+        if (tag === 'img') return 'image';
+        if (/^h[1-6]$/.test(tag)) return 'heading';
+        if (tag === 'input') {
+            var type = (el.type || 'text').toLowerCase();
+            if (type === 'checkbox') return 'checkbox';
+            if (type === 'radio') return 'radio';
+            if (['submit', 'button', 'image', 'reset'].includes(type)) return 'button';
+            if (type === 'range') return 'slider';
+            if (type === 'file') return 'file';
+            return 'textbox';
+        }
+        return '';
+    }
+    function directText(el) {
+        var parts = [];
+        for (var i = 0; i < el.childNodes.length; i++) {
+            var child = el.childNodes[i];
+            if (child.nodeType === Node.TEXT_NODE) {
+                var text = clean(child.nodeValue, 160);
+                if (text) parts.push(text);
+            }
+        }
+        return clean(parts.join(' '), 160);
+    }
+    function nameOf(el, role) {
+        var tag = el.tagName.toLowerCase();
+        return clean(
+            el.getAttribute('aria-label') ||
+            el.getAttribute('alt') ||
+            el.getAttribute('title') ||
+            el.getAttribute('placeholder') ||
+            (tag === 'input' ? el.value : '') ||
+            (['link', 'button', 'heading', 'label', 'option', 'tab', 'menuitem'].includes(role) ? el.innerText : '') ||
+            directText(el),
+            160
+        );
+    }
+    function generatedSelector(el) {
+        var tag = el.tagName.toLowerCase();
+        if (el.id) return '#' + esc(el.id);
+        var testId = el.getAttribute('data-testid') || '';
+        if (testId) return '[data-testid="' + quoteAttr(testId) + '"]';
+        if (el.getAttribute('name')) return tag + '[name="' + quoteAttr(el.getAttribute('name')) + '"]';
+        if (tag === 'a' && el.getAttribute('href')) return 'a[href="' + quoteAttr(el.getAttribute('href')) + '"]';
+        return tag;
+    }
+
+    var nodes;
+    try {
+        nodes = Array.prototype.slice.call(document.querySelectorAll(selector), 0, limit);
+    } catch (err) {
+        return {error: String(err && err.message ? err.message : err)};
+    }
+    return nodes.map(function(el) {
+        var role = roleOf(el);
+        var extra = {};
+        attrs.forEach(function(attr) {
+            if (attr) extra[attr] = el.getAttribute(attr) || '';
+        });
+        return {
+            tag: el.tagName.toLowerCase(),
+            role: role,
+            accessible_name: nameOf(el, role),
+            id: el.id || '',
+            name: el.getAttribute('name') || '',
+            type: el.getAttribute('type') || '',
+            placeholder: el.getAttribute('placeholder') || '',
+            aria_label: el.getAttribute('aria-label') || '',
+            text: clean(el.innerText || el.textContent || '', 160),
+            href: el.getAttribute('href') || '',
+            selector: generatedSelector(el),
+            attrs: extra
+        };
+    });
+})(arguments[0], arguments[1], arguments[2]);
+"""
+
+
+@dataclass(frozen=True)
+class SnapshotResult:
+    """Rendered snapshot result plus its persisted artifact bundle."""
+
+    text: str
+    data: dict[str, Any]
+    raw_text: str
+    bundle: SnapshotBundlePayload
 
 
 def _require_driver():
@@ -61,7 +189,7 @@ def _refresh_native_snapshot(
     scope: str,
     max_nodes: int | None = None,
     boxes: bool = False,
-) -> str:
+) -> NativeSnapshot:
     """Generate a native accessibility snapshot (tree-first)."""
     xml_source = driver.page_source
 
@@ -82,7 +210,7 @@ def _refresh_native_snapshot(
     snapshot_obj = generator.generate(xml_source, app_info=app_info, context=NATIVE_CONTEXT)
     ref_map = snapshot_obj.to_ref_map()
     _register_snapshot(NATIVE_CONTEXT, snapshot_obj, ref_map)
-    return snapshot_obj.to_text(scope=scope if scope != "full" else None, boxes=boxes)
+    return snapshot_obj
 
 
 def _refresh_web_snapshot(
@@ -92,7 +220,7 @@ def _refresh_web_snapshot(
     depth: int | None = None,
     max_nodes: int | None = None,
     boxes: bool = False,
-) -> str:
+) -> WebSnapshot:
     """Generate a web DOM snapshot."""
     url = ""
     title = ""
@@ -134,20 +262,312 @@ def _refresh_web_snapshot(
         )
 
     _register_snapshot(context, snapshot_obj, ref_map)
-    if isinstance(snapshot_obj, WebSnapshot):
-        return snapshot_obj.to_text(scope=scope if scope != "full" else None, boxes=boxes)
-    return snapshot_obj.to_text(scope=scope if scope != "full" else None)
+    return snapshot_obj
+
+
+def _snapshot_text(snapshot_obj: NativeSnapshot | WebSnapshot, scope: str, *, boxes: bool) -> str:
+    text = snapshot_obj.to_text(scope=scope if scope != "full" else None, boxes=boxes)
+    return text if text.endswith("\n") else text + "\n"
+
+
+def _normalize_ref(ref: str) -> str:
+    return parse_ref(ref).ref
+
+
+def _render_scope(
+    snapshot_obj: NativeSnapshot | WebSnapshot,
+    *,
+    scope: str,
+    target: str,
+    depth: int | None,
+) -> str:
+    """Resolve the effective text/artifact scope for a snapshot request."""
+    if target:
+        clean_ref = _normalize_ref(target)
+        if snapshot_obj.find_ref(clean_ref) is None:
+            raise ValueError(f"ref '{clean_ref}' not found in snapshot")
+        scope = f"ref:{clean_ref}"
+    if depth is not None and scope not in ("", "full", "inputs") and not scope.startswith("depth:"):
+        scope = f"{scope},depth:{depth}"
+    return scope or "full"
+
+
+def _write_snapshot_bundle(bundle: SnapshotBundlePayload) -> None:
+    write_json_artifact(bundle.paths["meta"], bundle.meta_json)
+    write_text_artifact(bundle.paths["compact"], bundle.compact_yml)
+    write_text_artifact(bundle.paths["full"], bundle.full_yml)
+    write_json_artifact(bundle.paths["refs"], bundle.refs_json)
+    write_json_artifact(bundle.paths["index"], bundle.index_json)
+    write_latest_snapshot_pointer(
+        bundle.meta_json,
+        source=str(bundle.meta_json.get("source", "")) or None,
+        context=str(bundle.meta_json.get("context", "")) or None,
+    )
+
+
+def _format_artifact_metadata(bundle: SnapshotBundlePayload) -> str:
+    metadata = bundle.meta_json
+    lines = [
+        f"snapshot_id: {metadata['snapshot_id']}",
+        f"source: {metadata['source']}",
+        f"screen_id: {metadata['screen_id']}",
+    ]
+    for key in ("context", "title", "url"):
+        if key in metadata:
+            lines.append(f"{key}: {metadata[key]}")
+    if metadata.get("truncated"):
+        lines.append("truncated: true")
+    lines.append("artifacts:")
+    for name in ("compact", "full", "refs", "index", "meta"):
+        lines.append(f"  {name}: {metadata['artifacts'][name]}")
+    return "\n".join(lines)
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _artifact_path(snapshot_id_or_latest: str, artifact: str) -> Path:
+    if artifact not in _SNAPSHOT_SHOW_ARTIFACTS:
+        valid = ", ".join(sorted(_SNAPSHOT_SHOW_ARTIFACTS))
+        raise ValueError(f"Unknown snapshot artifact '{artifact}'. Expected one of: {valid}")
+    if snapshot_id_or_latest == "latest":
+        metadata_path = latest_snapshot_path()
+        metadata = _read_json_file(metadata_path)
+        artifacts = metadata.get("artifacts", {})
+        if isinstance(artifacts, dict) and artifacts.get(artifact):
+            return Path(str(artifacts[artifact]))
+        snapshot_id = str(metadata.get("snapshot_id", ""))
+        if not snapshot_id:
+            raise ValueError("Latest snapshot metadata does not include snapshot_id")
+        return snapshot_artifact_path(snapshot_id, artifact)
+    return snapshot_artifact_path(snapshot_id_or_latest, artifact)
+
+
+def _read_artifact(snapshot_id_or_latest: str, artifact: str) -> tuple[str, Any]:
+    path = _artifact_path(snapshot_id_or_latest, artifact)
+    if not path.exists():
+        raise FileNotFoundError(f"Snapshot artifact not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    if artifact in {"meta", "refs", "index"}:
+        return text, json.loads(text)
+    return text, None
+
+
+def _load_refs(snapshot_id_or_latest: str) -> dict[str, Any]:
+    _text, refs_payload = _read_artifact(snapshot_id_or_latest, "refs")
+    if not isinstance(refs_payload, dict):
+        return {}
+    refs = refs_payload.get("refs", {})
+    return refs if isinstance(refs, dict) else {}
+
+
+def _load_index(snapshot_id_or_latest: str) -> dict[str, Any]:
+    _text, index_payload = _read_artifact(snapshot_id_or_latest, "index")
+    return index_payload if isinstance(index_payload, dict) else {}
+
+
+def _compact_ref_line(ref: str, item: dict[str, Any]) -> str:
+    role = item.get("role", "")
+    name = item.get("name", "")
+    value = item.get("value")
+    suffix = f' "{name}"' if name else ""
+    if value not in (None, ""):
+        suffix += f' value="{value}"'
+    return f"[ref:{ref}] {role}{suffix}".rstrip()
+
+
+def _ref_detail(ref: str, item: dict[str, Any]) -> str:
+    lines = [_compact_ref_line(ref, item)]
+    for key in ("context", "source_type", "expected_bounds", "bounds", "action_target_ref"):
+        if key in item:
+            lines.append(f"{key}: {item[key]}")
+    strategies = item.get("strategies")
+    if strategies:
+        lines.append("strategies:")
+        for strategy in strategies:
+            if isinstance(strategy, dict):
+                lines.append(f"  - {strategy.get('by')}: {strategy.get('value')}")
+    return "\n".join(lines)
+
+
+def _filter_ref_items(refs: dict[str, Any], role: str = "") -> list[tuple[str, dict[str, Any]]]:
+    items: list[tuple[str, dict[str, Any]]] = []
+    for ref, value in sorted(refs.items(), key=lambda item: item[0]):
+        if not isinstance(value, dict):
+            continue
+        if role and str(value.get("role", "")) != role:
+            continue
+        items.append((ref, value))
+    return items
+
+
+def _serialize_current_ref_entry(entry: Any) -> dict[str, Any]:
+    return {
+        "role": getattr(entry, "role", ""),
+        "name": getattr(entry, "name", ""),
+        "context": getattr(entry, "context", ""),
+        "source_type": getattr(entry, "source_type", ""),
+        "expected_bounds": list(getattr(entry, "expected_bounds", (0, 0, 0, 0))),
+        "strategies": [
+            {"by": getattr(strategy, "by", ""), "value": getattr(strategy, "value", "")}
+            for strategy in getattr(entry, "strategies", [])
+        ],
+        **(
+            {"action_target_ref": getattr(entry, "action_target_ref")}
+            if getattr(entry, "action_target_ref", None)
+            else {}
+        ),
+    }
+
+
+def _lookup_ref_item(ref: str) -> tuple[str, dict[str, Any]] | None:
+    parsed = parse_ref(ref)
+    if parsed.snapshot_id:
+        try:
+            item = _load_refs(parsed.snapshot_id).get(parsed.ref)
+            if isinstance(item, dict):
+                return parsed.ref, item
+        except (FileNotFoundError, ValueError, json.JSONDecodeError):
+            pass
+    else:
+        try:
+            item = _load_refs("latest").get(parsed.ref)
+            if isinstance(item, dict):
+                return parsed.ref, item
+        except (FileNotFoundError, ValueError, json.JSONDecodeError):
+            pass
+        current_item = state.current_ref_map.get(parsed.ref)
+        if current_item is not None:
+            return parsed.ref, _serialize_current_ref_entry(current_item)
+
+    try:
+        resolved, entry = state.ref_resolver.require_registered(ref)
+        return resolved.ref, _serialize_current_ref_entry(entry)
+    except ElementNotFoundError:
+        return None
+
+
+def _strategy_rank(source_type: str, strategy: dict[str, Any]) -> int:
+    by = str(strategy.get("by", "")).lower()
+    value = str(strategy.get("value", ""))
+    is_web = source_type.lower() == "web"
+    if is_web:
+        if by == "css selector":
+            return 0
+        if by == "xpath" and ("@role=" in value or "@aria-label=" in value):
+            return 1
+        if by in {"link text", "partial link text"}:
+            return 2
+        if by == "xpath":
+            return 3
+        if by == "tag name":
+            return 4
+        if by == "coordinates":
+            return 99
+        return 10
+    if by == "accessibility_id":
+        return 0
+    if by == "id":
+        return 1
+    if by == "xpath":
+        return 2
+    if by == "coordinates":
+        return 99
+    return 10
+
+
+def _best_locator_strategy(item: dict[str, Any]) -> dict[str, Any] | None:
+    strategies = [
+        strategy for strategy in item.get("strategies", [])
+        if isinstance(strategy, dict) and strategy.get("value")
+    ]
+    if not strategies:
+        return None
+    source_type = str(item.get("source_type") or item.get("source") or "")
+    return min(strategies, key=lambda strategy: _strategy_rank(source_type, strategy))
+
+
+def _load_ref_items_for_mapping() -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    try:
+        refs = _load_refs("latest")
+        if refs:
+            result.update(
+                {str(ref): item for ref, item in refs.items() if isinstance(item, dict)}
+            )
+    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+        pass
+    for ref, entry in state.current_ref_map.items():
+        result[str(ref)] = _serialize_current_ref_entry(entry)
+    return result
+
+
+def _map_web_query_ref(item: dict[str, Any], refs: dict[str, dict[str, Any]]) -> str:
+    selector = str(item.get("selector") or "")
+    role = str(item.get("role") or "")
+    accessible_name = str(item.get("accessible_name") or "")
+    css_matches: list[str] = []
+    role_name_matches: list[str] = []
+    for ref, ref_item in refs.items():
+        if str(ref_item.get("source_type") or ref_item.get("source") or "").lower() != "web":
+            continue
+        for strategy in ref_item.get("strategies", []):
+            if (
+                isinstance(strategy, dict)
+                and strategy.get("by") == "css selector"
+                and strategy.get("value") == selector
+            ):
+                css_matches.append(ref)
+                break
+        if (
+            role
+            and accessible_name
+            and str(ref_item.get("role") or "") == role
+            and str(ref_item.get("name") or "") == accessible_name
+        ):
+            role_name_matches.append(ref)
+    if len(css_matches) == 1:
+        return css_matches[0]
+    if len(role_name_matches) == 1:
+        return role_name_matches[0]
+    return ""
+
+
+def _snapshot_result(
+    snapshot_obj: NativeSnapshot | WebSnapshot,
+    *,
+    scope: str,
+    target: str = "",
+    depth: int | None = None,
+    boxes: bool,
+    filename: str,
+    raw: bool,
+) -> SnapshotResult:
+    render_scope = _render_scope(snapshot_obj, scope=scope, target=target, depth=depth)
+    bundle = create_snapshot_bundle_payload(snapshot_obj, scope=render_scope if render_scope != "full" else None)
+    _write_snapshot_bundle(bundle)
+    state.current_snapshot_id = bundle.snapshot_id
+    state.current_snapshot_metadata = dict(bundle.meta_json)
+    state.ref_resolver.mark_current_snapshot(bundle.snapshot_id, bundle.meta_json)
+    raw_text = _snapshot_text(snapshot_obj, render_scope, boxes=boxes)
+    if filename:
+        Path(filename).write_text(raw_text, encoding="utf-8")
+    text = raw_text if raw else _format_artifact_metadata(bundle)
+    return SnapshotResult(text=text, data=bundle.meta_json, raw_text=raw_text, bundle=bundle)
 
 
 def refresh_snapshot(
     scope: str = "full",
+    target: str = "",
     context: str = "native",
     restore_context: bool = True,
     depth: int | None = None,
     max_nodes: int | None = None,
     boxes: bool = False,
     filename: str = "",
-) -> str:
+    raw: bool = False,
+) -> SnapshotResult:
     """Take a snapshot in the requested context.
 
     Args:
@@ -160,56 +580,333 @@ def refresh_snapshot(
         filename: save output to file
     """
     driver = _require_driver()
-    target = resolve_context(context, driver)
+    resolved_context = resolve_context(context, driver)
 
-    if is_web_context(target):
-        with using_context(target, driver, restore=restore_context):
-            result = _refresh_web_snapshot(driver, target, scope, depth, max_nodes, boxes)
+    if is_web_context(resolved_context):
+        with using_context(resolved_context, driver, restore=restore_context):
+            snapshot_obj = _refresh_web_snapshot(driver, resolved_context, scope, depth, max_nodes, boxes)
     else:
-        with using_context(target, driver, restore=restore_context):
-            result = _refresh_native_snapshot(driver, scope, max_nodes=max_nodes, boxes=boxes)
+        with using_context(resolved_context, driver, restore=restore_context):
+            snapshot_obj = _refresh_native_snapshot(driver, scope, max_nodes=max_nodes, boxes=boxes)
 
-    if filename:
-        from pathlib import Path
-        Path(filename).write_text(result, encoding="utf-8")
-
-    return result
+    return _snapshot_result(
+        snapshot_obj,
+        scope=scope,
+        target=target,
+        depth=depth,
+        boxes=boxes,
+        filename=filename,
+        raw=raw,
+    )
 
 
 def snapshot(
     scope: str = "full",
+    target: str = "",
     context: str = "native",
     depth: int | None = None,
     max_nodes: int | None = None,
     boxes: bool = False,
     filename: str = "",
+    raw: bool = False,
 ) -> str:
     """Public snapshot entry point."""
-    return refresh_snapshot(
-        scope, context=context, depth=depth, max_nodes=max_nodes, boxes=boxes, filename=filename,
+    result = refresh_snapshot(
+        scope,
+        target=target,
+        context=context,
+        depth=depth,
+        max_nodes=max_nodes,
+        boxes=boxes,
+        filename=filename,
+        raw=raw,
     )
+    return result.text
+
+
+def snapshot_show(
+    snapshot_id: str = "latest",
+    artifact: str = "compact",
+    ref: str = "",
+    raw: bool = False,
+) -> str:
+    """Show a persisted snapshot artifact without refreshing device state."""
+    try:
+        normalized_ref = _normalize_ref(ref) if ref else ""
+        if normalized_ref:
+            refs = _load_refs(snapshot_id)
+            item = refs.get(normalized_ref)
+            if not isinstance(item, dict):
+                return f"ERROR: ref '{normalized_ref}' not found in snapshot '{snapshot_id}'."
+            payload = {"ref": normalized_ref, **item}
+            return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) if raw else _ref_detail(normalized_ref, item)
+
+        text, data = _read_artifact(snapshot_id, artifact)
+        if raw or artifact in {"compact", "full"}:
+            return text
+        return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+        return f"ERROR: {exc}"
+
+
+def snapshot_search(
+    text: str,
+    snapshot_id: str = "latest",
+    role: str = "",
+    raw: bool = False,
+) -> str:
+    """Search persisted snapshot index/ref artifacts without refreshing device state."""
+    needle = text.lower()
+    try:
+        index = _load_index(snapshot_id)
+        refs_by_id = _load_refs(snapshot_id)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+        return f"ERROR: {exc}"
+
+    matches: list[dict[str, Any]] = []
+    for item in index.get("refs", []):
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("ref", ""))
+        if not ref:
+            continue
+        ref_role = str(item.get("role", ""))
+        if role and ref_role != role:
+            continue
+        haystack_parts = [
+            ref,
+            ref_role,
+            str(item.get("name", "")),
+            str(item.get("value", "")),
+        ]
+        ref_detail = refs_by_id.get(ref)
+        if isinstance(ref_detail, dict):
+            haystack_parts.extend(
+                str(ref_detail.get(key, "")) for key in ("name", "role", "source_type")
+            )
+        if needle not in " ".join(haystack_parts).lower():
+            continue
+        match = {
+            "ref": ref,
+            "role": ref_role,
+            "name": item.get("name", ""),
+            "bounds": item.get("bounds"),
+        }
+        if "value" in item:
+            match["value"] = item["value"]
+        matches.append(match)
+
+    if raw:
+        return json.dumps(matches, ensure_ascii=False, indent=2, sort_keys=True)
+    if not matches:
+        return f"No snapshot refs matching '{text}' found."
+    lines = [f"Snapshot search results for '{text}' (total={len(matches)}):"]
+    lines.extend(_compact_ref_line(str(match["ref"]), match) for match in matches)
+    return "\n".join(lines)
+
+
+def snapshot_refs(
+    snapshot_id: str = "latest",
+    ref: str = "",
+    role: str = "",
+    raw: bool = False,
+) -> str:
+    """List refs or show one ref from a persisted snapshot artifact."""
+    try:
+        refs = _load_refs(snapshot_id)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+        return f"ERROR: {exc}"
+
+    normalized_ref = _normalize_ref(ref) if ref else ""
+    if normalized_ref:
+        item = refs.get(normalized_ref)
+        if not isinstance(item, dict):
+            return f"ERROR: ref '{normalized_ref}' not found in snapshot '{snapshot_id}'."
+        payload = {"ref": normalized_ref, **item}
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) if raw else _ref_detail(normalized_ref, item)
+
+    items = _filter_ref_items(refs, role=role)
+    if raw:
+        payload = [{"ref": ref_name, **item} for ref_name, item in items]
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    if not items:
+        suffix = f" with role '{role}'" if role else ""
+        return f"No refs found in snapshot '{snapshot_id}'{suffix}."
+    lines = [f"Snapshot refs for '{snapshot_id}' (total={len(items)}):"]
+    lines.extend(_compact_ref_line(ref_name, item) for ref_name, item in items)
+    return "\n".join(lines)
+
+
+def generate_locator(ref: str, raw: bool = False) -> str:
+    """Return the best stored durable locator/selector for a snapshot ref."""
+    found = _lookup_ref_item(ref)
+    if found is None:
+        clean = _normalize_ref(ref)
+        return f"ERROR: ref '{clean}' not found in latest refs artifact or current snapshot."
+    ref_name, item = found
+    best = _best_locator_strategy(item)
+    if best is None:
+        return "" if raw else f"ERROR: ref '{ref_name}' has no stored locator strategies."
+    value = str(best.get("value", ""))
+    if raw:
+        return value
+
+    lines = [
+        f"ref: {ref_name}",
+        f"role: {item.get('role', '')}",
+        f"name: {item.get('name', '')}",
+        f"source_type: {item.get('source_type', '')}",
+        f"best: {best.get('by')}: {value}",
+        f"locator: {value}",
+    ]
+    strategies = item.get("strategies")
+    if strategies:
+        lines.append("strategies:")
+        for strategy in strategies:
+            if isinstance(strategy, dict):
+                marker = " *" if strategy is best else ""
+                lines.append(f"  - {strategy.get('by')}: {strategy.get('value')}{marker}")
+    return "\n".join(lines)
+
+
+def _parse_attrs(attrs: str | list[str] | None) -> list[str]:
+    if attrs is None:
+        return []
+    if isinstance(attrs, str):
+        raw_items = attrs.split(",")
+    else:
+        raw_items = []
+        for item in attrs:
+            raw_items.extend(str(item).split(","))
+    parsed: list[str] = []
+    for item in raw_items:
+        clean = item.strip()
+        if clean and clean not in parsed:
+            parsed.append(clean)
+    return parsed
+
+
+def _format_web_query_field(key: str, value: Any) -> str:
+    text = str(value)
+    if text == "":
+        return ""
+    if any(ch.isspace() for ch in text) or any(ch in text for ch in "\"'[]=<>"):
+        text = json.dumps(text, ensure_ascii=False)
+    return f"{key}={text}"
+
+
+def web_query(
+    selector: str,
+    attrs: str | list[str] | None = None,
+    limit: int = _WEB_QUERY_DEFAULT_LIMIT,
+    raw: bool = False,
+) -> str:
+    """Query the current WebView/Chrome DOM with a CSS selector."""
+    driver = _require_driver()
+    context = current_context(driver)
+    if not is_web_context(context):
+        raise AppiumCliError(
+            "web_query requires a WebView/Chrome context. Use webview_switch or snapshot --context=webview first.",
+            exit_code=FEATURE_NOT_ENABLED,
+        )
+
+    parsed_attrs = _parse_attrs(attrs)
+    try:
+        requested_limit = int(limit)
+    except (TypeError, ValueError):
+        requested_limit = _WEB_QUERY_DEFAULT_LIMIT
+    safe_limit = max(0, min(requested_limit, _WEB_QUERY_MAX_LIMIT))
+    result = driver.execute_script(WEB_QUERY_SCRIPT, selector, parsed_attrs, safe_limit)
+    if isinstance(result, str):
+        result = json.loads(result)
+    if isinstance(result, dict) and result.get("error"):
+        return f"ERROR: {result['error']}"
+    if not isinstance(result, list):
+        return "[]" if raw else "No matching elements."
+
+    refs = _load_ref_items_for_mapping()
+    rows: list[dict[str, Any]] = []
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        row = {
+            "tag": str(item.get("tag") or ""),
+            "role": str(item.get("role") or ""),
+            "accessible_name": str(item.get("accessible_name") or ""),
+            "id": str(item.get("id") or ""),
+            "name": str(item.get("name") or ""),
+            "type": str(item.get("type") or ""),
+            "placeholder": str(item.get("placeholder") or ""),
+            "aria_label": str(item.get("aria_label") or ""),
+            "text": str(item.get("text") or ""),
+            "href": str(item.get("href") or ""),
+            "selector": str(item.get("selector") or ""),
+        }
+        extra_attrs = item.get("attrs")
+        if isinstance(extra_attrs, dict) and extra_attrs:
+            row["attrs"] = {str(key): str(value) for key, value in extra_attrs.items()}
+        mapped_ref = _map_web_query_ref(row, refs)
+        if mapped_ref:
+            row["ref"] = mapped_ref
+        rows.append(row)
+
+    if raw:
+        return json.dumps(rows, ensure_ascii=False, indent=2, sort_keys=True)
+    if not rows:
+        return f"No elements matching selector '{selector}'."
+
+    lines = [f"Web query results for '{selector}' (total={len(rows)}):"]
+    for index, row in enumerate(rows, start=1):
+        ref = row.get("ref", "")
+        ref_part = f"[ref:{ref}] " if ref else ""
+        identity = row["accessible_name"] or row["text"] or row["id"] or row["name"]
+        line_fields = [
+            _format_web_query_field("selector", row["selector"]),
+        ]
+        detail_fields = [
+            _format_web_query_field("id", row["id"]),
+            _format_web_query_field("name", row["name"]),
+            _format_web_query_field("type", row["type"]),
+            _format_web_query_field("placeholder", row["placeholder"]),
+            _format_web_query_field("aria-label", row["aria_label"]),
+            _format_web_query_field("href", row["href"]),
+        ]
+        if row.get("attrs"):
+            for key, value in row["attrs"].items():
+                formatted = _format_web_query_field(key, value)
+                if formatted:
+                    detail_fields.append(formatted)
+        lines.append(
+            f"{index}. {ref_part}{row['tag']} {row['role'] or '-'} "
+            f"{json.dumps(identity, ensure_ascii=False)} "
+            + " ".join(field for field in line_fields if field)
+        )
+        details = " ".join(field for field in detail_fields if field)
+        if details:
+            lines.append(f"   {details}")
+    return "\n".join(lines)
 
 
 def web_snapshot(
     scope: str = "full",
+    target: str = "",
     depth: int | None = None,
     max_nodes: int | None = None,
     boxes: bool = False,
     filename: str = "",
+    raw: bool = False,
 ) -> str:
     """Convenience alias for ``snapshot --context=webview``."""
     return snapshot(
         scope,
+        target=target,
         context="webview",
         depth=depth,
         max_nodes=max_nodes,
         boxes=boxes,
         filename=filename,
+        raw=raw,
     )
-
-
-def _normalize_ref(ref: str) -> str:
-    return ref.strip().strip("[]").removeprefix("ref:")
 
 
 def _find_element(ref: str):
@@ -223,7 +920,16 @@ def _find_element(ref: str):
 def describe(ref: str) -> str:
     if state.current_snapshot is None:
         return "ERROR: No snapshot available. Run snapshot() first."
-    return state.current_snapshot.describe_ref(ref)
+    try:
+        parsed, _entry = state.ref_resolver.require_registered(ref)
+    except ElementNotFoundError as exc:
+        return f"ERROR: {exc}"
+    if parsed.snapshot_id and parsed.snapshot_id != state.current_snapshot_id:
+        return (
+            f"ERROR: Snapshot '{parsed.snapshot_id}' is not loaded in memory. "
+            "Run snapshot() in this session before describing that qualified ref."
+        )
+    return state.current_snapshot.describe_ref(parsed.ref)
 
 
 def find_by_text(text: str, scope: str = "full") -> str:

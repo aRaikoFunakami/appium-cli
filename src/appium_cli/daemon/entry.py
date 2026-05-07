@@ -21,7 +21,20 @@ from appium_cli.tools import interaction
 from appium_cli.tools import web_dialogs
 from appium_cli.tools import web_navigation
 from appium_cli.tools.device_info import get_device_info
-from appium_cli.tools.observation import describe, find_by_text, get_page_source, screenshot, snapshot, web_snapshot, webview_title, webview_url
+from appium_cli.tools.observation import (
+    describe,
+    find_by_text,
+    generate_locator,
+    get_page_source,
+    refresh_snapshot,
+    screenshot,
+    snapshot_refs,
+    snapshot_search,
+    snapshot_show,
+    web_query,
+    webview_title,
+    webview_url,
+)
 from appium_cli.tools.session import format_driver_status, is_driver_alive
 
 
@@ -44,6 +57,15 @@ def _probe_shell(driver) -> bool:
 
 
 def _handler(request: dict[str, Any]) -> dict[str, Any]:
+    previous_raw_output = state.action_raw_output
+    state.action_raw_output = bool(request.get("raw"))
+    try:
+        return _handle_request(request)
+    finally:
+        state.action_raw_output = previous_raw_output
+
+
+def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
     tool = request.get("tool")
     if tool == "ping":
         return {"text": "pong", "data": state.session_metadata}
@@ -57,7 +79,18 @@ def _handler(request: dict[str, Any]) -> dict[str, Any]:
         return {"text": get_device_info(), "data": {}}
     args = request.get("args") or {}
     if tool == "snapshot":
-        return {"text": snapshot(**args), "data": {}}
+        result = refresh_snapshot(**args, raw=bool(request.get("raw")))
+        return {"text": result.text, "data": result.data}
+    if tool == "snapshot_show":
+        return {"text": snapshot_show(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "snapshot_search":
+        return {"text": snapshot_search(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "snapshot_refs":
+        return {"text": snapshot_refs(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "generate_locator":
+        return {"text": generate_locator(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "web_query":
+        return {"text": web_query(**args, raw=bool(request.get("raw"))), "data": {}}
     if tool == "describe":
         return {"text": describe(**args), "data": {}}
     if tool == "find_by_text":
@@ -81,7 +114,8 @@ def _handler(request: dict[str, Any]) -> dict[str, Any]:
         return {"text": contexts.webview_status(), "data": {}}
     # WebView observation
     if tool == "web_snapshot":
-        return {"text": web_snapshot(**args), "data": {}}
+        result = refresh_snapshot(**args, context="webview", raw=bool(request.get("raw")))
+        return {"text": result.text, "data": result.data}
     if tool == "webview_url":
         return {"text": webview_url(), "data": {}}
     if tool == "webview_title":

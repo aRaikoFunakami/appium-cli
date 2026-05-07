@@ -1,81 +1,98 @@
 # Actions
 
-Action commands use refs from the latest snapshot. Refs are stable IDs like `tabbackground_4`, `login`, `btn_submit` (not sequential `e1`/`e2`).
-
-When tapping, prefer clickable elements from the snapshot directly. If the target text is not clickable, tap the clickable parent, row, or adjacent button in the same container. Do not use `find_by_text` to re-search for something already visible in the snapshot.
-
-Tap target decision tree:
-
-1. If the desired target is a clickable button/list row ref, tap it directly.
-2. If the desired target is visible text but not clickable, choose the clickable row/button near it in the same container.
-3. If unsure which ref owns the bounds, run `appium-cli describe <ref>`.
-4. After the action, run `snapshot` again before using another ref.
-
-## Ref resolution
-
-Each ref is resolved through multiple strategies with bounds verification:
-1. **resource-id** → find element, verify bounds ±20px
-2. **accessibility_id** (content-desc) → find element, verify bounds
-3. **xpath** (text match) → find element, verify bounds
-4. **coordinates** (center of bounds) → fallback
-
-This ensures that even when multiple elements share the same resource-id (e.g. all tab buttons have `tabBackground`), the correct one is tapped.
+Actions use refs from the latest snapshot artifacts. Run `snapshot` or `web_snapshot`, choose a ref, act, then read the post-action snapshot metadata that normal action output appends.
 
 ```bash
 appium-cli snapshot
-appium-cli tap tabbackground_4
-appium-cli type_text input_search "hello" --submit
-appium-cli scroll_down recycler_view
-appium-cli scroll_left rv_tab_menu
-appium-cli swipe_left
+appium-cli tap btn_login
+# OK
+# snapshot_id: native-after-...
+# artifacts:
+#   compact: .appium-cli/snapshots/...
+```
+
+The post-action artifact link is the next observation point. Use `snapshot_show latest`, `snapshot_refs`, or `snapshot_search` to inspect it without taking another device snapshot.
+
+## Raw action mode
+
+Global `--raw` goes before the command:
+
+```bash
+appium-cli --raw tap btn_login
+appium-cli --raw type_text input_search "hello"
+```
+
+Raw actions return only bare success/failure output and suppress post-action snapshot artifact metadata. Use raw mode for scripts; use normal mode for agent workflows.
+
+## Ref-first action commands
+
+```bash
+appium-cli tap btn_login
+appium-cli click web_btn_login
+appium-cli type_text input_email "user@example.com" --submit
+appium-cli fill web_search "query"
+appium-cli select web_country "JP" --by=value
 appium-cli press_key back
 appium-cli wait 1
 ```
 
-## Safe scrolling
+Target decision tree:
 
-Prefer scoped scrolling with a ref:
+1. Use a visible ref from the latest snapshot or refs artifact.
+2. If the label is text-only, tap the actionable parent row/button/container.
+3. If there are duplicates, inspect `snapshot_show latest --ref=<ref>` or `snapshot_refs latest --role=<role>`.
+4. After any action, use the new post-action snapshot artifacts before acting again.
 
-```bash
-appium-cli snapshot
-appium-cli scroll_down main_content_scrollable_container
-appium-cli snapshot
-```
+## Scrolling and swiping
 
-Use the container marked `[scrollable→vertical]` or `[scrollable→horizontal]` in the snapshot. Omitting the ref scrolls the full visible screen. Use no-ref only when you intend a full-screen scroll and no obvious scrollable container exists.
-
-Directional aliases take an optional ref:
+Prefer direction-specific aliases. The optional ref scopes the gesture; omitting it targets the full visible screen.
 
 ```bash
-# Scroll inside a known container
 appium-cli scroll_down recycler_view
-
-# Scroll the whole visible screen
+appium-cli scroll_up main_content
 appium-cli scroll_down
+appium-cli swipe_left carousel
+appium-cli swipe_left
 ```
 
-For compatibility, `scroll <direction> --ref=<ref>` still works, but prefer `scroll_down <ref>` style in new workflows.
+Use the container marked scrollable in the snapshot. Compatibility syntax still works but is not preferred: `appium-cli scroll down --ref=recycler_view`.
 
-## Common mistakes
+## Before/after diff workflow
+
+Use raw snapshots to compare UI changes exactly:
 
 ```bash
-# Avoid legacy direction-first syntax in new workflows
-appium-cli scroll up --ref=recycler_view
-
-# Preferred
-appium-cli scroll_down recycler_view
+appium-cli --raw snapshot > before.yml
+appium-cli tap btn_expand
+appium-cli --raw snapshot > after.yml
+diff before.yml after.yml
 ```
 
-## WebView context actions
+For smaller diffs, scope the snapshot:
 
-Actions are context-aware. When a `web_` ref is used, the driver switches to the ref's WebView context automatically. Web context uses Selenium methods instead of UiAutomator2 gesture scripts:
+```bash
+appium-cli --raw snapshot settings_panel --depth=3 > before.yml
+appium-cli tap toggle_wifi
+appium-cli --raw snapshot settings_panel --depth=3 > after.yml
+diff before.yml after.yml
+```
 
-- `tap` / `click` → `element.click()`
-- `type_text` / `fill` → `element.clear(); element.send_keys()`
-- `select` → Selenium `Select` for HTML `<select>` elements
-- `scroll_down/up` → `window.scrollBy()` JavaScript
-- `press_key` → W3C key names (`Enter`, `Tab`, `ArrowDown`) instead of Android keycodes
+## WebView actions
 
-Touch gestures (`long_press`, `double_tap`, `drag`, `fling_*`, `pinch_*`, `swipe_*`) are not supported in WebView context and fail with exit code 8. Switch to native context for these.
+Web refs (`web_...`) switch to the stored WebView context automatically:
 
-See [WebView reference](webview.md) for the full WebView workflow.
+```bash
+appium-cli web_snapshot
+appium-cli click web_btn_submit
+appium-cli fill web_input_email "user@example.com"
+appium-cli select web_country "JP" --by=value
+appium-cli press_key Enter
+```
+
+Web actions use Selenium/DOM behavior. Touch gestures (`long_press`, `drag`, `pinch_*`, `fling_*`, native `swipe_*`) are not available in WebView context; switch to native if you need real touch gestures.
+
+## Targeting layers
+
+1. Snapshot refs first.
+2. WebView CSS selectors/generated locators second (`web_query`, `generate_locator`).
+3. Legacy locator tools only for expert recovery or smartestiroid compatibility.
