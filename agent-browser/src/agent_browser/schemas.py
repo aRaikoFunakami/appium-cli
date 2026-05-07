@@ -87,16 +87,6 @@ class MemoryEvent(_BaseModel):
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class BrowserResultPayload(_BaseModel):
-    """Argument schema for the browser_result completion tool."""
-
-    success: bool
-    title: str | None = None
-    url: str | None = None
-    summary: str
-    notes: str | None = None
-
-
 class TaskResult(_BaseModel):
     """Final structured result returned by run_browser_task()."""
 

@@ -1,9 +1,4 @@
-"""SDK FunctionTool adapters for appium-cli plus custom completion/approval tools.
-
-This module is the single bridge between the OpenAI Agents SDK and the
-appium-cli OpenAI tool surface. The Browser Agent must never bypass these
-adapters and never touch WebDriver directly.
-"""
+"""Direct appium-cli tool bridge for the custom browser agent."""
 
 from __future__ import annotations
 
@@ -12,51 +7,24 @@ import base64
 import json
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from agents import FunctionTool, RunContextWrapper, function_tool
-from agents.tool_context import ToolContext
-
-from appium_cli.openai_tools import call_tool, get_openai_tools
+from appium_cli.openai_tools import call_tool
 
 from agent_browser.config import AgentBrowserConfig
-from agent_browser.guardrails import (
-    classify_tool_call,
-    is_approved,
-    requires_approval,
-)
+from agent_browser.guardrails import classify_tool_call, is_approved, requires_approval
 from agent_browser.memory import WorkingMemory, domain_of
-from agent_browser.schemas import (
-    ApprovalRecord,
-    BrowserResultPayload,
-    MemoryEvent,
-    ObservationSummary,
-    SafetyCategory,
-    ToolCallRecord,
-)
+from agent_browser.schemas import MemoryEvent, ObservationSummary, SafetyCategory, ToolCallRecord
 
 logger = logging.getLogger(__name__)
 
-
-# Maximum number of characters returned to the model per tool call. Keep this
-# large enough for mobile snapshots, but small enough that repeated
-# web_snapshot/web_eval calls do not dominate the next request's input tokens.
 MAX_TOOL_RESULT_CHARS = 12000
-
-# Stricter limit for snapshot_show when returning a full tree artifact (compact/full).
-# The agent should use snapshot_search/snapshot_refs instead; this limit ensures
-# that even if it calls snapshot_show(artifact=compact), the context cost is bounded.
 MAX_SNAPSHOT_SHOW_TREE_CHARS = 1500
-
-# appium-cli tool functions return "FAILED: ..." strings on error (not
-# exceptions). The daemon wraps these as ok=True. We detect and flip.
 _FAILED_PREFIX = "FAILED"
 
-# Action tools whose results contain an embedded snapshot that should be
-# compacted to reduce LLM context size. The agent can use snapshot_search /
-# snapshot_refs on the latest snapshot without re-fetching it.
 _ACTION_TOOLS = frozenset({
     "tap", "click", "fill", "type_text", "scroll", "scroll_up",
     "scroll_down", "scroll_left", "scroll_right", "swipe", "swipe_up",
@@ -68,8 +36,6 @@ _ACTION_TOOLS = frozenset({
     "go_forward",
 })
 
-# Tools whose textual output is an observation we should record for
-# self-correction / verification.
 _OBSERVATION_PRODUCING = frozenset({
     "snapshot",
     "web_snapshot",
@@ -85,53 +51,59 @@ _OBSERVATION_PRODUCING = frozenset({
     "web_query",
 })
 
+_METADATA_KEEP = frozenset({
+    "snapshot_id", "source", "screen_id", "context", "can_scroll_more",
+})
+
+
+class EpisodicMemoryProtocol:
+    def record(self, event: MemoryEvent) -> None: ...  # pragma: no cover
+
 
 class BrowserAgentContext:
-    """Container injected into RunContextWrapper.context.
-
-    Aggregates everything the agent or tools need to access during a run:
-    config, working memory, episodic memory backend, and pending approvals.
-    """
+    """Run context shared by the custom loop and tool executor."""
 
     def __init__(
         self,
         config: AgentBrowserConfig,
         memory: WorkingMemory,
-        episodic: "EpisodicMemoryProtocol | None" = None,
+        episodic: EpisodicMemoryProtocol | None = None,
     ) -> None:
         self.config = config
         self.memory = memory
         self.episodic = episodic
 
 
-# Light protocol to avoid circular import with memory module
-class EpisodicMemoryProtocol:
-    def record(self, event: MemoryEvent) -> None: ...  # pragma: no cover
+@dataclass(slots=True)
+class ToolExecutionResult:
+    name: str
+    args_summary: str
+    output: str
+    ok: bool
+    duration_ms: float
+    artifact_path: str | None = None
+
+    def short_output(self, *, max_error_chars: int, max_result_chars: int) -> str:
+        limit = max_result_chars if self.ok else max_error_chars
+        if len(self.output) <= limit:
+            return self.output
+        if not self.ok and limit >= 20:
+            half = max(1, (limit - 5) // 2)
+            return self.output[:half] + " ... " + self.output[-half:]
+        return self.output[: limit - 20] + "... [trimmed]"
 
 
 def _summarize_args(args: dict[str, Any] | None, *, limit: int = 240) -> str:
-    """Build a compact, log-safe arguments summary.
-
-    Long string values are truncated but their content is preserved for
-    debugging. Real secrets (passwords, tokens) must be protected by the
-    safety policy / human_approval gate, not by hiding tool args from logs -
-    silently hidden args make every failure impossible to diagnose.
-    """
     if not args:
         return "{}"
     safe: dict[str, Any] = {}
     for key, value in args.items():
         if isinstance(value, str):
-            if len(value) > 120:
-                safe[key] = value[:120] + f"...<+{len(value) - 120}>"
-            else:
-                safe[key] = value
+            safe[key] = value if len(value) <= 120 else value[:120] + f"...<+{len(value) - 120}>"
         else:
             safe[key] = value
     rendered = json.dumps(safe, ensure_ascii=False, default=str)
-    if len(rendered) > limit:
-        rendered = rendered[:limit] + "..."
-    return rendered
+    return rendered if len(rendered) <= limit else rendered[:limit] + "..."
 
 
 def _truncate(value: str, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
@@ -142,11 +114,6 @@ def _truncate(value: str, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
 
 
 def _save_screenshot_artifact(text: str, artifacts_dir: Path) -> str | None:
-    """Detect a screenshot JSON payload and save the base64 image to disk.
-
-    Returns the artifact path if saved, otherwise None. The original text
-    returned to the LLM is replaced with a reference (the caller does that).
-    """
     try:
         payload = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -163,14 +130,12 @@ def _save_screenshot_artifact(text: str, artifacts_dir: Path) -> str | None:
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%f")
     region = str(payload.get("region", "full")).replace(":", "_").replace("/", "_")
-    filename = f"screenshot_{timestamp}_{region}.png"
-    full_path = artifacts_dir / filename
+    full_path = artifacts_dir / f"screenshot_{timestamp}_{region}.png"
     full_path.write_bytes(raw)
     return str(full_path)
 
 
 def _extract_observation(tool_name: str, text: str) -> ObservationSummary | None:
-    """Build an ObservationSummary from the textual result of a tool, if any."""
     if tool_name == "webview_url":
         url = text.strip().splitlines()[0] if text.strip() else None
         return ObservationSummary(source="webview_url", url=url, summary=url)
@@ -178,7 +143,7 @@ def _extract_observation(tool_name: str, text: str) -> ObservationSummary | None
         title = text.strip().splitlines()[0] if text.strip() else None
         return ObservationSummary(source="webview_title", title=title, summary=title)
     if tool_name in {"snapshot", "web_snapshot"}:
-        first_lines = "\n".join(text.splitlines()[:6])
+        first_lines = "\n".join(text.splitlines()[:80])
         source: Any = "snapshot" if tool_name == "snapshot" else "web_snapshot"
         return ObservationSummary(source=source, summary=first_lines)
     if tool_name == "get_page_source":
@@ -187,17 +152,10 @@ def _extract_observation(tool_name: str, text: str) -> ObservationSummary | None
 
 
 def _compact_action_metadata(text: str) -> str:
-    """Compact the post-action snapshot metadata appended to action results.
-
-    Keeps the action prefix (e.g. "OK", "Navigated to ...") and essential
-    snapshot metadata (snapshot_id, source, screen_id, context, can_scroll_more).
-    Drops artifact paths, titles, urls, and any tree body to minimize tokens.
-    """
     lines = text.split("\n")
     prefix_lines: list[str] = []
     meta_lines: list[str] = []
     in_meta = False
-
     for line in lines:
         stripped = line.strip()
         if not in_meta:
@@ -210,24 +168,14 @@ def _compact_action_metadata(text: str) -> str:
             key = stripped.split(":", 1)[0] if ":" in stripped else ""
             if key in _METADATA_KEEP:
                 meta_lines.append(stripped)
-
     result = "\n".join(prefix_lines).rstrip()
     if meta_lines:
         result += "\n" + "\n".join(meta_lines)
     return result if result.strip() else "OK"
 
 
-# Metadata keys to preserve in compacted action results.
-_METADATA_KEEP = frozenset({
-    "snapshot_id", "source", "screen_id", "context", "can_scroll_more",
-})
-
-
-def _record_artifacts_from_data(
-    data: dict[str, Any] | None, memory: "WorkingMemory | None"
-) -> None:
-    """Record snapshot artifact paths from daemon response data into memory."""
-    if not data or not memory:
+def _record_artifacts_from_data(data: dict[str, Any] | None, memory: WorkingMemory | None) -> None:
+    if not data or memory is None:
         return
     artifacts = data.get("artifacts")
     if isinstance(artifacts, dict):
@@ -237,14 +185,11 @@ def _record_artifacts_from_data(
 
 
 def _serialize_response(name: str, response: dict[str, Any]) -> str:
-    """Render the daemon response as a string suitable for the LLM."""
     if not response.get("ok"):
         error = response.get("error") or "tool failed"
         detail = response.get("detail")
         rendered = f"ERROR: {error}"
-        if detail:
-            rendered += f" ({detail})"
-        return rendered
+        return rendered + (f" ({detail})" if detail else "")
 
     text = response.get("text") or ""
     if not text and response.get("data") is not None:
@@ -252,14 +197,8 @@ def _serialize_response(name: str, response: dict[str, Any]) -> str:
     if not text:
         return "OK"
     text = str(text)
-    # Compact embedded post-action snapshot metadata for action tools.
-    # The full snapshot is saved to disk; the LLM uses snapshot_search /
-    # snapshot_refs to extract what it needs.
     if name in _ACTION_TOOLS:
         return _compact_action_metadata(text)
-    # Aggressively truncate snapshot_show when returning a full tree artifact
-    # (compact or full). The agent should use snapshot_search/snapshot_refs
-    # for targeted extraction instead.
     if name == "snapshot_show" and len(text) > MAX_SNAPSHOT_SHOW_TREE_CHARS:
         head = text[: MAX_SNAPSHOT_SHOW_TREE_CHARS - 100]
         return (
@@ -270,292 +209,99 @@ def _serialize_response(name: str, response: dict[str, Any]) -> str:
     return _truncate(text)
 
 
-async def _invoke_appium_tool(
+async def execute_appium_tool(
     name: str,
-    args_json: str,
-    ctx: ToolContext[BrowserAgentContext],
-) -> str:
-    """Shared async handler that dispatches a single appium-cli tool call."""
-    context = ctx.context if ctx else None
-    config = context.config if context else AgentBrowserConfig()
-    memory = context.memory if context else None
+    args: dict[str, Any],
+    context: BrowserAgentContext,
+) -> ToolExecutionResult:
+    """Dispatch one appium-cli tool call through guardrails and memory logging."""
 
-    # Parse arguments
-    try:
-        parsed_args: dict[str, Any] = json.loads(args_json) if args_json and args_json.strip() else {}
-    except json.JSONDecodeError as exc:
-        return f"ERROR: invalid arguments JSON: {exc}"
-
-    # Safety check - happens locally, before talking to the daemon.
-    decision = classify_tool_call(name, parsed_args)
-    args_summary = _summarize_args(parsed_args)
+    cfg = context.config
+    memory = context.memory
+    decision = classify_tool_call(name, args)
+    args_summary = _summarize_args(args)
 
     if decision.category == SafetyCategory.BLOCKED:
         message = f"REFUSED: {decision.reason}"
-        logger.warning("[guardrail] BLOCKED %s args=%s reason=%s", name, args_summary, decision.reason)
-        if memory is not None:
-            memory.tool_calls.append(
-                ToolCallRecord(
-                    tool_name=name,
-                    arguments_summary=args_summary,
-                    duration_ms=0.0,
-                    ok=False,
-                    error=message,
-                )
-            )
-            memory.record_failure(message)
-            if context and context.episodic is not None:
-                context.episodic.record(
-                    MemoryEvent(
-                        event_type="tool_failure",
-                        tool_name=name,
-                        domain=domain_of(memory.current_url),
-                        detail=message,
-                    )
-                )
-        return message
+        memory.tool_calls.append(ToolCallRecord(tool_name=name, arguments_summary=args_summary, duration_ms=0.0, ok=False, error=message))
+        memory.record_failure(message)
+        return ToolExecutionResult(name, args_summary, message, False, 0.0)
 
-    if requires_approval(decision):
-        approved = memory is not None and is_approved(memory, decision)
-        if not approved:
-            key = decision.approval_key or f"{name}:sensitive"
-            message = (
-                f"APPROVAL_REQUIRED: action '{name}' is sensitive ({decision.matched_pattern}). "
-                f"Call human_approval(approval_key='{key}', description=...) before retrying."
-            )
-            logger.info("[guardrail] sensitive %s pattern=%s key=%s", name, decision.matched_pattern, key)
-            if memory is not None:
-                memory.tool_calls.append(
-                    ToolCallRecord(
-                        tool_name=name,
-                        arguments_summary=args_summary,
-                        duration_ms=0.0,
-                        ok=False,
-                        error="approval_required",
-                    )
-                )
-            return message
+    if requires_approval(decision) and not is_approved(memory, decision):
+        key = decision.approval_key or f"{name}:sensitive"
+        message = (
+            f"APPROVAL_REQUIRED: action '{name}' is sensitive ({decision.matched_pattern}). "
+            f"Approval key: {key}."
+        )
+        memory.tool_calls.append(ToolCallRecord(tool_name=name, arguments_summary=args_summary, duration_ms=0.0, ok=False, error="approval_required"))
+        return ToolExecutionResult(name, args_summary, message, False, 0.0)
 
-    # Execute via appium-cli daemon. call_tool() is synchronous; offload it.
     started = time.perf_counter()
     logger.info("[tool] -> %s %s", name, args_summary)
     try:
-        response: dict[str, Any] = await asyncio.to_thread(call_tool, name, parsed_args)
-    except Exception as exc:  # surface unexpected errors to the model
+        response: dict[str, Any] = await asyncio.to_thread(call_tool, name, args)
+    except Exception as exc:
         duration_ms = (time.perf_counter() - started) * 1000
         message = f"ERROR: tool dispatch raised: {type(exc).__name__}: {exc}"
         logger.exception("[tool] !! %s failed", name)
-        if memory is not None:
-            memory.tool_calls.append(
-                ToolCallRecord(
-                    tool_name=name,
-                    arguments_summary=args_summary,
-                    duration_ms=duration_ms,
-                    ok=False,
-                    error=message,
-                )
-            )
-            memory.record_failure(message)
-        return message
+        memory.tool_calls.append(ToolCallRecord(tool_name=name, arguments_summary=args_summary, duration_ms=duration_ms, ok=False, error=message))
+        memory.record_failure(message)
+        return ToolExecutionResult(name, args_summary, message, False, duration_ms)
 
     duration_ms = (time.perf_counter() - started) * 1000
     rendered = _serialize_response(name, response)
     ok = bool(response.get("ok"))
-
-    # Detect string-style failures wrapped as ok=True by the daemon.
     raw_text = str(response.get("text") or "")
     if ok and raw_text.lstrip().startswith(_FAILED_PREFIX):
         ok = False
 
     artifact_path: str | None = None
     if ok and name == "screenshot":
-        artifact_path = _save_screenshot_artifact(response.get("text") or "", config.artifacts_dir)
+        artifact_path = _save_screenshot_artifact(response.get("text") or "", cfg.artifacts_dir)
         if artifact_path:
-            if memory is not None:
-                memory.record_artifact(artifact_path)
-            # Replace the noisy base64 with a short reference so the LLM
-            # context does not balloon.
-            rendered = json.dumps(
-                {
-                    "type": "screenshot",
-                    "artifact_path": artifact_path,
-                    "region": json.loads(response.get("text") or "{}").get("region", "full"),
-                },
-                ensure_ascii=False,
-            )
+            memory.record_artifact(artifact_path)
+            region = "full"
+            try:
+                region = json.loads(response.get("text") or "{}").get("region", "full")
+            except json.JSONDecodeError:
+                pass
+            rendered = json.dumps({"type": "screenshot", "artifact_path": artifact_path, "region": region}, ensure_ascii=False)
 
-    # Record snapshot artifact paths (compact/full/refs/index/meta) from
-    # daemon response data into working memory for final reporting.
     if ok:
         _record_artifacts_from_data(response.get("data"), memory)
 
-    logger.info(
-        "[tool] <- %s ok=%s duration_ms=%.0f result_chars=%d",
-        name,
-        ok,
-        duration_ms,
-        len(rendered),
+    memory.tool_calls.append(
+        ToolCallRecord(
+            tool_name=name,
+            arguments_summary=args_summary,
+            duration_ms=duration_ms,
+            ok=ok,
+            error=None if ok else rendered[:200],
+            artifact_path=artifact_path,
+        )
     )
+    if not ok:
+        memory.record_failure(f"{name}: {rendered[:160]}")
+        memory.increment_retry(name)
 
-    if memory is not None:
-        memory.tool_calls.append(
-            ToolCallRecord(
+    if ok and name in _OBSERVATION_PRODUCING:
+        observation = _extract_observation(name, response.get("text") or "")
+        if observation is not None:
+            memory.latest_observation = observation
+            if observation.url:
+                memory.current_url = observation.url
+
+    if context.episodic is not None:
+        context.episodic.record(
+            MemoryEvent(
+                event_type="tool_success" if ok else "tool_failure",  # type: ignore[arg-type]
                 tool_name=name,
-                arguments_summary=args_summary,
-                duration_ms=duration_ms,
-                ok=ok,
-                error=None if ok else rendered[:200],
-                artifact_path=artifact_path,
+                domain=domain_of(memory.current_url),
+                selector_ref=args.get("ref"),
+                retry_count=memory.retry_counts.get(name),
+                detail=rendered[:240] if not ok else None,
             )
         )
-        if not ok:
-            memory.record_failure(f"{name}: {rendered[:160]}")
-            memory.increment_retry(name)
 
-        # Update working memory observation/url based on tool output.
-        if ok and name in _OBSERVATION_PRODUCING:
-            observation = _extract_observation(name, response.get("text") or "")
-            if observation is not None:
-                memory.latest_observation = observation
-                if observation.url:
-                    memory.current_url = observation.url
-
-        if context and context.episodic is not None:
-            event_type = "tool_success" if ok else "tool_failure"
-            context.episodic.record(
-                MemoryEvent(
-                    event_type=event_type,  # type: ignore[arg-type]
-                    tool_name=name,
-                    domain=domain_of(memory.current_url),
-                    selector_ref=parsed_args.get("ref"),
-                    retry_count=memory.retry_counts.get(name),
-                    detail=rendered[:240] if not ok else None,
-                )
-            )
-
-    return rendered
-
-
-def _make_appium_function_tool(schema: dict[str, Any]) -> FunctionTool:
-    """Convert an appium-cli OpenAI tool schema into an SDK ``FunctionTool``."""
-    func = schema["function"]
-    name: str = func["name"]
-    description: str = func.get("description", "")
-    params: dict[str, Any] = func.get("parameters") or {"type": "object", "properties": {}}
-
-    async def on_invoke(ctx: ToolContext[BrowserAgentContext], args_json: str) -> str:
-        return await _invoke_appium_tool(name, args_json, ctx)
-
-    return FunctionTool(
-        name=name,
-        description=description,
-        params_json_schema=params,
-        on_invoke_tool=on_invoke,
-        # appium-cli schemas use defaults and partial required lists, which
-        # OpenAI strict-mode does not allow. We disable strict mode for these.
-        strict_json_schema=False,
-    )
-
-
-def make_appium_tools() -> list[FunctionTool]:
-    """Build the full set of SDK FunctionTools backed by appium-cli."""
-    return [_make_appium_function_tool(schema) for schema in get_openai_tools()]
-
-
-# ----------------------------------------------------------------------------
-# Custom tools: human_approval and browser_result
-# ----------------------------------------------------------------------------
-
-
-@function_tool
-async def human_approval(
-    ctx: RunContextWrapper[BrowserAgentContext],
-    approval_key: str,
-    description: str,
-) -> str:
-    """Request explicit human approval for a sensitive action.
-
-    Args:
-        approval_key: Stable identifier returned by an earlier APPROVAL_REQUIRED
-            response (for example 'tap:login' or 'fill:payment').
-        description: Brief, non-secret description of what will happen if
-            approval is granted.
-
-    Returns:
-        A short confirmation string. The agent must retry the original tool
-        call after the approval is granted.
-    """
-    memory = ctx.context.memory
-    print(
-        f"\n[approval] Sensitive action requires confirmation:\n"
-        f"  key:   {approval_key}\n"
-        f"  what:  {description}\n"
-        f"Type 'yes' to approve, anything else to deny: ",
-        end="",
-        flush=True,
-    )
-    try:
-        response = await asyncio.to_thread(input)
-    except EOFError:
-        response = ""
-    granted = response.strip().lower() in {"y", "yes"}
-    record = ApprovalRecord(approval_key=approval_key, granted=granted, note=description)
-    memory.record_approval(record)
-    if ctx.context.episodic is not None:
-        ctx.context.episodic.record(
-            MemoryEvent(
-                event_type="approval",
-                detail=f"key={approval_key} granted={granted} desc={description}",
-            )
-        )
-    if granted:
-        logger.info("[approval] GRANTED %s", approval_key)
-        return f"APPROVED: {approval_key}. Retry the original tool call now."
-    logger.info("[approval] DENIED %s", approval_key)
-    return f"DENIED: {approval_key}. Do not proceed with this action."
-
-
-@function_tool
-async def browser_result(
-    ctx: RunContextWrapper[BrowserAgentContext],
-    success: bool,
-    summary: str,
-    title: str | None = None,
-    url: str | None = None,
-    notes: str | None = None,
-) -> str:
-    """Signal task completion and provide the final structured result.
-
-    Call this tool exactly once when the user's goal has been satisfied
-    (success=True) or when you have determined the goal cannot be completed
-    (success=False). The agent run will stop after this tool returns.
-    """
-    payload = BrowserResultPayload(
-        success=success,
-        summary=summary,
-        title=title,
-        url=url,
-        notes=notes,
-    )
-    memory = ctx.context.memory
-    memory.final_result = payload.model_dump()
-    logger.info(
-        "[result] success=%s title=%s url=%s",
-        payload.success,
-        payload.title,
-        payload.url,
-    )
-    if ctx.context.episodic is not None:
-        ctx.context.episodic.record(
-            MemoryEvent(
-                event_type="task_complete" if success else "task_failed",
-                detail=summary[:240],
-                domain=domain_of(payload.url),
-            )
-        )
-    return f"RESULT_RECORDED success={success}"
-
-
-def all_tools() -> list[FunctionTool]:
-    """Build the full tool set for the Browser Agent."""
-    return [*make_appium_tools(), human_approval, browser_result]
+    logger.info("[tool] <- %s ok=%s duration_ms=%.0f result_chars=%d", name, ok, duration_ms, len(rendered))
+    return ToolExecutionResult(name, args_summary, rendered, ok, duration_ms, artifact_path)

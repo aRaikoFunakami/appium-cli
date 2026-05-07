@@ -5,10 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "agent-browser"
 version = "0.1.0"
-description = "Single-agent mobile browser automation built on OpenAI Agents SDK and appium-cli."
+description = "Single-agent mobile browser automation built on OpenAI Responses API and appium-cli."
 requires-python = ">=3.11"
 dependencies = [
-    "openai-agents>=0.0.10",
+    "openai>=1.0",
+    "httpx>=0.28",
     "pydantic>=2.6",
     "python-dotenv>=1.0",
     "appium-cli",

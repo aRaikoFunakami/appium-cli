@@ -1,4 +1,4 @@
-"""Tests for the appium-cli FunctionTool adapter and custom tools.
+"""Tests for the direct appium-cli tool bridge.
 
 The daemon ``call_tool`` is mocked so these tests do not require a running
 Appium server.
@@ -11,45 +11,19 @@ from unittest.mock import patch
 
 import pytest
 
-from agents.run_context import RunContextWrapper
-from agents.tool_context import ToolContext
-
 from agent_browser.appium_tools import (
     BrowserAgentContext,
     MAX_TOOL_RESULT_CHARS,
-    _invoke_appium_tool,
-    all_tools,
-    make_appium_tools,
+    execute_appium_tool,
 )
 from agent_browser.config import AgentBrowserConfig
 from agent_browser.memory import WorkingMemory
 
 
-def _ctx(tmp_path) -> ToolContext[BrowserAgentContext]:
+def _ctx(tmp_path) -> BrowserAgentContext:
     cfg = AgentBrowserConfig(artifacts_dir=tmp_path / "artifacts", memory_path=tmp_path / "mem.jsonl")
     memory = WorkingMemory(goal="test")
-    bctx = BrowserAgentContext(config=cfg, memory=memory)
-    # ToolContext is a thin extension of RunContextWrapper - we only need .context.
-    wrapper = RunContextWrapper(context=bctx)
-    return wrapper  # type: ignore[return-value]
-
-
-class TestMakeAppiumTools:
-    def test_returns_70_tools(self) -> None:
-        tools = make_appium_tools()
-        assert len(tools) >= 60
-        names = {t.name for t in tools}
-        # spot-check known tools
-        assert {"snapshot", "tap", "fill", "goto", "webview_switch"} <= names
-
-    def test_all_tools_includes_custom(self) -> None:
-        names = {t.name for t in all_tools()}
-        assert "browser_result" in names
-        assert "human_approval" in names
-
-    def test_all_appium_tools_have_loose_schemas(self) -> None:
-        for tool in make_appium_tools():
-            assert tool.strict_json_schema is False, f"{tool.name} should not be strict"
+    return BrowserAgentContext(config=cfg, memory=memory)
 
 
 class TestInvokeAppiumTool:
@@ -58,32 +32,28 @@ class TestInvokeAppiumTool:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "OK", "data": {}}
-            result = await _invoke_appium_tool("tap", json.dumps({"ref": "home_btn"}), ctx)
-        assert result == "OK"
+            result = await execute_appium_tool("tap", {"ref": "home_btn"}, ctx)
+        assert result.output == "OK"
         mock_call.assert_called_once()
         # working memory updated
-        assert len(ctx.context.memory.tool_calls) == 1
-        assert ctx.context.memory.tool_calls[0].ok is True
+        assert len(ctx.memory.tool_calls) == 1
+        assert ctx.memory.tool_calls[0].ok is True
 
     @pytest.mark.asyncio
     async def test_blocked_tool_does_not_call_daemon(self, tmp_path) -> None:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
-            result = await _invoke_appium_tool(
-                "terminate_app", json.dumps({"app_id": "x"}), ctx
-            )
-        assert result.startswith("REFUSED")
+            result = await execute_appium_tool("terminate_app", {"app_id": "x"}, ctx)
+        assert result.output.startswith("REFUSED")
         mock_call.assert_not_called()
-        assert ctx.context.memory.tool_calls[0].ok is False
+        assert ctx.memory.tool_calls[0].ok is False
 
     @pytest.mark.asyncio
     async def test_sensitive_without_approval_blocks(self, tmp_path) -> None:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
-            result = await _invoke_appium_tool(
-                "tap", json.dumps({"ref": "login_btn"}), ctx
-            )
-        assert result.startswith("APPROVAL_REQUIRED")
+            result = await execute_appium_tool("tap", {"ref": "login_btn"}, ctx)
+        assert result.output.startswith("APPROVAL_REQUIRED")
         mock_call.assert_not_called()
 
     @pytest.mark.asyncio
@@ -91,15 +61,13 @@ class TestInvokeAppiumTool:
         from agent_browser.schemas import ApprovalRecord
 
         ctx = _ctx(tmp_path)
-        ctx.context.memory.record_approval(
+        ctx.memory.record_approval(
             ApprovalRecord(approval_key="tap:login", granted=True)
         )
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "tapped", "data": {}}
-            result = await _invoke_appium_tool(
-                "tap", json.dumps({"ref": "login_btn"}), ctx
-            )
-        assert result == "tapped"
+            result = await execute_appium_tool("tap", {"ref": "login_btn"}, ctx)
+        assert result.output == "tapped"
         mock_call.assert_called_once()
 
     @pytest.mark.asyncio
@@ -119,13 +87,13 @@ class TestInvokeAppiumTool:
                 "text": json.dumps(screenshot_payload),
                 "data": {},
             }
-            result = await _invoke_appium_tool("screenshot", "{}", ctx)
+            result = await execute_appium_tool("screenshot", {}, ctx)
 
         # The base64 must NOT appear in the result returned to the LLM.
-        assert "image_base64" not in result
+        assert "image_base64" not in result.output
         # An artifact path must be recorded in working memory.
-        assert len(ctx.context.memory.artifacts) == 1
-        artifact = ctx.context.memory.artifacts[0]
+        assert len(ctx.memory.artifacts) == 1
+        artifact = ctx.memory.artifacts[0]
         assert artifact.endswith(".png")
         # The file actually exists on disk.
         from pathlib import Path
@@ -137,10 +105,10 @@ class TestInvokeAppiumTool:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": False, "error": "no such ref"}
-            result = await _invoke_appium_tool("tap", json.dumps({"ref": "ghost"}), ctx)
-        assert result.startswith("ERROR")
-        assert ctx.context.memory.retry_counts.get("tap") == 1
-        assert ctx.context.memory.failures
+            result = await execute_appium_tool("tap", {"ref": "ghost"}, ctx)
+        assert result.output.startswith("ERROR")
+        assert ctx.memory.retry_counts.get("tap") == 1
+        assert ctx.memory.failures
 
 
 class TestArtifactFirst:
@@ -152,11 +120,11 @@ class TestArtifactFirst:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "FAILED: ref 'web_btn' cannot be resolved. No strategies available.", "data": {}}
-            result = await _invoke_appium_tool("tap", json.dumps({"ref": "web_btn"}), ctx)
-        assert "FAILED" in result or "cannot be resolved" in result
-        assert ctx.context.memory.tool_calls[-1].ok is False
-        assert ctx.context.memory.retry_counts.get("tap") == 1
-        assert any("web_btn" in f for f in ctx.context.memory.failures)
+            result = await execute_appium_tool("tap", {"ref": "web_btn"}, ctx)
+        assert "FAILED" in result.output or "cannot be resolved" in result.output
+        assert ctx.memory.tool_calls[-1].ok is False
+        assert ctx.memory.retry_counts.get("tap") == 1
+        assert any("web_btn" in f for f in ctx.memory.failures)
 
     @pytest.mark.asyncio
     async def test_action_compact_metadata(self, tmp_path) -> None:
@@ -179,17 +147,17 @@ class TestArtifactFirst:
         full_text = f"OK\n{metadata_block}"
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": full_text, "data": {}}
-            result = await _invoke_appium_tool("fill", json.dumps({"ref": "web__14", "text": "hello"}), ctx)
-        assert result.startswith("OK")
-        assert "snapshot_id: web-2026-05-07T07-05-18-853Z-728218" in result
-        assert "screen_id: 728218" in result
-        assert "source: web" in result
-        assert "context: WEBVIEW_chrome" in result
+            result = await execute_appium_tool("fill", {"ref": "web__14", "text": "hello"}, ctx)
+        assert result.output.startswith("OK")
+        assert "snapshot_id: web-2026-05-07T07-05-18-853Z-728218" in result.output
+        assert "screen_id: 728218" in result.output
+        assert "source: web" in result.output
+        assert "context: WEBVIEW_chrome" in result.output
         # artifact paths and title/url are removed
-        assert "/path/to/" not in result
-        assert "artifacts:" not in result
-        assert "title:" not in result
-        assert "url:" not in result
+        assert "/path/to/" not in result.output
+        assert "artifacts:" not in result.output
+        assert "title:" not in result.output
+        assert "url:" not in result.output
 
     @pytest.mark.asyncio
     async def test_action_can_scroll_more(self, tmp_path) -> None:
@@ -206,11 +174,11 @@ class TestArtifactFirst:
         full_text = f"OK\ncan_scroll_more: True\n{metadata_block}"
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": full_text, "data": {}}
-            result = await _invoke_appium_tool("scroll_down", json.dumps({}), ctx)
-        assert "can_scroll_more: True" in result
-        assert "snapshot_id: native-abc" in result
-        assert "screen_id: abc" in result
-        assert "/path/" not in result
+            result = await execute_appium_tool("scroll_down", {}, ctx)
+        assert "can_scroll_more: True" in result.output
+        assert "snapshot_id: native-abc" in result.output
+        assert "screen_id: abc" in result.output
+        assert "/path/" not in result.output
 
     @pytest.mark.asyncio
     async def test_snapshot_metadata_passthrough(self, tmp_path) -> None:
@@ -228,11 +196,11 @@ class TestArtifactFirst:
         )
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": metadata_text, "data": {}}
-            result = await _invoke_appium_tool("web_snapshot", json.dumps({}), ctx)
+            result = await execute_appium_tool("web_snapshot", {}, ctx)
         # Observation tools are NOT compacted — full metadata passes through
-        assert "snapshot_id: web-test" in result
-        assert "artifacts:" in result
-        assert "/tmp/test.compact.yml" in result
+        assert "snapshot_id: web-test" in result.output
+        assert "artifacts:" in result.output
+        assert "/tmp/test.compact.yml" in result.output
 
     @pytest.mark.asyncio
     async def test_artifacts_recorded_in_memory(self, tmp_path) -> None:
@@ -251,9 +219,9 @@ class TestArtifactFirst:
                 "text": "snapshot_id: test\nsource: native\nscreen_id: x\n",
                 "data": {"snapshot_id": "test", "artifacts": artifacts_dict},
             }
-            await _invoke_appium_tool("snapshot", json.dumps({}), ctx)
-        assert len(ctx.context.memory.artifacts) == 5
-        assert "/snapshots/test.compact.yml" in ctx.context.memory.artifacts
+            await execute_appium_tool("snapshot", {}, ctx)
+        assert len(ctx.memory.artifacts) == 5
+        assert "/snapshots/test.compact.yml" in ctx.memory.artifacts
 
     @pytest.mark.asyncio
     async def test_targeted_extraction_unchanged(self, tmp_path) -> None:
@@ -266,17 +234,17 @@ class TestArtifactFirst:
         )
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": search_result, "data": {}}
-            result = await _invoke_appium_tool("snapshot_search", json.dumps({"text": "Storage"}), ctx)
-        assert result == search_result
+            result = await execute_appium_tool("snapshot_search", {"text": "Storage"}, ctx)
+        assert result.output == search_result
 
     @pytest.mark.asyncio
     async def test_web_eval_result_respects_token_budget(self, tmp_path) -> None:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "x" * 30000, "data": {}}
-            result = await _invoke_appium_tool("web_eval", json.dumps({"script": "return []"}), ctx)
-        assert len(result) <= MAX_TOOL_RESULT_CHARS
-        assert "... [truncated " in result
+            result = await execute_appium_tool("web_eval", {"script": "return []"}, ctx)
+        assert len(result.output) <= MAX_TOOL_RESULT_CHARS
+        assert "... [truncated " in result.output
 
 
 class TestObservationProducing:

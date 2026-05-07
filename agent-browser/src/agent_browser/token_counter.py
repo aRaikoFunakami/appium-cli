@@ -1,8 +1,7 @@
 """Token usage and cost reporting for OpenAI models used by agent-browser.
 
 Adapted from smartestiroid's ``utils/token_counter.py``. Only the pricing
-table, model normalization, and a small helper to summarize an agents-SDK
-``Usage`` are kept; LangChain / SLog / persistent-history features are
+table and model normalization are kept; LangChain / SLog / persistent-history features are
 intentionally omitted.
 
 Pricing is in USD per 1K tokens.
@@ -207,7 +206,7 @@ class OpenAIPricingCalculator:
 
 @dataclass
 class CallUsage:
-    """Per-request usage extracted from agents-SDK ``RequestUsage``."""
+    """Per-request usage extracted from an OpenAI usage object."""
 
     input_tokens: int
     cached_tokens: int

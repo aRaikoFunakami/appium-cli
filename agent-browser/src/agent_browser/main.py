@@ -6,19 +6,13 @@ import argparse
 import asyncio
 import logging
 import sys
-from pathlib import Path
 
-from agents import Runner, trace
-from agents.run import RunConfig
-
-from agent_browser.agents import create_browser_agent
+from agent_browser.agent import run_react_loop
 from agent_browser.appium_tools import BrowserAgentContext
 from agent_browser.config import AgentBrowserConfig
 from agent_browser.memory import EpisodicMemory, JsonlMemoryStore, WorkingMemory
 from agent_browser.schemas import MemoryEvent, TaskResult
 from agent_browser.session import AppiumSessionManager
-from agent_browser.token_counter import log_usage_report
-from agent_browser.trimming_session import TrimmingSession
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +27,11 @@ def _configure_logging(level: str) -> None:
 
 
 def _build_task_result(goal: str, memory: WorkingMemory) -> TaskResult:
-    final = memory.final_result or {}
     return TaskResult(
         goal=goal,
-        success=bool(final.get("success", False)),
-        title=final.get("title") if isinstance(final.get("title"), str) else None,
-        url=final.get("url") if isinstance(final.get("url"), str) else (memory.current_url),
-        summary=str(final.get("summary") or "Task did not call browser_result."),
-        notes=final.get("notes") if isinstance(final.get("notes"), str) else None,
+        success=False,
+        url=memory.current_url,
+        summary="Task did not complete.",
         tool_calls=len(memory.tool_calls),
         retries=memory.total_retries(),
         artifacts=list(memory.artifacts),
@@ -71,41 +62,19 @@ async def run_browser_task(
             session_info.server_url,
             session_info.started_by_us,
         )
-        agent = create_browser_agent(cfg, episodic_memory=episodic)
-
-        run_result = None
-        with trace("agent_browser_task", metadata={"goal": goal[:200]}):
-            try:
-                run_result = await Runner.run(
-                    agent,
-                    input=goal,
-                    context=context,
-                    max_turns=cfg.max_turns,
-                    session=TrimmingSession("agent_browser"),
-                    run_config=RunConfig(trace_include_sensitive_data=False),
+        try:
+            result = await run_react_loop(goal=goal, cfg=cfg, context=context)
+        except Exception as exc:
+            logger.exception("[run] runner failed")
+            memory.record_failure(f"runner_error: {type(exc).__name__}: {exc}")
+            episodic.record(
+                MemoryEvent(
+                    event_type="task_failed",
+                    detail=f"runner_error: {type(exc).__name__}: {exc}",
                 )
-                logger.info("[run] final_output: %s", str(run_result.final_output)[:200])
-            except Exception as exc:
-                logger.exception("[run] runner failed")
-                memory.record_failure(f"runner_error: {type(exc).__name__}: {exc}")
-                episodic.record(
-                    MemoryEvent(
-                        event_type="task_failed",
-                        detail=f"runner_error: {type(exc).__name__}: {exc}",
-                    )
-                )
+            )
+            result = _build_task_result(goal, memory)
 
-        if run_result is not None:
-            try:
-                usage = run_result.context_wrapper.usage
-            except AttributeError:
-                usage = None
-            try:
-                log_usage_report(usage, cfg.model, logger, label="token")
-            except Exception:
-                logger.exception("[run] failed to report token usage")
-
-    result = _build_task_result(goal, memory)
     logger.info(
         "[run] done: success=%s tool_calls=%d retries=%d artifacts=%d failures=%d",
         result.success,

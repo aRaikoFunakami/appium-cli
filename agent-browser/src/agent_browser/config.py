@@ -51,9 +51,17 @@ class AgentBrowserConfig:
     platform: str = "android"
     udid: str | None = None
     appium_port: int = 4723
-    max_turns: int = 30
+    max_turns: int = 50
     max_retries: int = 2
     step_timeout_seconds: float = 60.0
+    recent_steps: int = 5
+    max_observation_chars: int = 2500
+    max_action_result_chars: int = 500
+    max_error_chars: int = 300
+    working_state_char_cap: int = 1200
+    max_output_tokens: int = 4096
+    temperature: float = 0.2
+    reasoning_effort: str | None = None
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
     memory_path: Path = field(default_factory=lambda: Path(".agent-browser-memory.jsonl"))
     log_level: str = "INFO"
@@ -81,9 +89,17 @@ class AgentBrowserConfig:
             platform=_env_str("AGENT_BROWSER_PLATFORM", "android") or "android",
             udid=_env_str("AGENT_BROWSER_UDID"),
             appium_port=_env_int("AGENT_BROWSER_APPIUM_PORT", 4723),
-            max_turns=_env_int("AGENT_BROWSER_MAX_TURNS", 30),
+            max_turns=_env_int("AGENT_BROWSER_MAX_TURNS", 50),
             max_retries=_env_int("AGENT_BROWSER_MAX_RETRIES", 2),
             step_timeout_seconds=_env_float("AGENT_BROWSER_STEP_TIMEOUT", 60.0),
+            recent_steps=_env_int("AGENT_BROWSER_RECENT_STEPS", 5),
+            max_observation_chars=_env_int("AGENT_BROWSER_MAX_OBSERVATION_CHARS", 2500),
+            max_action_result_chars=_env_int("AGENT_BROWSER_MAX_ACTION_RESULT_CHARS", 500),
+            max_error_chars=_env_int("AGENT_BROWSER_MAX_ERROR_CHARS", 300),
+            working_state_char_cap=_env_int("AGENT_BROWSER_WORKING_STATE_CHARS", 1200),
+            max_output_tokens=_env_int("AGENT_BROWSER_MAX_OUTPUT_TOKENS", 4096),
+            temperature=_env_float("AGENT_BROWSER_TEMPERATURE", 0.2),
+            reasoning_effort=_env_str("AGENT_BROWSER_REASONING_EFFORT"),
             artifacts_dir=artifacts,
             memory_path=memory,
             log_level=_env_str("AGENT_BROWSER_LOG_LEVEL", "INFO") or "INFO",

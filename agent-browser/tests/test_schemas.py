@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 from agent_browser.schemas import (
-    BrowserResultPayload,
     MemoryEvent,
     SafetyCategory,
     SafetyDecision,
@@ -31,25 +30,6 @@ class TestSafetyDecision:
         payload = d.model_dump_json()
         restored = SafetyDecision.model_validate_json(payload)
         assert restored == d
-
-
-class TestBrowserResultPayload:
-    def test_minimal(self) -> None:
-        p = BrowserResultPayload(success=True, summary="done")
-        assert p.success is True
-        assert p.summary == "done"
-        assert p.title is None
-
-    def test_full_roundtrip(self) -> None:
-        p = BrowserResultPayload(
-            success=True,
-            summary="Found page",
-            title="OpenAI Agents",
-            url="https://example.com",
-            notes="ok",
-        )
-        restored = BrowserResultPayload.model_validate_json(p.model_dump_json())
-        assert restored == p
 
 
 class TestTaskResult:

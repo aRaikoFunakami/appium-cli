@@ -1,15 +1,14 @@
 # agent-browser
 
-Production-oriented mobile browser automation built on the
-[OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) and the
-[`appium-cli`](../README.md) tool surface.
+Production-oriented mobile browser automation built on the OpenAI Responses API
+and the [`appium-cli`](../README.md) tool surface.
 
 ## Architecture
 
-`agent-browser` runs a **single capable Browser Agent** with rich tools rather
-than a chain of Planner / Observer / Executor / Verifier agents. The agent
-performs planning, observation, verification, retry and fallback inside one
-SDK loop, with safety enforced at the tool boundary.
+`agent-browser` runs a **single custom ReAct Browser Agent** with rich tools
+rather than a chain of Planner / Observer / Executor / Verifier agents. The
+agent rebuilds a minimal prompt every iteration from browser-operation state,
+with safety enforced at the tool boundary.
 
 ```
 User goal
@@ -24,20 +23,18 @@ load JSONL episodic memory (hints from past runs)
 ensure appium-cli session daemon is healthy (reuse or start)
   │
   ▼
-create single Browser Agent
-  │ tools: 70+ appium-cli tools (FunctionTool adapters)
-  │      + browser_result   (signals completion, stops the run)
-  │      + human_approval   (stdin approval for sensitive actions)
-  │ instructions: dynamic - includes working memory + episodic hints
-  │ tool_use_behavior: StopAtTools(["browser_result"])
-  ▼
-Runner.run(agent, goal, context=BrowserAgentContext)
-  ├─ model picks tools and arguments
-  ├─ adapter classifies safety BEFORE talking to the daemon
-  ├─ adapter calls appium_cli.openai_tools.call_tool()
-  ├─ screenshot results are saved to artifacts/, base64 stripped from logs
-  ├─ adapter updates working memory and appends MemoryEvents to JSONL
-  └─ agent self-verifies via snapshot/web_snapshot/webview_url/webview_title
+create custom ReAct loop
+  │ tools: 70+ appium-cli tools (Responses API function schemas)
+  │ prompt: goal + current screen + working_state + last 5 step lines
+  │ completion: structured AgentBrain {is_done, result}
+   ▼
+Responses API loop
+   ├─ model picks tools and arguments
+   ├─ executor classifies safety BEFORE talking to the daemon
+   ├─ executor calls appium_cli.openai_tools.call_tool()
+   ├─ screenshot results are saved to artifacts/, base64 stripped from logs
+   ├─ raw function_call/reasoning items are discarded after each step
+   └─ latest observation overwrites old screen state
   │
   ▼
 TaskResult { success, title, url, summary, tool_calls, retries, artifacts }
@@ -46,10 +43,9 @@ TaskResult { success, title, url, summary, tool_calls, retries, artifacts }
 ### Why single-agent?
 
 A previous multi-agent prototype required 6-8 LLM API calls per browser step
-because of orchestrator/handoff overhead. The single-agent design folds
-planning, observation and verification into the system prompt and lets the SDK
-loop call multiple tools in one model turn, dramatically reducing wall-clock
-time per step.
+because of orchestrator/handoff overhead. The v2 design folds planning,
+observation and verification into a custom ReAct loop while avoiding SDK
+history accumulation. Only browser-operation state is sent to the model.
 
 ## Prerequisites
 
@@ -74,7 +70,7 @@ uv sync
 
 This installs:
 
-- `openai-agents` (Agents SDK)
+- `openai`
 - `pydantic`
 - `python-dotenv`
 - the parent `appium-cli` package as an editable dependency
@@ -84,7 +80,7 @@ This installs:
 ```bash
 # preferred smoke test (deterministic, no CAPTCHA)
 uv run agent-browser \
-  "Navigate to https://openai.github.io/openai-agents-python/ and return the page title and URL"
+  "Navigate to https://example.com and return the page title and URL"
 
 # JSON output for downstream tooling
 uv run agent-browser --json "Open https://example.com and report the page title"
@@ -97,30 +93,30 @@ guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
 
 - Sensitive actions (login, password entry, payment, purchase, reservation
   confirmation, personal data submission, submit/finalize buttons matched to a
-  sensitive context) require an explicit `human_approval` call before
-  execution.
-- `human_approval` prompts on stdin for `yes` to grant approval. Anything else
-  denies it. Approvals are scoped to the `approval_key` and live only inside
-  the run context (never persisted as raw value).
+  sensitive context) are stopped locally with `APPROVAL_REQUIRED`; they do not
+  reach the daemon without a local approval record.
 - A small set of destructive tools is **blocked unconditionally** locally and
   never reach the daemon (`terminate_app`, `restart_app`, `set_orientation`).
 - Credentials must NEVER be passed on the command line or hard-coded. Provide
   them through your own out-of-band mechanism.
 - Argument values that look like sensitive content are summarized, not logged.
   Screenshot base64 is written to disk but never echoed to logs.
+- The agent avoids Enter-based submission on intermediate fields of multi-field
+  forms. `submit=true` is reserved for intentional submission steps and is not
+  used for autocomplete / React-Select style controls.
 
 ## Artifacts and memory
 
 - **Artifacts**: each `screenshot` tool call saves a PNG to
   `AGENT_BROWSER_ARTIFACTS_DIR` (default `artifacts/`). The agent receives
   only a short reference back, not the base64 payload.
-- **Episodic memory**: `MemoryEvent` records (tool successes/failures,
-  approvals, completions) are appended to `AGENT_BROWSER_MEMORY_PATH`
-  (default `.agent-browser-memory.jsonl`). Recent events relevant to the
-  current domain are injected into the next run's instructions as hints.
-- **Working memory**: per-run state (URL, observations, failures, approvals,
-  retries) is held in `RunContextWrapper.context` and never sent to the LLM
-  except via the dynamic instructions section.
+- **Episodic memory**: `MemoryEvent` records (tool successes/failures and task
+  outcomes) are appended to `AGENT_BROWSER_MEMORY_PATH` (default
+  `.agent-browser-memory.jsonl`).
+- **Operation state**: each iteration sends only the goal, phase, latest
+  observation/current screen, bounded `working_state`, the last 5 short step
+  records, and optional loop/reflection warnings. Old snapshots, stale refs,
+  raw function calls, reasoning items, and screenshot base64 are not replayed.
 
 ## Known limitations
 
@@ -129,10 +125,8 @@ guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
   tests. If you must search, use a non-Google search engine or a direct URL.
 - **iOS Safari** is intentionally extension-ready (`AGENT_BROWSER_PLATFORM`)
   but not yet wired into the default workflow.
-- **Strict JSON schemas** are disabled for the appium-cli tool subset because
-  the registry uses partial `required` lists and `default` values that strict
-  mode rejects. Custom tools (`browser_result`, `human_approval`) remain
-  strict.
+- **Strict JSON schemas** may require normalization for some appium-cli tool
+  schemas because the registry uses defaults and partial `required` lists.
 
 ## Tests
 
@@ -140,7 +134,7 @@ guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
 uv run pytest
 ```
 
-Unit tests cover schemas, memory, guardrails, and the appium-cli FunctionTool
-adapter (with a mocked daemon `call_tool`). E2E coverage requires a running
+Unit tests cover schemas, state/history/prompt construction, guardrails, and
+the appium-cli tool bridge (with a mocked daemon `call_tool`). E2E coverage requires a running
 Appium server and a connected device and is intentionally excluded from the
 default test run.

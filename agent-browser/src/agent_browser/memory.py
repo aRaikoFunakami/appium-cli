@@ -1,8 +1,8 @@
 """Working memory and persistent episodic memory for the Browser Agent.
 
-Working memory lives only for the duration of a single run and is exposed to
-tools through the OpenAI Agents SDK ``RunContextWrapper``. Episodic memory is
-persisted to a JSONL file by default but the storage backend is abstracted via
+Working memory lives only for the duration of a single run and is shared with
+the custom ReAct loop/tool executor. Episodic memory is persisted to a JSONL
+file by default but the storage backend is abstracted via
 the :class:`MemoryStore` protocol so it can be swapped later.
 """
 
@@ -35,7 +35,7 @@ def domain_of(url: str | None) -> str | None:
 
 @dataclass(slots=True)
 class WorkingMemory:
-    """Mutable per-run state shared with tools via RunContextWrapper.context."""
+    """Mutable per-run state shared with the tool executor."""
 
     goal: str
     current_url: str | None = None
