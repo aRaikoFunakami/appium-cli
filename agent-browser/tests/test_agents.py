@@ -41,5 +41,5 @@ class TestBasePolicyTargetedExtraction:
         # snapshot_search should appear before "scroll_down" as recovery strategy
         search_pos = _BASE_POLICY.index("snapshot_search")
         # The error handling section mentions scroll_down after targeted tools
-        scroll_pos = _BASE_POLICY.index("scroll_down and snapshot again")
+        scroll_pos = _BASE_POLICY.index("scroll_down + snapshot")
         assert search_pos < scroll_pos

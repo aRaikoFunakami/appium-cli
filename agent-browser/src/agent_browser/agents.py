@@ -68,45 +68,35 @@ _BASE_POLICY = dedent(
       across a context switch.
     - If you have not just observed the screen yourself, observe first.
 
-    SNAPSHOTS:
-    - For Chrome/web pages, prefer web_snapshot. For native UI, use snapshot.
-    - web_snapshot/snapshot return compact metadata and artifact links. Do NOT
-      default to reading whole compact artifacts. Use targeted extraction first:
-      snapshot_search for visible text, snapshot_refs for actionable refs, and
-      web_query for WebView inputs/buttons/links and CSS attributes.
-    - Use snapshot_show only for targeted ref inspection
-      (snapshot_show(ref=...)) or as a fallback after search/refs/query are
-      insufficient. Full artifacts are debugging-only.
-    - DO NOT pass the `depth` parameter to web_snapshot. `depth` limits the
-      DOM tree depth; on real pages (yahoo.co.jp, Google, news sites) form
-      inputs and buttons live deep inside <main><div><div><form><input> and
-      a small depth value will hide them. Always call web_snapshot() with no
-      depth argument; let it default.
-    - If a needed element is NOT visible in the snapshot, do NOT just retry
-      with different depth values. Instead:
-        * Call snapshot_search(text="<visible label or aria-label substring>")
-          using exact visible text or aria-label words from the page (e.g.
-          "検索したい", "Search", a button label).
-        * Call snapshot_refs(role="<role>") to list candidate refs.
-        * Call web_query(selector="input,button,a", attrs="name,type,placeholder,aria-label,data-testid,href")
-          to inspect WebView DOM fields in a short result.
-        * Or scroll_down and snapshot again to reveal more of the page.
-        * Or call web_eval only for a specific attribute/value that web_query
-          does not expose. web_eval scripts MUST start with `return`.
-    - Refs returned by snapshot/find_by_text/find_container are stable
-      identifiers; never invent ref names like "input" or "btn_search".
+    SNAPSHOTS (artifact-first):
+    - snapshot and web_snapshot save the full UI tree to disk and return only
+      compact metadata (snapshot_id, source, screen_id, context, artifact
+      file paths). The full tree is NEVER in your conversation context.
+    - To inspect the screen, use targeted extraction tools:
+        * snapshot_search(text="...") — find elements by visible text
+        * snapshot_refs(role="button") — list actionable refs by role
+        * web_query(selector="input,button,a", attrs="name,type,...") — DOM query
+        * snapshot_show(ref="btn_login") — detail for one specific ref
+    - Action tools (tap, fill, scroll_down, goto, etc.) automatically take a
+      post-action snapshot saved to disk and return a compact summary with
+      snapshot_id and screen_id. After any action, the latest snapshot is
+      already saved — use snapshot_search or snapshot_refs to check results
+      WITHOUT calling snapshot again.
+    - DO NOT pass the `depth` parameter to web_snapshot. Real pages have
+      deeply nested DOM; a small depth hides form inputs and buttons.
+    - DO NOT call snapshot/web_snapshot just to "see what happened" after an
+      action — the action already saved the snapshot. Use targeted extraction.
+    - Only call snapshot/web_snapshot when you explicitly need a FRESH tree
+      (e.g. after waiting for dynamic content, or after a context switch).
+    - Refs are stable identifiers from the latest snapshot; never invent them.
 
     ERROR HANDLING:
     - If a tool returns ERROR, do NOT immediately retry the exact same call.
       Read the error, observe the screen, and choose a different approach.
     - Bounded retries only. After ~2 failed attempts on the same operation,
       change strategy or call browser_result(success=False, ...).
-    - Do NOT call the same observation tool repeatedly with only minor
-      parameter tweaks (e.g. depth=4 -> depth=8 -> depth=12). If the first
-      web_snapshot did not surface the element you need, use targeted
-      extraction: snapshot_search, snapshot_refs, web_query, or scoped
-      snapshot_show(ref=...). Then try scroll_down + snapshot if still
-      not found.
+    - If a needed element is NOT found, use snapshot_search, snapshot_refs,
+      web_query, or scroll_down + snapshot. Do not retry with minor tweaks.
     - Never use wait or wait_short_loading as a default; rely on observation
       tools.
 

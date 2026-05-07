@@ -50,7 +50,8 @@ MAX_TOOL_RESULT_CHARS = 12000
 _FAILED_PREFIX = "FAILED"
 
 # Action tools whose results contain an embedded snapshot that should be
-# stripped to reduce LLM context size. The agent can call snapshot separately.
+# compacted to reduce LLM context size. The agent can use snapshot_search /
+# snapshot_refs on the latest snapshot without re-fetching it.
 _ACTION_TOOLS = frozenset({
     "tap", "click", "fill", "type_text", "scroll", "scroll_up",
     "scroll_down", "scroll_left", "scroll_right", "swipe", "swipe_up",
@@ -179,69 +180,78 @@ def _extract_observation(tool_name: str, text: str) -> ObservationSummary | None
     return None
 
 
-def _strip_embedded_snapshot(text: str) -> str:
-    """Remove the embedded snapshot from an action tool result.
+def _compact_action_metadata(text: str) -> str:
+    """Compact the post-action snapshot metadata appended to action results.
 
-    Keeps the status prefix (e.g. "OK") and any trailing metadata
-    (e.g. "can_scroll_more: True") but drops the snapshot tree body.
+    Keeps the action prefix (e.g. "OK", "Navigated to ...") and essential
+    snapshot metadata (snapshot_id, source, screen_id, context, can_scroll_more).
+    Drops artifact paths, titles, urls, and any tree body to minimize tokens.
     """
     lines = text.split("\n")
-    # Find the snapshot header
-    snap_start = None
-    for i, line in enumerate(lines):
-        if line.startswith("screen:") or line.startswith("screen_id:"):
-            snap_start = i
-            break
-    if snap_start is None:
-        return text
+    prefix_lines: list[str] = []
+    meta_lines: list[str] = []
+    in_meta = False
 
-    # Keep prefix lines before snapshot
-    prefix = "\n".join(lines[:snap_start]).rstrip()
-
-    # Scan from end for trailing metadata (after the snapshot body)
-    trailing: list[str] = []
-    for line in reversed(lines):
+    for line in lines:
         stripped = line.strip()
-        if stripped.startswith("can_scroll_more:"):
-            trailing.insert(0, stripped)
-            break
-        if stripped.startswith("screen:") or stripped.startswith("screen_id:"):
-            break
-        if stripped:
-            # Could be other trailing metadata in the future
-            if ":" in stripped and len(stripped) < 80:
-                trailing.insert(0, stripped)
+        if not in_meta:
+            if stripped.startswith("snapshot_id:"):
+                in_meta = True
+                meta_lines.append(stripped)
             else:
-                break
+                prefix_lines.append(line)
+        else:
+            key = stripped.split(":", 1)[0] if ":" in stripped else ""
+            if key in _METADATA_KEEP:
+                meta_lines.append(stripped)
 
-    result = prefix
-    if trailing:
-        result += "\n" + "\n".join(trailing)
-    return result if result else "OK"
+    result = "\n".join(prefix_lines).rstrip()
+    if meta_lines:
+        result += "\n" + "\n".join(meta_lines)
+    return result if result.strip() else "OK"
+
+
+# Metadata keys to preserve in compacted action results.
+_METADATA_KEEP = frozenset({
+    "snapshot_id", "source", "screen_id", "context", "can_scroll_more",
+})
+
+
+def _record_artifacts_from_data(
+    data: dict[str, Any] | None, memory: "WorkingMemory | None"
+) -> None:
+    """Record snapshot artifact paths from daemon response data into memory."""
+    if not data or not memory:
+        return
+    artifacts = data.get("artifacts")
+    if isinstance(artifacts, dict):
+        for path in artifacts.values():
+            if isinstance(path, str):
+                memory.record_artifact(path)
 
 
 def _serialize_response(name: str, response: dict[str, Any]) -> str:
     """Render the daemon response as a string suitable for the LLM."""
-    if response.get("ok"):
-        text = response.get("text") or ""
-        if not text and response.get("data") is not None:
-            text = json.dumps(response.get("data"), ensure_ascii=False)
-        if not text:
-            return "OK"
-        text = str(text)
-        # Strip embedded snapshots from action tools to reduce context size.
-        # The agent can always call web_snapshot/snapshot for fresh state.
-        if name in _ACTION_TOOLS:
-            text = _strip_embedded_snapshot(text)
-            if len(text) > 400:
-                text = text[:400] + "..."
-        return _truncate(text)
-    error = response.get("error") or "tool failed"
-    detail = response.get("detail")
-    rendered = f"ERROR: {error}"
-    if detail:
-        rendered += f" ({detail})"
-    return rendered
+    if not response.get("ok"):
+        error = response.get("error") or "tool failed"
+        detail = response.get("detail")
+        rendered = f"ERROR: {error}"
+        if detail:
+            rendered += f" ({detail})"
+        return rendered
+
+    text = response.get("text") or ""
+    if not text and response.get("data") is not None:
+        text = json.dumps(response.get("data"), ensure_ascii=False)
+    if not text:
+        return "OK"
+    text = str(text)
+    # Compact embedded post-action snapshot metadata for action tools.
+    # The full snapshot is saved to disk; the LLM uses snapshot_search /
+    # snapshot_refs to extract what it needs.
+    if name in _ACTION_TOOLS:
+        return _compact_action_metadata(text)
+    return _truncate(text)
 
 
 async def _invoke_appium_tool(
@@ -357,6 +367,11 @@ async def _invoke_appium_tool(
                 },
                 ensure_ascii=False,
             )
+
+    # Record snapshot artifact paths (compact/full/refs/index/meta) from
+    # daemon response data into working memory for final reporting.
+    if ok:
+        _record_artifacts_from_data(response.get("data"), memory)
 
     logger.info(
         "[tool] <- %s ok=%s duration_ms=%.0f result_chars=%d",

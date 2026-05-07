@@ -143,8 +143,8 @@ class TestInvokeAppiumTool:
         assert ctx.context.memory.failures
 
 
-class TestFixesV2:
-    """Tests for FAILED-prefix detection and action-tool snapshot stripping."""
+class TestArtifactFirst:
+    """Tests for artifact-first snapshot handling and action metadata compaction."""
 
     @pytest.mark.asyncio
     async def test_failed_string_flipped_to_ok_false(self, tmp_path) -> None:
@@ -153,55 +153,121 @@ class TestFixesV2:
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "FAILED: ref 'web_btn' cannot be resolved. No strategies available.", "data": {}}
             result = await _invoke_appium_tool("tap", json.dumps({"ref": "web_btn"}), ctx)
-        # The result returned to the LLM should contain the error
         assert "FAILED" in result or "cannot be resolved" in result
-        # Memory should record it as a failure
         assert ctx.context.memory.tool_calls[-1].ok is False
         assert ctx.context.memory.retry_counts.get("tap") == 1
         assert any("web_btn" in f for f in ctx.context.memory.failures)
 
     @pytest.mark.asyncio
-    async def test_action_tool_snapshot_stripped(self, tmp_path) -> None:
-        """Action tools (fill) should have embedded snapshot stripped from result."""
+    async def test_action_compact_metadata(self, tmp_path) -> None:
+        """Action tools keep snapshot_id/screen_id but drop artifacts paths and tree body."""
         ctx = _ctx(tmp_path)
-        snapshot_body = "screen: CHROMIUM_123 https://yahoo.co.jp\nscreen_id: abc123\ncontext: CHROMIUM_123\n" + "x " * 4000
-        full_text = f"OK\n{snapshot_body}"
+        metadata_block = (
+            "snapshot_id: web-2026-05-07T07-05-18-853Z-728218\n"
+            "source: web\n"
+            "screen_id: 728218\n"
+            "context: WEBVIEW_chrome\n"
+            "title: Yahoo! JAPAN\n"
+            "url: https://www.yahoo.co.jp/\n"
+            "artifacts:\n"
+            "  compact: /path/to/snapshot.compact.yml\n"
+            "  full: /path/to/snapshot.full.yml\n"
+            "  refs: /path/to/snapshot.refs.json\n"
+            "  index: /path/to/snapshot.index.json\n"
+            "  meta: /path/to/snapshot.meta.json\n"
+        )
+        full_text = f"OK\n{metadata_block}"
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": full_text, "data": {}}
             result = await _invoke_appium_tool("fill", json.dumps({"ref": "web__14", "text": "hello"}), ctx)
-        # Result should be very short - just "OK" without the snapshot
-        assert len(result) < 500
-        assert "screen_id:" not in result
         assert result.startswith("OK")
+        assert "snapshot_id: web-2026-05-07T07-05-18-853Z-728218" in result
+        assert "screen_id: 728218" in result
+        assert "source: web" in result
+        assert "context: WEBVIEW_chrome" in result
+        # artifact paths and title/url are removed
+        assert "/path/to/" not in result
+        assert "artifacts:" not in result
+        assert "title:" not in result
+        assert "url:" not in result
 
     @pytest.mark.asyncio
-    async def test_scroll_metadata_preserved(self, tmp_path) -> None:
-        """Scroll result should preserve can_scroll_more trailing metadata."""
+    async def test_action_can_scroll_more(self, tmp_path) -> None:
+        """Scroll result preserves can_scroll_more alongside compact metadata."""
         ctx = _ctx(tmp_path)
-        snapshot_body = "screen: CHROMIUM_123 https://example.com\nscreen_id: def456\n" + "node " * 2000
-        full_text = f"OK\n{snapshot_body}\ncan_scroll_more: True"
+        metadata_block = (
+            "snapshot_id: native-abc\n"
+            "source: native\n"
+            "screen_id: abc\n"
+            "context: NATIVE_APP\n"
+            "artifacts:\n"
+            "  compact: /path/snapshot.compact.yml\n"
+        )
+        full_text = f"OK\ncan_scroll_more: True\n{metadata_block}"
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": full_text, "data": {}}
             result = await _invoke_appium_tool("scroll_down", json.dumps({}), ctx)
         assert "can_scroll_more: True" in result
-        assert "screen_id:" not in result
-        assert len(result) < 500
+        assert "snapshot_id: native-abc" in result
+        assert "screen_id: abc" in result
+        assert "/path/" not in result
 
     @pytest.mark.asyncio
-    async def test_observation_tool_not_trimmed(self, tmp_path) -> None:
-        """Observation tools should keep useful output but respect the token budget."""
+    async def test_snapshot_metadata_passthrough(self, tmp_path) -> None:
+        """Observation tools (snapshot) pass metadata through to LLM unchanged."""
         ctx = _ctx(tmp_path)
-        big_snapshot = (
-            "screen: CHROMIUM_123 https://yahoo.co.jp\n"
-            "screen_id: xyz789\n"
-            + "textbox ref:web__14\n" * 2000
+        metadata_text = (
+            "snapshot_id: web-test\n"
+            "source: web\n"
+            "screen_id: test123\n"
+            "context: WEBVIEW_chrome\n"
+            "title: Test Page\n"
+            "url: https://example.com\n"
+            "artifacts:\n"
+            "  compact: /tmp/test.compact.yml\n"
         )
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
-            mock_call.return_value = {"ok": True, "text": big_snapshot, "data": {}}
+            mock_call.return_value = {"ok": True, "text": metadata_text, "data": {}}
             result = await _invoke_appium_tool("web_snapshot", json.dumps({}), ctx)
-        assert "screen_id: xyz789" in result
-        assert len(result) <= MAX_TOOL_RESULT_CHARS
-        assert "... [truncated " in result
+        # Observation tools are NOT compacted — full metadata passes through
+        assert "snapshot_id: web-test" in result
+        assert "artifacts:" in result
+        assert "/tmp/test.compact.yml" in result
+
+    @pytest.mark.asyncio
+    async def test_artifacts_recorded_in_memory(self, tmp_path) -> None:
+        """Snapshot data[artifacts] are recorded into WorkingMemory.artifacts."""
+        ctx = _ctx(tmp_path)
+        artifacts_dict = {
+            "compact": "/snapshots/test.compact.yml",
+            "full": "/snapshots/test.full.yml",
+            "refs": "/snapshots/test.refs.json",
+            "index": "/snapshots/test.index.json",
+            "meta": "/snapshots/test.meta.json",
+        }
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {
+                "ok": True,
+                "text": "snapshot_id: test\nsource: native\nscreen_id: x\n",
+                "data": {"snapshot_id": "test", "artifacts": artifacts_dict},
+            }
+            await _invoke_appium_tool("snapshot", json.dumps({}), ctx)
+        assert len(ctx.context.memory.artifacts) == 5
+        assert "/snapshots/test.compact.yml" in ctx.context.memory.artifacts
+
+    @pytest.mark.asyncio
+    async def test_targeted_extraction_unchanged(self, tmp_path) -> None:
+        """Targeted extraction tools (snapshot_search) return result as-is."""
+        ctx = _ctx(tmp_path)
+        search_result = (
+            "Snapshot search results for 'Storage' (total=2):\n"
+            "1. [ref:row_storage] row \"Storage\" actionable=true\n"
+            "2. [ref:label_storage] text \"Storage usage\" actionable=false\n"
+        )
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": search_result, "data": {}}
+            result = await _invoke_appium_tool("snapshot_search", json.dumps({"text": "Storage"}), ctx)
+        assert result == search_result
 
     @pytest.mark.asyncio
     async def test_web_eval_result_respects_token_budget(self, tmp_path) -> None:
