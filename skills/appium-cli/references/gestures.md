@@ -9,7 +9,7 @@ appium-cli double_tap btn_photo
 appium-cli drag btn_photo 500 900
 appium-cli fling_down recycler_view
 appium-cli pinch_open image_preview
-appium-cli snapshot_show latest
+appium-cli snapshot_search "Photo"
 ```
 
 ## Directional gestures

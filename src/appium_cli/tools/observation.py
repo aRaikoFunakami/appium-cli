@@ -143,6 +143,8 @@ return (function(selector, attrs, limit) {
             type: el.getAttribute('type') || '',
             placeholder: el.getAttribute('placeholder') || '',
             aria_label: el.getAttribute('aria-label') || '',
+            data_testid: el.getAttribute('data-testid') || '',
+            value: clean(el.value || '', 160),
             text: clean(el.innerText || el.textContent || '', 160),
             href: el.getAttribute('href') || '',
             selector: generatedSelector(el),
@@ -367,21 +369,134 @@ def _load_index(snapshot_id_or_latest: str) -> dict[str, Any]:
     return index_payload if isinstance(index_payload, dict) else {}
 
 
-def _compact_ref_line(ref: str, item: dict[str, Any]) -> str:
+def _find_compact_line_for_ref(compact_text: str, ref: str) -> str:
+    marker = f"[ref:{ref}]"
+    for line in compact_text.splitlines():
+        if marker in line:
+            return line.strip()
+    return ""
+
+
+def _matching_compact_lines(compact_text: str, needle: str, limit: int = 20) -> list[tuple[int, str]]:
+    if not needle:
+        return []
+    matches: list[tuple[int, str]] = []
+    for line_number, line in enumerate(compact_text.splitlines(), start=1):
+        if needle in line.lower():
+            matches.append((line_number, line.strip()))
+            if len(matches) >= limit:
+                break
+    return matches
+
+
+def _search_snippet(item: dict[str, Any]) -> str:
+    for key in ("name", "value", "text", "action_target_ref"):
+        value = str(item.get(key) or "")
+        if value:
+            return value
+    locator = _locator_hint(item)
+    return locator
+
+
+def _format_compact_field(key: str, value: Any) -> str:
+    text = str(value)
+    if text == "":
+        return ""
+    if any(ch.isspace() for ch in text) or any(ch in text for ch in "\"'[]=<>"):
+        text = json.dumps(text, ensure_ascii=False)
+    return f"{key}={text}"
+
+
+def _locator_hint(item: dict[str, Any]) -> str:
+    strategy = item.get("primary_strategy")
+    if not isinstance(strategy, dict):
+        strategy = _best_locator_strategy(item)
+    if not isinstance(strategy, dict):
+        return ""
+    by = str(strategy.get("by") or "")
+    value = str(strategy.get("value") or "")
+    if not by or not value:
+        return ""
+    return f"{by}: {value}"
+
+
+def _merge_ref_item(
+    ref: str,
+    ref_item: dict[str, Any],
+    index_items: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    index_item = index_items.get(ref, {}) if index_items else {}
+    if isinstance(index_item, dict):
+        merged.update(index_item)
+    merged.update(ref_item)
+    role = str(merged.get("role") or "")
+    if "actionable" not in merged:
+        # Refs are action targets or stable anchors; preserve explicit false from index.
+        merged["actionable"] = True
+    if "editable" not in merged:
+        merged["editable"] = role == "textbox"
+    if "primary_strategy" not in merged:
+        strategy = _best_locator_strategy(merged)
+        if strategy is not None:
+            merged["primary_strategy"] = strategy
+    return merged
+
+
+def _load_index_ref_items(snapshot_id_or_latest: str) -> dict[str, dict[str, Any]]:
+    try:
+        index = _load_index(snapshot_id_or_latest)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for item in index.get("refs", []):
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("ref") or "")
+        if ref:
+            result[ref] = item
+    return result
+
+
+def _compact_ref_line(ref: str, item: dict[str, Any], *, rich: bool = False) -> str:
     role = item.get("role", "")
     name = item.get("name", "")
     value = item.get("value")
     suffix = f' "{name}"' if name else ""
     if value not in (None, ""):
         suffix += f' value="{value}"'
-    return f"[ref:{ref}] {role}{suffix}".rstrip()
+    line = f"[ref:{ref}] {role}{suffix}".rstrip()
+    if rich:
+        fields = [
+            _format_compact_field("actionable", str(bool(item.get("actionable"))).lower()),
+            _format_compact_field("editable", str(bool(item.get("editable"))).lower()),
+            _format_compact_field("locator", _locator_hint(item)),
+        ]
+        action_target_ref = item.get("action_target_ref")
+        if action_target_ref:
+            fields.append(_format_compact_field("target", action_target_ref))
+        suffix_fields = " ".join(field for field in fields if field)
+        if suffix_fields:
+            line = f"{line} {suffix_fields}"
+    return line
 
 
 def _ref_detail(ref: str, item: dict[str, Any]) -> str:
-    lines = [_compact_ref_line(ref, item)]
-    for key in ("context", "source_type", "expected_bounds", "bounds", "action_target_ref"):
+    lines = [_compact_ref_line(ref, item, rich=True)]
+    for key in (
+        "context",
+        "source_type",
+        "expected_bounds",
+        "bounds",
+        "actionable",
+        "editable",
+        "action_target_ref",
+    ):
         if key in item:
             lines.append(f"{key}: {item[key]}")
+    locator = _locator_hint(item)
+    if locator:
+        lines.append(f"best_locator: {locator}")
     strategies = item.get("strategies")
     if strategies:
         lines.append("strategies:")
@@ -391,14 +506,19 @@ def _ref_detail(ref: str, item: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _filter_ref_items(refs: dict[str, Any], role: str = "") -> list[tuple[str, dict[str, Any]]]:
+def _filter_ref_items(
+    refs: dict[str, Any],
+    role: str = "",
+    index_items: dict[str, dict[str, Any]] | None = None,
+) -> list[tuple[str, dict[str, Any]]]:
     items: list[tuple[str, dict[str, Any]]] = []
     for ref, value in sorted(refs.items(), key=lambda item: item[0]):
         if not isinstance(value, dict):
             continue
-        if role and str(value.get("role", "")) != role:
+        merged = _merge_ref_item(str(ref), value, index_items)
+        if role and str(merged.get("role", "")) != role:
             continue
-        items.append((ref, value))
+        items.append((ref, merged))
     return items
 
 
@@ -660,16 +780,20 @@ def snapshot_search(
     try:
         index = _load_index(snapshot_id)
         refs_by_id = _load_refs(snapshot_id)
+        compact_text, _compact_data = _read_artifact(snapshot_id, "compact")
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         return f"ERROR: {exc}"
 
     matches: list[dict[str, Any]] = []
+    seen_refs: set[str] = set()
+    index_items: dict[str, dict[str, Any]] = {}
     for item in index.get("refs", []):
         if not isinstance(item, dict):
             continue
         ref = str(item.get("ref", ""))
         if not ref:
             continue
+        index_items[ref] = item
         ref_role = str(item.get("role", ""))
         if role and ref_role != role:
             continue
@@ -684,24 +808,62 @@ def snapshot_search(
             haystack_parts.extend(
                 str(ref_detail.get(key, "")) for key in ("name", "role", "source_type")
             )
+            for strategy in ref_detail.get("strategies", []):
+                if isinstance(strategy, dict):
+                    haystack_parts.extend(
+                        str(strategy.get(key, "")) for key in ("by", "value")
+                    )
         if needle not in " ".join(haystack_parts).lower():
             continue
-        match = {
+        merged = _merge_ref_item(ref, ref_detail if isinstance(ref_detail, dict) else {}, {ref: item})
+        compact_line = _find_compact_line_for_ref(compact_text, ref)
+        match: dict[str, Any] = {
             "ref": ref,
-            "role": ref_role,
-            "name": item.get("name", ""),
-            "bounds": item.get("bounds"),
+            "role": merged.get("role", ref_role),
+            "name": merged.get("name", item.get("name", "")),
+            "bounds": merged.get("bounds"),
+            "actionable": bool(merged.get("actionable")),
+            "editable": bool(merged.get("editable")),
+            "locator": _locator_hint(merged),
+            "snippet": compact_line or _search_snippet(merged),
         }
-        if "value" in item:
-            match["value"] = item["value"]
+        for key in ("value", "action_target_ref"):
+            if key in merged:
+                match[key] = merged[key]
         matches.append(match)
+        seen_refs.add(ref)
+
+    if not role:
+        for line_number, line in _matching_compact_lines(compact_text, needle):
+            if any(f"[ref:{ref}]" in line for ref in seen_refs):
+                continue
+            matches.append(
+                {
+                    "line": line_number,
+                    "snippet": line.strip(),
+                }
+            )
 
     if raw:
         return json.dumps(matches, ensure_ascii=False, indent=2, sort_keys=True)
     if not matches:
         return f"No snapshot refs matching '{text}' found."
     lines = [f"Snapshot search results for '{text}' (total={len(matches)}):"]
-    lines.extend(_compact_ref_line(str(match["ref"]), match) for match in matches)
+    for rank, match in enumerate(matches, start=1):
+        prefix = f"{rank}. "
+        ref = match.get("ref")
+        if ref:
+            line = prefix + _compact_ref_line(str(ref), match, rich=True)
+            snippet = str(match.get("snippet") or "")
+            if snippet:
+                line += " " + _format_compact_field("snippet", snippet)
+            lines.append(line)
+        else:
+            fields = [
+                _format_compact_field("line", match.get("line", "")),
+                _format_compact_field("snippet", match.get("snippet", "")),
+            ]
+            lines.append(prefix + " ".join(field for field in fields if field))
     return "\n".join(lines)
 
 
@@ -714,6 +876,7 @@ def snapshot_refs(
     """List refs or show one ref from a persisted snapshot artifact."""
     try:
         refs = _load_refs(snapshot_id)
+        index_items = _load_index_ref_items(snapshot_id)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         return f"ERROR: {exc}"
 
@@ -722,10 +885,11 @@ def snapshot_refs(
         item = refs.get(normalized_ref)
         if not isinstance(item, dict):
             return f"ERROR: ref '{normalized_ref}' not found in snapshot '{snapshot_id}'."
-        payload = {"ref": normalized_ref, **item}
-        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) if raw else _ref_detail(normalized_ref, item)
+        merged = _merge_ref_item(normalized_ref, item, index_items)
+        payload = {"ref": normalized_ref, **merged}
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) if raw else _ref_detail(normalized_ref, merged)
 
-    items = _filter_ref_items(refs, role=role)
+    items = _filter_ref_items(refs, role=role, index_items=index_items)
     if raw:
         payload = [{"ref": ref_name, **item} for ref_name, item in items]
         return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
@@ -733,7 +897,7 @@ def snapshot_refs(
         suffix = f" with role '{role}'" if role else ""
         return f"No refs found in snapshot '{snapshot_id}'{suffix}."
     lines = [f"Snapshot refs for '{snapshot_id}' (total={len(items)}):"]
-    lines.extend(_compact_ref_line(ref_name, item) for ref_name, item in items)
+    lines.extend(_compact_ref_line(ref_name, item, rich=True) for ref_name, item in items)
     return "\n".join(lines)
 
 
@@ -838,6 +1002,8 @@ def web_query(
             "type": str(item.get("type") or ""),
             "placeholder": str(item.get("placeholder") or ""),
             "aria_label": str(item.get("aria_label") or ""),
+            "data_testid": str(item.get("data_testid") or ""),
+            "value": str(item.get("value") or ""),
             "text": str(item.get("text") or ""),
             "href": str(item.get("href") or ""),
             "selector": str(item.get("selector") or ""),
@@ -857,33 +1023,30 @@ def web_query(
 
     lines = [f"Web query results for '{selector}' (total={len(rows)}):"]
     for index, row in enumerate(rows, start=1):
-        ref = row.get("ref", "")
-        ref_part = f"[ref:{ref}] " if ref else ""
-        identity = row["accessible_name"] or row["text"] or row["id"] or row["name"]
-        line_fields = [
+        fields = [
+            _format_web_query_field("ref", row.get("ref", "")),
+            _format_web_query_field("tag", row["tag"]),
+            _format_web_query_field("role", row["role"] or "-"),
+            _format_web_query_field("accessible_name", row["accessible_name"]),
+            _format_web_query_field("text", row["text"]),
             _format_web_query_field("selector", row["selector"]),
-        ]
-        detail_fields = [
             _format_web_query_field("id", row["id"]),
             _format_web_query_field("name", row["name"]),
             _format_web_query_field("type", row["type"]),
             _format_web_query_field("placeholder", row["placeholder"]),
             _format_web_query_field("aria-label", row["aria_label"]),
+            _format_web_query_field("data-testid", row["data_testid"]),
             _format_web_query_field("href", row["href"]),
+            _format_web_query_field("value", row["value"]),
         ]
         if row.get("attrs"):
             for key, value in row["attrs"].items():
+                if key == "data-testid" and row.get("data_testid") == value:
+                    continue
                 formatted = _format_web_query_field(key, value)
                 if formatted:
-                    detail_fields.append(formatted)
-        lines.append(
-            f"{index}. {ref_part}{row['tag']} {row['role'] or '-'} "
-            f"{json.dumps(identity, ensure_ascii=False)} "
-            + " ".join(field for field in line_fields if field)
-        )
-        details = " ".join(field for field in detail_fields if field)
-        if details:
-            lines.append(f"   {details}")
+                    fields.append(formatted)
+        lines.append(f"{index}. " + " ".join(field for field in fields if field))
     return "\n".join(lines)
 
 

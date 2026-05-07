@@ -19,12 +19,15 @@ appium-cli native_switch
 
 ```bash
 appium-cli web_snapshot
-appium-cli snapshot_show latest
-appium-cli snapshot_show latest --artifact=full
-appium-cli snapshot_refs latest
 appium-cli snapshot_search "Search" --role=textbox
+appium-cli snapshot_refs latest --role=textbox
+appium-cli web_query "input,textarea,button,a" --attrs=name,type,placeholder,aria-label,data-testid
 appium-cli snapshot_show latest --ref=web_search
+appium-cli snapshot_show latest              # fallback; can be large
+appium-cli snapshot_show latest --artifact=full  # debugging only
 ```
+
+Do not read the full compact artifact just to find a DOM element. Use `web_query` for CSS/attribute extraction, `snapshot_search` for text, and `snapshot_refs` for ref indexes.
 
 Use scoped snapshots for large pages:
 
@@ -39,12 +42,12 @@ appium-cli web_snapshot web_dialog --filename=dialog.yml
 `web_query` queries the current WebView/Chrome DOM with CSS and reports compact element identity, generated selector, optional attrs, and any matching snapshot ref.
 
 ```bash
-appium-cli web_query "input, textarea, select, button, a" --attrs=data-testid,autocomplete,aria-describedby
+appium-cli web_query "input, textarea, select, button, a" --attrs=name,type,placeholder,aria-label,data-testid,autocomplete,aria-describedby
 appium-cli web_query "input[name=q]" --limit=5
 appium-cli --raw web_query "button" > buttons.json
 ```
 
-Use it to discover inputs, buttons, selectors, and test attributes when the snapshot tree is too compact or when you need a CSS selector for a second-layer target.
+Use it to discover inputs, buttons, selectors, values, and test attributes without reading `compact.yml`. Normal output puts key fields on one line (`ref`, `role`, `name`, `type`, `placeholder`, `aria-label`, `data-testid`, `href`, selector). Raw output is JSON for `jq` or scripts.
 
 ## Attribute inspection with web_eval
 
@@ -107,6 +110,12 @@ appium-cli --raw web_snapshot > before.yml
 appium-cli click web_btn_expand
 appium-cli --raw web_snapshot > after.yml
 diff before.yml after.yml
+```
+
+Filter large diffs to the lines that matter:
+
+```bash
+diff before.yml after.yml | grep -E "Qiita|検索|title|url|ref:"
 ```
 
 Use element-scoped raw snapshots for smaller diffs:

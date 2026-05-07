@@ -44,7 +44,7 @@ appium-cli snapshot
 
 ## Artifact state
 
-Snapshots write artifacts under `.appium-cli/snapshots/` and update `latest.json`. Action commands refresh the snapshot automatically and print the new artifact links in normal output. Use `snapshot_show latest` or `snapshot_refs latest` to inspect that state without another device query.
+Snapshots write artifacts under `.appium-cli/snapshots/` and update `latest.json`. Action commands refresh the snapshot automatically and print the new artifact links in normal output. Use `snapshot_search`, `snapshot_refs latest`, or targeted `snapshot_show latest --ref=<ref>` to inspect that state without another device query.
 
 ## WebView lifecycle
 

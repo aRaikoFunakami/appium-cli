@@ -28,7 +28,8 @@ Scroll containers by ref and use the post-action snapshot metadata:
 
 ```bash
 appium-cli scroll_down recycler
-appium-cli snapshot_show latest
+appium-cli snapshot_search "Target" --role=row
+appium-cli snapshot_refs latest --role=row
 ```
 
 ## within_container

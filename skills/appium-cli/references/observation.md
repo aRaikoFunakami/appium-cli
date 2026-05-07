@@ -22,17 +22,19 @@ artifacts:
   meta: .appium-cli/snapshots/native-...meta.json
 ```
 
-Use artifact navigation commands to inspect without refreshing device state:
+Use artifact navigation commands to inspect without refreshing device state. Prefer targeted extraction before reading a whole tree artifact:
 
 ```bash
-appium-cli snapshot_show latest
-appium-cli snapshot_show latest --artifact=full
-appium-cli snapshot_show latest --artifact=meta
-appium-cli snapshot_show latest --ref=btn_ok
 appium-cli snapshot_search "Storage" --role=row
 appium-cli snapshot_refs latest --role=button
+appium-cli snapshot_show latest --ref=btn_ok
+appium-cli snapshot_show latest --artifact=meta
+appium-cli snapshot_show latest              # fallback; can be large
+appium-cli snapshot_show latest --artifact=full  # debugging only
 appium-cli generate_locator btn_ok
 ```
+
+`compact.yml` intentionally remains a tree artifact so UI hierarchy is available on disk. Do not paste/read the whole artifact by default. Search it with `snapshot_search`, inspect ref indexes with `snapshot_refs`, inspect one element with `snapshot_show --ref`, or use local grep/rg-style file extraction when available.
 
 ## Raw tree output
 
@@ -63,13 +65,30 @@ appium-cli --raw web_snapshot web_results > results.yml
 
 ## Artifact types
 
-- `compact` - compact tree for quick reading.
+- `compact` - tree artifact for UI hierarchy. Use targeted extraction first; read the whole file only when needed.
 - `full` - complete rendered tree.
 - `refs` - JSON ref map with roles, names, bounds, contexts, and locator strategies.
 - `index` - searchable compact index.
 - `meta` - snapshot id, source, context, screen id, and artifact paths.
 
-Use `snapshot_refs` before choosing targets in a large screen, and `snapshot_search` to find likely refs without re-querying the device.
+Use `snapshot_refs` before choosing targets in a large screen, and `snapshot_search` to find likely refs or text snippets without re-querying the device.
+
+## Targeted artifact extraction
+
+```bash
+appium-cli snapshot_search "Qiita"
+appium-cli snapshot_refs latest --role=link
+appium-cli snapshot_show latest --ref=web_link_qiita
+```
+
+For before/after files, compare and filter locally instead of reading both files into the model:
+
+```bash
+appium-cli --raw snapshot > before.yml
+appium-cli tap btn_expand
+appium-cli --raw snapshot > after.yml
+diff before.yml after.yml | grep -E "expanded|selected|ref:"
+```
 
 ## Ref naming and targeting
 
@@ -97,4 +116,4 @@ appium-cli --raw generate_locator btn_ok
 
 ## Screenshot and page source
 
-`snapshot` is primary. `screenshot` is rarely needed; use it only when visual pixels are necessary. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after snapshot artifacts, `snapshot_search`, and `snapshot_refs` are insufficient.
+`snapshot` is primary. `screenshot` is rarely needed; use it only when visual pixels are necessary. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after targeted artifact extraction, `snapshot_search`, and `snapshot_refs` are insufficient.

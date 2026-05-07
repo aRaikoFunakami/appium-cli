@@ -11,7 +11,7 @@ appium-cli tap btn_login
 #   compact: .appium-cli/snapshots/...
 ```
 
-The post-action artifact link is the next observation point. Use `snapshot_show latest`, `snapshot_refs`, or `snapshot_search` to inspect it without taking another device snapshot.
+The post-action artifact link is the next observation point. Use `snapshot_search`, `snapshot_refs`, or targeted `snapshot_show latest --ref=<ref>` to inspect it without taking another device snapshot.
 
 ## Raw action mode
 
@@ -66,6 +66,12 @@ appium-cli --raw snapshot > before.yml
 appium-cli tap btn_expand
 appium-cli --raw snapshot > after.yml
 diff before.yml after.yml
+```
+
+Filter large diffs to relevant lines instead of reading entire files:
+
+```bash
+diff before.yml after.yml | grep -E "expanded|selected|visible|ref:"
 ```
 
 For smaller diffs, scope the snapshot:

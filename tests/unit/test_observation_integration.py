@@ -281,7 +281,10 @@ def test_snapshot_search_uses_artifacts_without_current_snapshot(monkeypatch, re
     out = observation.snapshot_search("storage")
 
     assert "Snapshot search results for 'storage'" in out
-    assert "[ref:storage_row] row \"Storage\"" in out
+    assert '1. [ref:storage_row] row "Storage"' in out
+    assert "actionable=true" in out
+    assert "editable=false" in out
+    assert 'snippet="- row \\"Storage\\" [ref:storage_row]"' in out
 
 
 def test_snapshot_search_role_filter(monkeypatch, request):
@@ -297,11 +300,18 @@ def test_snapshot_refs_lists_filters_and_returns_raw_json(monkeypatch, request):
 
     listed = observation.snapshot_refs("latest", role="button")
     assert "[ref:ok] button \"OK\"" in listed
+    assert "actionable=true" in listed
+    assert "editable=false" in listed
+    assert 'locator="id: com.x:id/ok"' in listed
     assert "storage_row" not in listed
 
     raw = observation.snapshot_refs("latest", raw=True)
     refs = json.loads(raw)
     assert {item["ref"] for item in refs} >= {"ok", "recycler", "storage_row"}
+    ok = next(item for item in refs if item["ref"] == "ok")
+    assert ok["actionable"] is True
+    assert ok["editable"] is False
+    assert ok["primary_strategy"] == {"by": "id", "value": "com.x:id/ok"}
 
 
 def test_snapshot_refs_can_show_single_ref_as_raw_json(monkeypatch, request):
@@ -312,6 +322,8 @@ def test_snapshot_refs_can_show_single_ref_as_raw_json(monkeypatch, request):
     payload = json.loads(raw)
     assert payload["ref"] == "ok"
     assert payload["role"] == "button"
+    assert payload["actionable"] is True
+    assert payload["primary_strategy"] == {"by": "id", "value": "com.x:id/ok"}
 
 
 def test_generate_locator_prefers_latest_artifact_strategy(monkeypatch, request):
@@ -385,6 +397,8 @@ class _FakeWebQueryDriver:
                 "type": "search",
                 "placeholder": "Search",
                 "aria_label": "Search",
+                "data_testid": "search-box",
+                "value": "",
                 "text": "",
                 "href": "",
                 "selector": "#q",
@@ -399,6 +413,8 @@ class _FakeWebQueryDriver:
                 "type": "submit",
                 "placeholder": "",
                 "aria_label": "Search Web",
+                "data_testid": "submit-button",
+                "value": "Search",
                 "text": "Search",
                 "href": "",
                 "selector": 'button[name="btnK"]',
@@ -413,6 +429,8 @@ class _FakeWebQueryDriver:
                 "type": "",
                 "placeholder": "",
                 "aria_label": "",
+                "data_testid": "",
+                "value": "",
                 "text": "News",
                 "href": "/news",
                 "selector": 'a[href="/news"]',
@@ -446,8 +464,10 @@ def test_web_query_returns_compact_output_and_maps_refs():
 
     assert driver.calls == [(observation.WEB_QUERY_SCRIPT, "input", ["data-testid"], 5)]
     assert "Web query results for 'input' (total=1):" in out
-    assert '1. [ref:web_q] input textbox "Search" selector=#q' in out
-    assert "   id=q name=q type=search placeholder=Search aria-label=Search data-testid=search-box" in out
+    assert (
+        "1. ref=web_q tag=input role=textbox accessible_name=Search selector=#q "
+        "id=q name=q type=search placeholder=Search aria-label=Search data-testid=search-box"
+    ) in out
     assert "data-testid=search-box" in out
 
 
@@ -459,12 +479,14 @@ def test_web_query_compact_output_includes_button_and_link_details():
     button_out = observation.web_query("button")
     link_out = observation.web_query("a")
 
-    assert '1. button button "Search Web"' in button_out
+    assert 'tag=button role=button accessible_name="Search Web"' in button_out
     assert 'selector="button[name=\\"btnK\\"]"' in button_out
     assert "name=btnK" in button_out
     assert "type=submit" in button_out
     assert "aria-label=\"Search Web\"" in button_out
-    assert '1. a link "News"' in link_out
+    assert "data-testid=submit-button" in button_out
+    assert "value=Search" in button_out
+    assert "tag=a role=link accessible_name=News text=News" in link_out
     assert 'selector="a[href=\\"/news\\"]"' in link_out
     assert "href=/news" in link_out
 
@@ -478,6 +500,8 @@ def test_web_query_raw_returns_json_array():
 
     payload = json.loads(raw)
     assert payload[0]["selector"] == "#q"
+    assert payload[0]["data_testid"] == "search-box"
+    assert payload[0]["value"] == ""
     assert payload[0]["attrs"]["data-testid"] == "search-box"
 
 

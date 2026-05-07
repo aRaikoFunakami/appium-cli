@@ -8,7 +8,7 @@ Default loop: observe with artifact-first snapshot, inspect artifacts, act on re
 appium-cli snapshot
 appium-cli snapshot_refs latest --role=button
 appium-cli tap btn_login
-appium-cli snapshot_show latest
+appium-cli snapshot_search "Welcome"
 ```
 
 Normal actions append the new snapshot metadata. Do not reuse refs from before navigation, scrolling, dialogs, or screen changes.
@@ -20,6 +20,12 @@ appium-cli --raw snapshot > before.yml
 appium-cli tap btn_expand
 appium-cli --raw snapshot > after.yml
 diff before.yml after.yml
+```
+
+If the diff is large, filter it locally and read only relevant lines:
+
+```bash
+diff before.yml after.yml | grep -E "expanded|selected|visible|ref:"
 ```
 
 For WebView:
@@ -50,7 +56,7 @@ appium-cli snapshot_show latest --ref=storage_row
 appium-cli tap storage_row
 ```
 
-`snapshot_search`, `snapshot_refs`, and `snapshot_show` read persisted artifacts. They do not query the device.
+`snapshot_search`, `snapshot_refs`, and `snapshot_show --ref` read persisted artifacts. They do not query the device. Prefer these targeted commands over reading the whole compact tree.
 
 ## Navigate a scrollable list
 
@@ -58,7 +64,7 @@ appium-cli tap storage_row
 appium-cli snapshot
 appium-cli snapshot_refs latest --role=list
 appium-cli scroll_down recycler_view
-appium-cli snapshot_show latest
+appium-cli snapshot_search "Settings"
 appium-cli tap row_settings
 ```
 
@@ -70,14 +76,14 @@ Use scoped scrolling with the scrollable container ref. Omit the ref only for in
 appium-cli snapshot
 appium-cli snapshot_refs latest --role=textbox
 appium-cli type_text input_search "hello" --submit
-appium-cli snapshot_show latest
+appium-cli snapshot_search "hello"
 ```
 
 For WebView forms, use `web_query` if inputs are hard to identify:
 
 ```bash
 appium-cli web_snapshot
-appium-cli web_query "input,textarea,select" --attrs=data-testid,autocomplete
+appium-cli web_query "input,textarea,select" --attrs=name,type,placeholder,aria-label,data-testid,autocomplete
 appium-cli fill web_search "query"
 ```
 
@@ -86,7 +92,7 @@ appium-cli fill web_search "query"
 ```bash
 appium-cli webview_switch
 appium-cli web_snapshot
-appium-cli web_query "button, a, input" --attrs=data-testid,aria-label
+appium-cli web_query "button, a, input" --attrs=name,type,placeholder,aria-label,data-testid,href
 appium-cli web_eval "el.getAttribute('data-testid')" web_btn_submit
 appium-cli generate_locator web_btn_submit
 ```

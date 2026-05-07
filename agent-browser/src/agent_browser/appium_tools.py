@@ -73,6 +73,9 @@ _OBSERVATION_PRODUCING = frozenset({
     "describe",
     "find_by_text",
     "get_text",
+    "snapshot_search",
+    "snapshot_refs",
+    "web_query",
 })
 
 

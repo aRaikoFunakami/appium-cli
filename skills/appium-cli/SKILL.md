@@ -21,7 +21,7 @@ appium-cli session start
 appium-cli snapshot
 appium-cli snapshot_refs
 appium-cli tap btn_login
-appium-cli snapshot_show latest
+appium-cli snapshot_search "Welcome"
 ```
 
 Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. Action commands automatically append a post-action snapshot artifact link in normal output.
@@ -29,10 +29,12 @@ Default `snapshot` and `web_snapshot` output is compact metadata plus artifact l
 ## Core workflow
 
 1. Observe: `appium-cli snapshot` or `appium-cli web_snapshot`.
-2. Inspect artifacts if needed: `snapshot_show`, `snapshot_refs`, `snapshot_search`.
+2. Extract only what you need: `snapshot_search`, `snapshot_refs`, or `web_query`.
 3. Act on a current ref: `tap <ref>`, `type_text <ref> <text>`, `scroll_down [ref]`.
 4. Read the post-action snapshot metadata printed by the action.
 5. Use refs from the newest snapshot only.
+
+Do not read whole snapshot artifacts by default. Treat `.compact.yml` as a file artifact that preserves UI hierarchy outside the prompt. Pull relevant fragments with `snapshot_search`, `snapshot_refs`, `web_query`, `snapshot_show --ref`, or local grep/rg-style extraction when available.
 
 For piping, diffs, or full tree output, use global `--raw` before the command:
 
@@ -45,6 +47,12 @@ diff before.yml after.yml
 
 Raw snapshot output is the tree content. Raw actions return only a bare success/failure result and suppress post-action snapshot links.
 
+For before/after verification, filter diffs to relevant lines instead of pasting whole files:
+
+```bash
+diff before.yml after.yml | grep -E "Qiita|検索|title|url|ref:"
+```
+
 ## Observation commands
 
 ```bash
@@ -55,11 +63,11 @@ appium-cli web_snapshot web_form --depth=3  # element-scoped DOM snapshot
 appium-cli --raw snapshot > screen.yml      # full tree for piping/diffing
 appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 
-appium-cli snapshot_show latest             # show compact artifact
-appium-cli snapshot_show latest --artifact=full
-appium-cli snapshot_show latest --ref=btn_login
-appium-cli snapshot_search "Storage" --role=row
-appium-cli snapshot_refs latest --role=button
+appium-cli snapshot_search "Storage" --role=row      # search saved artifact/index
+appium-cli snapshot_refs latest --role=button        # list actionable refs
+appium-cli snapshot_show latest --ref=btn_login      # targeted ref detail
+appium-cli snapshot_show latest                      # targeted fallback; can be large
+appium-cli snapshot_show latest --artifact=full      # debugging only
 appium-cli generate_locator btn_login
 
 appium-cli describe btn_login
@@ -90,7 +98,7 @@ Ref-first targeting is the default. Directional aliases accept an optional ref; 
 appium-cli list_contexts
 appium-cli webview_switch
 appium-cli web_snapshot
-appium-cli web_query "input,button,a" --attrs=data-testid,autocomplete
+appium-cli web_query "input,button,a" --attrs=name,type,placeholder,aria-label,data-testid,autocomplete
 appium-cli web_eval "el.getAttribute('data-testid')" web_btn_submit
 appium-cli click web_btn_submit
 appium-cli fill web_search "query"
@@ -120,6 +128,7 @@ appium-cli get_device_info
 ## Important rules
 
 - Keep `--raw` global: `appium-cli --raw snapshot`, not after the command.
+- Prefer targeted extraction over reading whole artifacts: `snapshot_search`, `snapshot_refs`, `web_query`, then `snapshot_show --ref`; whole `snapshot_show compact` is a fallback.
 - Do not call `adb`, `appium`, `npm`, or installer commands directly unless the user explicitly asks.
 - Prefer canonical snake_case tool names: `get_device_info`, `type_text`, `press_keycode`.
 - Do not edit installed skill copies under `.agents/` or `~/.copilot/`; edit `skills/appium-cli/` and run `appium-cli install --skills`.

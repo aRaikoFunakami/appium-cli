@@ -70,6 +70,13 @@ _BASE_POLICY = dedent(
 
     SNAPSHOTS:
     - For Chrome/web pages, prefer web_snapshot. For native UI, use snapshot.
+    - web_snapshot/snapshot return compact metadata and artifact links. Do NOT
+      default to reading whole compact artifacts. Use targeted extraction first:
+      snapshot_search for visible text, snapshot_refs for actionable refs, and
+      web_query for WebView inputs/buttons/links and CSS attributes.
+    - Use snapshot_show only for targeted ref inspection
+      (snapshot_show(ref=...)) or as a fallback after search/refs/query are
+      insufficient. Full artifacts are debugging-only.
     - DO NOT pass the `depth` parameter to web_snapshot. `depth` limits the
       DOM tree depth; on real pages (yahoo.co.jp, Google, news sites) form
       inputs and buttons live deep inside <main><div><div><form><input> and
@@ -77,12 +84,15 @@ _BASE_POLICY = dedent(
       depth argument; let it default.
     - If a needed element is NOT visible in the snapshot, do NOT just retry
       with different depth values. Instead:
-        * Call find_by_text(text="<visible label or aria-label substring>")
-          using EXACT visible text or aria-label words from the page (e.g.
+        * Call snapshot_search(text="<visible label or aria-label substring>")
+          using exact visible text or aria-label words from the page (e.g.
           "検索したい", "Search", a button label).
+        * Call snapshot_refs(role="<role>") to list candidate refs.
+        * Call web_query(selector="input,button,a", attrs="name,type,placeholder,aria-label,data-testid,href")
+          to inspect WebView DOM fields in a short result.
         * Or scroll_down and snapshot again to reveal more of the page.
-        * Or call web_eval('return document.querySelector("...").outerHTML')
-          to inspect the DOM. web_eval scripts MUST start with `return`.
+        * Or call web_eval only for a specific attribute/value that web_query
+          does not expose. web_eval scripts MUST start with `return`.
     - Refs returned by snapshot/find_by_text/find_container are stable
       identifiers; never invent ref names like "input" or "btn_search".
 
@@ -93,8 +103,10 @@ _BASE_POLICY = dedent(
       change strategy or call browser_result(success=False, ...).
     - Do NOT call the same observation tool repeatedly with only minor
       parameter tweaks (e.g. depth=4 -> depth=8 -> depth=12). If the first
-      web_snapshot did not surface the element you need, switch to
-      find_by_text or scroll_down + snapshot.
+      web_snapshot did not surface the element you need, use targeted
+      extraction: snapshot_search, snapshot_refs, web_query, or scoped
+      snapshot_show(ref=...). Then try scroll_down + snapshot if still
+      not found.
     - Never use wait or wait_short_loading as a default; rely on observation
       tools.
 

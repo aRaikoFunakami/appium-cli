@@ -211,3 +211,11 @@ class TestFixesV2:
             result = await _invoke_appium_tool("web_eval", json.dumps({"script": "return []"}), ctx)
         assert len(result) <= MAX_TOOL_RESULT_CHARS
         assert "... [truncated " in result
+
+
+class TestObservationProducing:
+    def test_targeted_extraction_tools_are_observation_producing(self) -> None:
+        from agent_browser.appium_tools import _OBSERVATION_PRODUCING
+
+        for tool in ("snapshot_search", "snapshot_refs", "web_query"):
+            assert tool in _OBSERVATION_PRODUCING, f"{tool} should be observation-producing"
