@@ -102,7 +102,12 @@ _add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=
           "filename": _str_param("Save snapshot to file."),
       }))
 
-_add("snapshot_show", "Show a persisted snapshot artifact without refreshing device state.",
+_add("snapshot_show",
+     "Show a persisted snapshot artifact. "
+     "PREFER snapshot_search(text=...) or snapshot_refs(role=...) for finding elements - "
+     "they return compact targeted results. "
+     "Use snapshot_show only with ref=<specific_ref> for one element's detail. "
+     "artifact=compact returns the FULL tree (large) and wastes tokens in agent loops.",
      parameters=_schema({
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
          "artifact": _str_param("Artifact to show.", default="compact",
@@ -110,14 +115,18 @@ _add("snapshot_show", "Show a persisted snapshot artifact without refreshing dev
          "ref": _str_param("Optional ref to show in detail."),
      }))
 
-_add("snapshot_search", "Search persisted snapshot index/ref artifacts without refreshing device state.",
+_add("snapshot_search",
+     "Search persisted snapshot for elements by text. Fast, compact output. "
+     "Use this instead of snapshot_show(artifact=compact) to find elements.",
      parameters=_schema({
          "text": _str_param("Text to search for."),
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
          "role": _str_param("Optional role filter."),
      }, required=["text"]))
 
-_add("snapshot_refs", "List refs or show one ref from a persisted snapshot artifact.",
+_add("snapshot_refs",
+     "List actionable refs from the latest snapshot. Fast, compact output. "
+     "Use this to discover available refs instead of reading the full tree.",
      parameters=_schema({
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
          "ref": _str_param("Optional ref to show in detail."),
@@ -356,7 +365,11 @@ _add("switch_context", "Switch to an Appium context.",
 
 _add("native_switch", "Switch to NATIVE_APP context.")
 
-_add("webview_switch", "Switch to a WebView/CHROMIUM context.",
+_add("webview_switch",
+     "Switch to a WebView/CHROMIUM context. "
+     "PREREQUISITE: a WebView app (e.g. Chrome) must be active with a page loaded. "
+     "Call activate_app first and confirm the app is running before calling this. "
+     "Fails with ERROR if no WebView context is available.",
      parameters=_schema({
          "context": _str_param("WebView context name (optional, picks first if empty)."),
      }))

@@ -45,6 +45,11 @@ logger = logging.getLogger(__name__)
 # web_snapshot/web_eval calls do not dominate the next request's input tokens.
 MAX_TOOL_RESULT_CHARS = 12000
 
+# Stricter limit for snapshot_show when returning a full tree artifact (compact/full).
+# The agent should use snapshot_search/snapshot_refs instead; this limit ensures
+# that even if it calls snapshot_show(artifact=compact), the context cost is bounded.
+MAX_SNAPSHOT_SHOW_TREE_CHARS = 1500
+
 # appium-cli tool functions return "FAILED: ..." strings on error (not
 # exceptions). The daemon wraps these as ok=True. We detect and flip.
 _FAILED_PREFIX = "FAILED"
@@ -68,6 +73,7 @@ _ACTION_TOOLS = frozenset({
 _OBSERVATION_PRODUCING = frozenset({
     "snapshot",
     "web_snapshot",
+    "snapshot_show",
     "webview_url",
     "webview_title",
     "get_page_source",
@@ -251,6 +257,16 @@ def _serialize_response(name: str, response: dict[str, Any]) -> str:
     # snapshot_refs to extract what it needs.
     if name in _ACTION_TOOLS:
         return _compact_action_metadata(text)
+    # Aggressively truncate snapshot_show when returning a full tree artifact
+    # (compact or full). The agent should use snapshot_search/snapshot_refs
+    # for targeted extraction instead.
+    if name == "snapshot_show" and len(text) > MAX_SNAPSHOT_SHOW_TREE_CHARS:
+        head = text[: MAX_SNAPSHOT_SHOW_TREE_CHARS - 100]
+        return (
+            head
+            + f"\n\n... [truncated {len(text) - len(head)} chars. "
+            f"Use snapshot_search(text=...) or snapshot_refs(role=...) for targeted extraction.]"
+        )
     return _truncate(text)
 
 
