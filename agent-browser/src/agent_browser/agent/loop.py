@@ -23,9 +23,13 @@ def _items_to_input(items: list[Any]) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for item in items:
         if hasattr(item, "model_dump"):
-            normalized.append(item.model_dump(exclude_none=True))
+            payload = item.model_dump(exclude_none=True)
         elif isinstance(item, dict):
-            normalized.append(item)
+            payload = dict(item)
+        else:
+            continue
+        payload.pop("id", None)
+        normalized.append(payload)
     return normalized
 
 
