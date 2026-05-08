@@ -110,18 +110,12 @@ def test_locator_query_handlers_pass_raw(monkeypatch) -> None:
     ]
 
 
-def test_action_handler_sets_and_restores_raw_output(monkeypatch) -> None:
-    seen: list[bool] = []
-
+def test_action_handler_delegates_to_handle_request(monkeypatch) -> None:
     def fake_wait(seconds: float = 1.0) -> str:
-        seen.append(state.action_raw_output)
-        return f"raw={state.action_raw_output}, seconds={seconds}"
+        return f"seconds={seconds}"
 
     monkeypatch.setattr(entry.actions, "wait", fake_wait)
-    state.action_raw_output = False
 
-    response = entry._handler({"tool": "wait", "args": {"seconds": 0.0}, "raw": True})
+    response = entry._handler({"tool": "wait", "args": {"seconds": 0.0}})
 
-    assert response == {"text": "raw=True, seconds=0.0", "data": {}}
-    assert seen == [True]
-    assert state.action_raw_output is False
+    assert response == {"text": "seconds=0.0", "data": {}}

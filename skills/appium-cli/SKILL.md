@@ -78,6 +78,17 @@ appium-cli get_page_source                  # token-heavy diagnostic escape hatc
 
 `snapshot` is primary. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
 
+### depth parameter
+
+`snapshot` and `web_snapshot` accept an optional `depth` parameter to limit the depth of the snapshot tree. By default, the full tree is returned with no depth limit. Use `depth` only when you need a shallow overview of a specific subtree:
+
+```bash
+appium-cli snapshot --depth=2         # top-level structure only
+appium-cli web_snapshot --depth=3     # shallow DOM overview
+```
+
+Do not set `depth` for full-page observations — the default (full tree) ensures all elements are visible.
+
 ## Actions
 
 ```bash
@@ -104,6 +115,16 @@ appium-cli click web_btn_submit
 appium-cli fill web_search "query"
 appium-cli native_switch
 ```
+
+React Select / autocomplete inputs require special handling. Use `--slowly` to type one character at a time, then click the suggestion:
+
+```bash
+appium-cli fill web_subjects "Comp" --slowly
+appium-cli web_snapshot
+appium-cli click web_option_computer_science
+```
+
+Do not use `web_eval` to set `.value` directly on React-controlled inputs — React ignores DOM-level value changes.
 
 Targeting layers:
 

@@ -21,8 +21,14 @@ Memory rules:
 Form rules:
 - For simple inputs, fill and continue.
 - Never use submit=true for intermediate fields in a multi-field form.
-- Never use send_keys or press_key for React-Select/combobox inputs.
-- Prefer fill(ref,text), then click the visible option.
+- For React-Select/autocomplete/combobox: use fill(ref, text, slowly=true), then web_snapshot to see suggestions, then click the matching option.
+- Never use web_eval to set .value on React-controlled inputs.
+
+Ref rules:
+- Refs from snapshot (web_firstname, web_usernumber) are used with fill/click/tap.
+- CSS selectors from web_query (#firstName, input[name=q]) cannot be used as refs.
+- If the ref you need is not in the current snapshot, take a fresh web_snapshot first.
+- After fill/click/tap, refs remain valid until the next snapshot replaces the ref map.
 
 Completion:
 - Set is_done=true only when the user's requested outcome is verified or impossible.
@@ -59,7 +65,7 @@ def build_input_items(
             [
                 "",
                 "<current_screen>",
-                clamp_text(state.latest_observation, cfg.max_observation_chars),
+                state.latest_observation,
                 "</current_screen>",
             ]
         )

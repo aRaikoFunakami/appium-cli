@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from appium_cli.daemon import state
-from appium_cli.tools.actions import _ok_with_snapshot
 
 
 def _require_driver():
@@ -23,7 +22,7 @@ def dialog_accept(prompt_text: str = "") -> str:
         if prompt_text:
             alert.send_keys(prompt_text)
         alert.accept()
-        return _ok_with_snapshot(message="Dialog accepted")
+        return "Dialog accepted"
     except Exception as exc:
         return f"FAILED: {exc}"
 
@@ -34,7 +33,7 @@ def dialog_dismiss() -> str:
     try:
         alert = driver.switch_to.alert
         alert.dismiss()
-        return _ok_with_snapshot(message="Dialog dismissed")
+        return "Dialog dismissed"
     except Exception as exc:
         return f"FAILED: {exc}"
 

@@ -313,3 +313,63 @@ def test_session_status_json_output(monkeypatch) -> None:
     assert payload["ok"] is True
     assert payload["running"] is True
     assert payload["session_id"] == "session-1"
+
+
+def test_type_text_exposes_slowly_option() -> None:
+    result = CliRunner().invoke(app, ["type_text", "--help"])
+    assert result.exit_code == 0
+    assert "--slowly" in result.output
+
+
+def test_fill_exposes_slowly_option() -> None:
+    result = CliRunner().invoke(app, ["fill", "--help"])
+    assert result.exit_code == 0
+    assert "--slowly" in result.output
+
+
+def test_fill_slowly_passes_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(app, ["fill", "web_input", "Comp", "--slowly"])
+    assert result.exit_code == 0
+    assert calls == [
+        ("fill", {"ref": "web_input", "text": "Comp", "submit": False, "slowly": True}, False),
+    ]
+
+
+def test_type_text_slowly_passes_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(app, ["type_text", "web_input", "hello", "--slowly"])
+    assert result.exit_code == 0
+    assert calls == [
+        ("type_text", {"ref": "web_input", "text": "hello", "submit": False, "slowly": True}, False),
+    ]
+
+
+def test_fill_without_slowly_is_backward_compatible(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+
+    result = CliRunner().invoke(app, ["fill", "web_input", "hello"])
+    assert result.exit_code == 0
+    assert calls == [
+        ("fill", {"ref": "web_input", "text": "hello", "submit": False, "slowly": False}, False),
+    ]

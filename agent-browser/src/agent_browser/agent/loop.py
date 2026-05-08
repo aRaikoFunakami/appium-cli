@@ -12,6 +12,7 @@ from agent_browser.agent.llm import ResponsesClient
 from agent_browser.agent.prompt import SYSTEM_PROMPT, build_input_items
 from agent_browser.agent.registry import get_response_tool_schemas
 from agent_browser.agent.state import BrowserOperationState, clamp_text
+from agent_browser.appium_tools import _SNAPSHOT_TOOLS
 from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult, execute_appium_tool
 from agent_browser.config import AgentBrowserConfig
 from agent_browser.schemas import MemoryEvent, TaskResult
@@ -126,6 +127,8 @@ def _tool_output_item(call: dict[str, Any], result: ToolExecutionResult, cfg: Ag
 
 
 def _latest_observation_from_result(result: ToolExecutionResult, cfg: AgentBrowserConfig) -> str:
+    if result.name in _SNAPSHOT_TOOLS:
+        return result.output
     return clamp_text(result.output, cfg.max_observation_chars)
 
 

@@ -187,13 +187,13 @@ def click(ref: str, json_output: Annotated[bool, typer.Option("--json")] = False
     _daemon_request("click", json_output, {"ref": ref})
 
 
-def type_text(ref: str, text: str, submit: Annotated[bool, typer.Option("--submit")] = False, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
-    _daemon_request("type_text", json_output, {"ref": ref, "text": text, "submit": submit})
+def type_text(ref: str, text: str, submit: Annotated[bool, typer.Option("--submit")] = False, slowly: Annotated[bool, typer.Option("--slowly")] = False, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _daemon_request("type_text", json_output, {"ref": ref, "text": text, "submit": submit, "slowly": slowly})
 
 
-def fill(ref: str, text: str, submit: Annotated[bool, typer.Option("--submit")] = False, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
+def fill(ref: str, text: str, submit: Annotated[bool, typer.Option("--submit")] = False, slowly: Annotated[bool, typer.Option("--slowly")] = False, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     """Web-friendly alias for type_text."""
-    _daemon_request("fill", json_output, {"ref": ref, "text": text, "submit": submit})
+    _daemon_request("fill", json_output, {"ref": ref, "text": text, "submit": submit, "slowly": slowly})
 
 
 def select(

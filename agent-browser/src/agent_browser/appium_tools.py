@@ -25,6 +25,9 @@ MAX_TOOL_RESULT_CHARS = 12000
 MAX_SNAPSHOT_SHOW_TREE_CHARS = 1500
 _FAILED_PREFIX = "FAILED"
 
+# Snapshot tools return full output without truncation (Playwright alignment).
+_SNAPSHOT_TOOLS = frozenset({"snapshot", "web_snapshot"})
+
 _ACTION_TOOLS = frozenset({
     "tap", "click", "fill", "type_text", "scroll", "scroll_up",
     "scroll_down", "scroll_left", "scroll_right", "swipe", "swipe_up",
@@ -206,6 +209,8 @@ def _serialize_response(name: str, response: dict[str, Any]) -> str:
             + f"\n\n... [truncated {len(text) - len(head)} chars. "
             f"Use snapshot_search(text=...) or snapshot_refs(role=...) for targeted extraction.]"
         )
+    if name in _SNAPSHOT_TOOLS:
+        return text
     return _truncate(text)
 
 

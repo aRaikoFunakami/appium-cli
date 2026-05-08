@@ -20,7 +20,6 @@ current_snapshot_metadata: dict[str, Any] = {}
 tap_history: list[dict[str, Any]] = []
 session_metadata: dict[str, Any] = {}
 app_dir: Path | None = None
-action_raw_output: bool = False
 
 # Context tracking
 current_context: str = "NATIVE_APP"
@@ -34,7 +33,7 @@ ref_resolver: RefResolver = RefResolver()
 def reset() -> None:
     global driver, current_snapshot, current_ref_map, current_snapshot_id, current_snapshot_metadata
     global tap_history, session_metadata, app_dir
-    global action_raw_output, current_context, snapshots_by_context, ref_maps_by_context
+    global current_context, snapshots_by_context, ref_maps_by_context
     global ref_resolver
     driver = None
     current_snapshot = None
@@ -44,7 +43,6 @@ def reset() -> None:
     tap_history = []
     session_metadata = {}
     app_dir = None
-    action_raw_output = False
     current_context = "NATIVE_APP"
     snapshots_by_context = {}
     ref_maps_by_context = {}

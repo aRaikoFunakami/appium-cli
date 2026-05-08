@@ -87,8 +87,7 @@ _add("snapshot", "Get an accessibility snapshot with stable element refs.",
          "scope": _str_param("Snapshot scope filter.", default="full"),
          "context": _str_param("Context: native, webview, auto, current, or exact name.", default="native",
                                enum=["native", "webview", "auto", "current"]),
-         "depth": _int_param("Limit web snapshot tree to N levels."),
-         "max_nodes": _int_param("Limit snapshot tree to N nodes."),
+         "depth": _int_param("Limit the depth of the snapshot tree."),
          "boxes": _bool_param("Include element bounding boxes in output."),
          "filename": _str_param("Save snapshot to file."),
      }))
@@ -96,11 +95,10 @@ _add("snapshot", "Get an accessibility snapshot with stable element refs.",
 _add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview).",
      parameters=_schema({
          "scope": _str_param("Snapshot scope filter.", default="full"),
-         "depth": _int_param("Limit tree to N levels."),
-         "max_nodes": _int_param("Limit tree to N nodes."),
+         "depth": _int_param("Limit the depth of the snapshot tree."),
          "boxes": _bool_param("Include element bounding boxes."),
-          "filename": _str_param("Save snapshot to file."),
-      }))
+         "filename": _str_param("Save snapshot to file."),
+     }))
 
 _add("snapshot_show",
      "Show a persisted snapshot artifact. "
@@ -184,6 +182,7 @@ _add("type_text", "Type text into an element.",
          "ref": _str_param("Element ref of the input field."),
          "text": _str_param("Text to type."),
          "submit": _bool_param("Submit after typing."),
+         "slowly": _bool_param("Type one character at a time for autocomplete/React-Select inputs."),
      }, required=["ref", "text"]))
 
 _add("fill", "Web-friendly alias for type_text.",
@@ -191,6 +190,7 @@ _add("fill", "Web-friendly alias for type_text.",
          "ref": _str_param("Element ref of the input field."),
          "text": _str_param("Text to type."),
          "submit": _bool_param("Submit after typing."),
+         "slowly": _bool_param("Type one character at a time for autocomplete/React-Select inputs."),
      }, required=["ref", "text"]))
 
 _add("select", "Select an option in an HTML <select> element.",

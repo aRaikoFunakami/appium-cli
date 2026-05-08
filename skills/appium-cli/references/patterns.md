@@ -87,6 +87,19 @@ appium-cli web_query "input,textarea,select" --attrs=name,type,placeholder,aria-
 appium-cli fill web_search "query"
 ```
 
+## React Select / Autocomplete
+
+For inputs that trigger autocomplete or dropdown suggestions (React Select, Combobox, etc.), use `--slowly` to type one character at a time:
+
+```bash
+appium-cli web_snapshot
+appium-cli fill web_subjects "Comp" --slowly
+appium-cli web_snapshot
+appium-cli click web_option_computer_science
+```
+
+After typing with `--slowly`, take a snapshot to see the suggestion list, then click the desired option. Do not use `web_eval` to set values directly on React-controlled inputs.
+
 ## WebView selector discovery
 
 ```bash

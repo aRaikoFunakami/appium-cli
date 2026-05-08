@@ -253,3 +253,36 @@ class TestObservationProducing:
 
         for tool in ("snapshot_search", "snapshot_refs", "web_query"):
             assert tool in _OBSERVATION_PRODUCING, f"{tool} should be observation-producing"
+
+
+class TestSnapshotNoTruncation:
+    @pytest.mark.asyncio
+    async def test_snapshot_output_not_truncated(self, tmp_path) -> None:
+        """Snapshot tools return full output without truncation (Playwright alignment)."""
+        ctx = _ctx(tmp_path)
+        large_tree = "snapshot_id: test\nsource: native\n" + "row\n" * 10000
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": large_tree, "data": {}}
+            result = await execute_appium_tool("snapshot", {}, ctx)
+        assert len(result.output) > MAX_TOOL_RESULT_CHARS
+        assert "truncated" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_web_snapshot_output_not_truncated(self, tmp_path) -> None:
+        """web_snapshot also bypasses truncation."""
+        ctx = _ctx(tmp_path)
+        large_tree = "snapshot_id: web-test\nsource: webview\n" + "div\n" * 10000
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": large_tree, "data": {}}
+            result = await execute_appium_tool("web_snapshot", {}, ctx)
+        assert len(result.output) > MAX_TOOL_RESULT_CHARS
+        assert "truncated" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_non_snapshot_observation_still_truncated(self, tmp_path) -> None:
+        """Non-snapshot observation tools still respect truncation."""
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": "x" * 30000, "data": {}}
+            result = await execute_appium_tool("web_eval", {"script": "return []"}, ctx)
+        assert len(result.output) <= MAX_TOOL_RESULT_CHARS

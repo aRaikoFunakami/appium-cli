@@ -9,7 +9,6 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import InvalidArgumentException, InvalidSelectorException, NoSuchElementException
 
 from appium_cli.daemon import state
-from appium_cli.tools.actions import _ok_with_snapshot
 
 
 def _require_driver():
@@ -54,7 +53,7 @@ def click_element(by: str, value: str) -> str:
         return error
     element.click()
     time.sleep(1)
-    return f"Successfully clicked element by {by} with value {value}\n{_ok_with_snapshot()}"
+    return f"Successfully clicked element by {by} with value {value}"
 
 
 def get_text(by: str, value: str) -> str:
@@ -67,7 +66,7 @@ def get_text(by: str, value: str) -> str:
 def press_keycode(keycode: int) -> str:
     _require_driver().press_keycode(keycode)
     time.sleep(1)
-    return f"Successfully pressed keycode {keycode}\n{_ok_with_snapshot()}"
+    return f"Successfully pressed keycode {keycode}"
 
 
 def double_tap(by: str, value: str) -> str:
@@ -78,7 +77,7 @@ def double_tap(by: str, value: str) -> str:
     time.sleep(0.1)
     element.click()
     time.sleep(1)
-    return f"Successfully double tapped element by {by} with value {value}\n{_ok_with_snapshot()}"
+    return f"Successfully double tapped element by {by} with value {value}"
 
 
 def send_keys(by: str, value: str, text: str) -> str:
@@ -88,7 +87,7 @@ def send_keys(by: str, value: str, text: str) -> str:
     element.click()
     element.send_keys(text)
     time.sleep(1)
-    return f"Successfully sent keys '{text}' to element\n{_ok_with_snapshot()}"
+    return f"Successfully sent keys '{text}' to element"
 
 
 def wait_short_loading(seconds: str = "5") -> str:
@@ -142,7 +141,7 @@ def scroll_element(by: str, value: str, direction: str = "up") -> str:
     else:
         return "❌ Invalid direction. Use 'up', 'down', 'left', or 'right'."
     time.sleep(1)
-    return f"Successfully scrolled element by {by} with value {value} in {direction} direction\n{_ok_with_snapshot()}"
+    return f"Successfully scrolled element by {by} with value {value} in {direction} direction"
 
 
 def scroll_to_element(by: str, value: str, scrollable_by: str = "xpath", scrollable_value: str = "//*[@scrollable='true']") -> str:

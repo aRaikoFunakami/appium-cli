@@ -9,8 +9,8 @@ from typing import Any
 from .snapshot import LocatorStrategy
 from .web_snapshot import WebSnapshot, WebSnapshotNode
 
-WEB_DEFAULT_MAX_DEPTH = 15
-WEB_DEFAULT_MAX_NODES = 300
+WEB_DEFAULT_MAX_DEPTH = 999
+WEB_DEFAULT_MAX_NODES = 999999
 WEB_REF_TEXT_LIMIT = 128
 WEB_LOCATOR_TEXT_LIMIT = 128
 WEB_DOM_TEXT_LIMIT = 1000

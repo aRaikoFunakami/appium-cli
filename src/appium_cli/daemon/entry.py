@@ -57,12 +57,7 @@ def _probe_shell(driver) -> bool:
 
 
 def _handler(request: dict[str, Any]) -> dict[str, Any]:
-    previous_raw_output = state.action_raw_output
-    state.action_raw_output = bool(request.get("raw"))
-    try:
-        return _handle_request(request)
-    finally:
-        state.action_raw_output = previous_raw_output
+    return _handle_request(request)
 
 
 def _handle_request(request: dict[str, Any]) -> dict[str, Any]:

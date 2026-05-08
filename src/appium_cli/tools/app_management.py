@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 
 from appium_cli.daemon import state
-from appium_cli.tools.actions import _ok_with_snapshot
 from appium_cli.tools.device_info import _shell
 
 
@@ -24,14 +23,14 @@ def activate_app(app_id: str) -> str:
     driver = _require_driver()
     driver.activate_app(app_id)
     time.sleep(1)
-    return f"Successfully activated app: {app_id}\n{_ok_with_snapshot()}"
+    return f"Successfully activated app: {app_id}"
 
 
 def terminate_app(app_id: str) -> str:
     driver = _require_driver()
     result = driver.terminate_app(app_id)
     time.sleep(0.5)
-    return f"Successfully terminated app: {app_id} (result: {result})\n{_ok_with_snapshot()}"
+    return f"Successfully terminated app: {app_id} (result: {result})"
 
 
 def list_apps() -> str:
@@ -48,4 +47,4 @@ def restart_app(app_id: str, wait_seconds: int = 3) -> str:
     time.sleep(wait_seconds)
     driver.activate_app(app_id)
     time.sleep(1)
-    return f"Successfully restarted app: {app_id} (waited {wait_seconds}s between terminate and activate)\n{_ok_with_snapshot()}"
+    return f"Successfully restarted app: {app_id} (waited {wait_seconds}s between terminate and activate)"

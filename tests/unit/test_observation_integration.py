@@ -6,7 +6,7 @@ import json
 import shutil
 from contextlib import nullcontext
 from pathlib import Path
-from types import SimpleNamespace
+
 
 from appium_cli.core.native_snapshot import NativeSnapshot, NativeSnapshotNode
 from appium_cli.core.snapshot import LocatorStrategy, RefEntry
@@ -83,18 +83,8 @@ def _install_snapshot_artifacts(monkeypatch, request, snapshot_id: str = "native
     return app_dir
 
 
-def _snapshot_metadata_text(snapshot_id: str = "snap-1") -> str:
-    return (
-        f"snapshot_id: {snapshot_id}\n"
-        "source: native\n"
-        "screen_id: screen-1\n"
-        "artifacts:\n"
-        f"  meta: .appium-cli/snapshots/{snapshot_id}.meta.json"
-    )
-
-
-def test_native_action_appends_post_action_snapshot_metadata(monkeypatch):
-    calls: list[dict] = []
+def test_native_action_returns_ok_without_snapshot(monkeypatch):
+    """After removing _ok_with_snapshot, actions return plain 'OK'."""
 
     class FakeDriver:
         def __init__(self):
@@ -103,26 +93,19 @@ def test_native_action_appends_post_action_snapshot_metadata(monkeypatch):
         def press_keycode(self, keycode: int) -> None:
             self.keycodes.append(keycode)
 
-    def fake_refresh_snapshot(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(text=_snapshot_metadata_text("native-after"), data={})
-
     driver = FakeDriver()
     state.driver = driver
     state.current_context = "NATIVE_APP"
     monkeypatch.setattr(actions.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(actions, "refresh_snapshot", fake_refresh_snapshot)
 
     out = actions.press_key("back")
 
     assert driver.keycodes == [4]
-    assert out.startswith("OK\nsnapshot_id: native-after")
-    assert "artifacts:" in out
-    assert calls == [{"context": "native", "raw": False}]
+    assert out == "OK"
 
 
-def test_web_action_appends_web_snapshot_metadata_and_raw_hides_link(monkeypatch):
-    calls: list[dict] = []
+def test_web_action_returns_ok_without_snapshot(monkeypatch):
+    """After removing _ok_with_snapshot, web actions return plain 'OK'."""
 
     class FakeElement:
         def __init__(self):
@@ -131,10 +114,6 @@ def test_web_action_appends_web_snapshot_metadata_and_raw_hides_link(monkeypatch
         def click(self) -> None:
             self.clicked = True
 
-    def fake_refresh_snapshot(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(text=_snapshot_metadata_text("web-after"), data={})
-
     element = FakeElement()
     state.driver = object()
     state.current_context = "WEBVIEW_1"
@@ -142,20 +121,12 @@ def test_web_action_appends_web_snapshot_metadata_and_raw_hides_link(monkeypatch
     monkeypatch.setattr(actions, "_is_web_ref", lambda _ref: True)
     monkeypatch.setattr(actions, "_resolve_element", lambda _ref: element)
     monkeypatch.setattr(actions, "_ref_context", lambda _ref: "WEBVIEW_1")
-    monkeypatch.setattr(actions, "refresh_snapshot", fake_refresh_snapshot)
 
     out = actions.tap("submit")
 
     assert element.clicked is True
-    assert out.startswith("OK\nsnapshot_id: web-after")
-    assert calls[-1] == {"context": "webview", "raw": False}
-
-    state.action_raw_output = True
-    raw_out = actions.tap("submit")
-
-    assert raw_out == "OK"
-    assert "snapshot_id:" not in raw_out
-    assert calls[-1] == {"context": "webview", "raw": False}
+    assert out == "OK"
+    assert "snapshot_id:" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -975,8 +946,8 @@ def test_refresh_web_snapshot_uses_generator_default_limits(monkeypatch, tmp_pat
     assert "[ref:web_btn_ok]" in compact
     assert len(driver.execute_script_calls) == 1
     _script, depth, max_nodes = driver.execute_script_calls[0]
-    assert depth == WEB_DEFAULT_MAX_DEPTH == 15
-    assert max_nodes == WEB_DEFAULT_MAX_NODES == 300
+    assert depth == WEB_DEFAULT_MAX_DEPTH == 999
+    assert max_nodes == WEB_DEFAULT_MAX_NODES == 999999
 
 
 def test_refresh_web_snapshot_preserves_explicit_expanded_limits(monkeypatch, tmp_path):

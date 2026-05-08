@@ -55,7 +55,7 @@ class AgentBrowserConfig:
     max_retries: int = 2
     step_timeout_seconds: float = 60.0
     recent_steps: int = 5
-    max_observation_chars: int = 2500
+    max_observation_chars: int = 4000
     max_action_result_chars: int = 500
     max_error_chars: int = 300
     working_state_char_cap: int = 1200
@@ -93,7 +93,7 @@ class AgentBrowserConfig:
             max_retries=_env_int("AGENT_BROWSER_MAX_RETRIES", 2),
             step_timeout_seconds=_env_float("AGENT_BROWSER_STEP_TIMEOUT", 60.0),
             recent_steps=_env_int("AGENT_BROWSER_RECENT_STEPS", 5),
-            max_observation_chars=_env_int("AGENT_BROWSER_MAX_OBSERVATION_CHARS", 2500),
+            max_observation_chars=_env_int("AGENT_BROWSER_MAX_OBSERVATION_CHARS", 4000),
             max_action_result_chars=_env_int("AGENT_BROWSER_MAX_ACTION_RESULT_CHARS", 500),
             max_error_chars=_env_int("AGENT_BROWSER_MAX_ERROR_CHARS", 300),
             working_state_char_cap=_env_int("AGENT_BROWSER_WORKING_STATE_CHARS", 1200),

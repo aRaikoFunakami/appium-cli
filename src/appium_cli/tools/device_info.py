@@ -122,6 +122,5 @@ def set_orientation(orientation: str) -> str:
     if normalized not in {"PORTRAIT", "LANDSCAPE"}:
         raise ValueError("Invalid orientation. Use 'PORTRAIT' or 'LANDSCAPE'")
     state.driver.orientation = normalized
-    from appium_cli.tools.actions import _ok_with_snapshot
 
-    return f"Successfully set orientation to: {orientation}\n{_ok_with_snapshot()}"
+    return f"Successfully set orientation to: {orientation}"

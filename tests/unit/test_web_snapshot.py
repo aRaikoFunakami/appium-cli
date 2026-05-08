@@ -109,8 +109,8 @@ class TestDetermineRole:
 
 class TestWebLimits:
     def test_limit_constants_match_contract(self):
-        assert WEB_DEFAULT_MAX_NODES == 300
-        assert WEB_DEFAULT_MAX_DEPTH == 15
+        assert WEB_DEFAULT_MAX_NODES == 999999
+        assert WEB_DEFAULT_MAX_DEPTH == 999
         assert WEB_REF_TEXT_LIMIT == 128
         assert WEB_LOCATOR_TEXT_LIMIT == 128
         assert WEB_DOM_TEXT_LIMIT == 1000
