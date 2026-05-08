@@ -119,8 +119,14 @@ def start(
     """Start the daemon-owned WebDriver session."""
 
     if _daemon_running():
+        # Fetch full session details so callers get udid/server_url.
+        try:
+            resp = request("get_driver_status")
+            data = resp.get("data", {}) if resp.get("ok") else {}
+        except Exception:
+            data = {}
         if json_output:
-            _echo_json({"ok": True, "already_running": True, "running": True})
+            _echo_json({"ok": True, "already_running": True, "running": True, **data})
             return
         typer.echo("Session daemon is already running.")
         return

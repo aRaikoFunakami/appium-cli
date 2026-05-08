@@ -120,12 +120,29 @@ class AppiumSessionManager:
         if rc != 0 or not payload.get("ok"):
             error = payload.get("error") or stderr.strip() or stdout.strip() or f"appium-cli exited with {rc}"
             raise AppiumSessionError(f"Failed to start appium-cli session: {error}")
+
+        # If the daemon was already running, the response may lack session
+        # details.  Fall back to _status() to populate them.
+        udid = payload.get("udid") or self._config.udid
+        server_url = payload.get("server_url")
+        session_id = payload.get("session_id")
+        if not udid or not server_url:
+            logger.debug("[session] start response missing fields, querying status")
+            info = await self._status()
+            if info.running:
+                info.started_by_us = not payload.get("already_running", False)
+                return info
+            raise AppiumSessionError(
+                "appium-cli session start reported ok but session is not ready "
+                f"(udid={udid!r}, server_url={server_url!r})"
+            )
+
         return SessionInfo(
             running=True,
-            udid=payload.get("udid") or self._config.udid,
-            server_url=payload.get("server_url"),
-            session_id=payload.get("session_id"),
-            started_by_us=True,
+            udid=udid,
+            server_url=server_url,
+            session_id=session_id,
+            started_by_us=not payload.get("already_running", False),
             raw=payload,
         )
 

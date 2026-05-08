@@ -33,24 +33,66 @@ def _items_to_input(items: list[Any]) -> list[dict[str, Any]]:
     return normalized
 
 
-def _output_text(response: Any) -> str:
-    text = getattr(response, "output_text", None)
-    if isinstance(text, str) and text:
-        return text
-    # Conservative fallback for SDK object variations.
-    for item in getattr(response, "output", []) or []:
+def _extract_text_with_diagnostics(response: Any, _logger: logging.Logger) -> str:
+    """Extract text from response with diagnostics for debugging parse failures."""
+    output_items = getattr(response, "output", []) or []
+    item_count = len(output_items)
+
+    # Inspect each item's type
+    item_types: list[str] = []
+    text_items: list[str] = []
+    for item in output_items:
         payload = item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item
-        if not isinstance(payload, dict):
-            continue
-        if payload.get("type") == "message":
-            content = payload.get("content")
-            if isinstance(content, list):
-                parts = []
-                for c in content:
-                    if isinstance(c, dict):
-                        parts.append(str(c.get("text") or c.get("content") or ""))
-                return "\n".join(p for p in parts if p)
-    return ""
+        if isinstance(payload, dict):
+            itype = payload.get("type", "unknown")
+            item_types.append(itype)
+            # Detect text-bearing items
+            if "text" in itype or itype == "message":
+                content = payload.get("content")
+                if isinstance(content, list):
+                    parts = []
+                    for c in content:
+                        if isinstance(c, dict):
+                            parts.append(str(c.get("text") or c.get("content") or ""))
+                    joined = "\n".join(p for p in parts if p)
+                    if joined:
+                        text_items.append(joined)
+                elif isinstance(payload.get("text"), str) and payload["text"]:
+                    text_items.append(payload["text"])
+        else:
+            item_types.append(type(item).__name__)
+
+    # Determine text source and value
+    if len(text_items) > 1:
+        _logger.warning(
+            "[loop] multiple text items detected (%d); using first item only. types=%s",
+            len(text_items),
+            item_types,
+        )
+        text = text_items[0]
+        source = "first_of_multiple"
+    else:
+        raw_text = getattr(response, "output_text", None)
+        if isinstance(raw_text, str) and raw_text:
+            text = raw_text
+            source = "output_text"
+        elif text_items:
+            text = text_items[0]
+            source = "fallback_single"
+        else:
+            text = ""
+            source = "empty"
+
+    _logger.debug(
+        "[loop] response diagnostics: items=%d types=%s source=%s len=%d first200=%.200s last200=%.200s",
+        item_count,
+        item_types,
+        source,
+        len(text),
+        text[:200],
+        text[-200:] if len(text) > 200 else text,
+    )
+    return text
 
 
 def _function_calls(response: Any) -> list[dict[str, Any]]:
@@ -137,12 +179,30 @@ async def run_react_loop(
                 tools=None,
             )
 
-        text = _output_text(response)
+        text = _extract_text_with_diagnostics(response, logger)
         try:
             brain = parse_agent_brain(text, working_state_cap=cfg.working_state_char_cap)
         except Exception as exc:
+            output_items = getattr(response, "output", []) or []
+            item_types = []
+            for item in output_items:
+                payload = item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item
+                itype = payload.get("type", "unknown") if isinstance(payload, dict) else type(item).__name__
+                item_types.append(itype)
+            logger.error(
+                "[loop] AgentBrain parse failed: text_len=%d items=%d types=%s first300=%.300s last300=%.300s",
+                len(text),
+                len(output_items),
+                item_types,
+                text[:300],
+                text[-300:] if len(text) > 300 else text,
+            )
             logger.exception("[loop] failed to parse AgentBrain")
-            context.memory.record_failure(f"brain_parse_error: {type(exc).__name__}: {exc}")
+            diag = (
+                f"brain_parse_error: {type(exc).__name__}: {exc} "
+                f"| text_len={len(text)} items={len(output_items)} types={item_types}"
+            )
+            context.memory.record_failure(diag[:500])
             state.reflection = "The last model output was invalid JSON. Return valid AgentBrain JSON after the next action."
             brain = None
 

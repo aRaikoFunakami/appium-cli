@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from agent_browser.agent.loop import _items_to_input
+import pytest
+
+from agent_browser.agent.loop import _extract_text_with_diagnostics, _items_to_input
 
 
 class DumpableItem:
@@ -57,3 +60,76 @@ def test_items_to_input_strips_response_item_id_from_dicts_without_mutating() ->
         }
     ]
     assert item["id"] == "rs_456"
+
+
+# --- Helpers for _extract_text_with_diagnostics tests ---
+
+
+class FakeResponse:
+    """Minimal fake response object for testing extraction."""
+
+    def __init__(self, output_text: str | None, output: list[Any] | None = None) -> None:
+        self.output_text = output_text
+        self.output = output or []
+
+
+# --- Tests for _extract_text_with_diagnostics ---
+
+_test_logger = logging.getLogger("agent_browser.agent.loop")
+
+
+def test_extract_text_returns_output_text_when_single_item() -> None:
+    text = '{"valid": "json"}'
+    response = FakeResponse(
+        output_text=text,
+        output=[DumpableItem({"type": "message", "content": [{"type": "output_text", "text": text}]})],
+    )
+    result = _extract_text_with_diagnostics(response, _test_logger)
+    assert result == text
+
+
+def test_extract_text_uses_first_item_when_multiple_text_outputs() -> None:
+    first_text = '{"a":1}'
+    second_text = '{"b":2}'
+    response = FakeResponse(
+        output_text=first_text + second_text,
+        output=[
+            DumpableItem({"type": "message", "content": [{"type": "output_text", "text": first_text}]}),
+            DumpableItem({"type": "message", "content": [{"type": "output_text", "text": second_text}]}),
+        ],
+    )
+    result = _extract_text_with_diagnostics(response, _test_logger)
+    assert result == first_text
+
+
+def test_extract_text_warns_on_multiple_text_items(caplog: pytest.LogCaptureFixture) -> None:
+    first_text = '{"a":1}'
+    second_text = '{"b":2}'
+    response = FakeResponse(
+        output_text=first_text + second_text,
+        output=[
+            DumpableItem({"type": "message", "content": [{"type": "output_text", "text": first_text}]}),
+            DumpableItem({"type": "message", "content": [{"type": "output_text", "text": second_text}]}),
+        ],
+    )
+    with caplog.at_level(logging.WARNING, logger="agent_browser.agent.loop"):
+        _extract_text_with_diagnostics(response, _test_logger)
+    assert any("multiple text items" in rec.message for rec in caplog.records)
+
+
+def test_extract_text_fallback_from_message_content() -> None:
+    response = FakeResponse(
+        output_text=None,
+        output=[DumpableItem({"type": "message", "content": [{"type": "text", "text": "fallback value"}]})],
+    )
+    result = _extract_text_with_diagnostics(response, _test_logger)
+    assert result == "fallback value"
+
+
+def test_extract_text_returns_empty_when_no_text() -> None:
+    response = FakeResponse(
+        output_text=None,
+        output=[DumpableItem({"type": "function_call", "name": "tap", "arguments": "{}"})],
+    )
+    result = _extract_text_with_diagnostics(response, _test_logger)
+    assert result == ""
