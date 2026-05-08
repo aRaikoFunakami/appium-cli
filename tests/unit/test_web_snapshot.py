@@ -95,7 +95,7 @@ class TestDetermineRole:
         assert _determine_role({"tag": "input", "type": "submit"}) == "button"
 
     def test_select(self):
-        assert _determine_role({"tag": "select"}) == "select"
+        assert _determine_role({"tag": "select"}) == "combobox"
 
     def test_img(self):
         assert _determine_role({"tag": "img"}) == "image"
@@ -104,7 +104,7 @@ class TestDetermineRole:
         assert _determine_role({"tag": "div", "role": "button"}) == "button"
 
     def test_unknown_tag(self):
-        assert _determine_role({"tag": "div"}) == "element"
+        assert _determine_role({"tag": "div"}) == "generic"
 
 
 class TestWebLimits:
@@ -430,7 +430,7 @@ class TestWebSnapshotGeneratorFromDom:
             ],
         }
         snap, _ = self.gen.generate_from_dom(tree, "CHROMIUM")
-        assert '- text "Plain paragraph"' in snap.to_text()
+        assert '- paragraph "Plain paragraph"' in snap.to_text()
 
     def test_ref_scope_renders_exact_subtree_with_depth(self):
         tree = {

@@ -1,0 +1,96 @@
+screen: WEBVIEW_chrome https://demoqa.com/automation-practice-form
+screen_id: 9a1c8e
+context: WEBVIEW_chrome
+source: web
+title: demosite
+url: https://demoqa.com/automation-practice-form
+truncated: true
+WARNING: Snapshot output is truncated; some nodes are omitted. Increase --max-nodes/--depth or narrow the scope.
+
+- document "demosite"
+  - element [ref:web_root]
+    - element
+      - link [ref:web_link]
+        - image
+    - element [ref:web_element]
+      - group "Elements"
+        - ...
+      - ...
+    - element [ref:web_element_2]
+      - group "Forms"
+        - ...
+      - ...
+    - element
+      - element
+        - link "Practice Form" [ref:web_link_practice_form]
+          - ...
+          - ...
+    - element [ref:web_element_3]
+      - group "Alerts, Frame & Windows"
+        - ...
+      - ...
+    - element [ref:web_element_4]
+      - group "Widgets"
+        - ...
+      - ...
+    - element [ref:web_element_5]
+      - group "Interactions"
+        - ...
+      - ...
+    - element [ref:web_element_6]
+      - group "Book Store Application"
+        - ...
+      - ...
+    - heading "Practice Form"
+    - heading "Student Registration Form"
+    - form
+      - label "Name"
+      - textbox "First Name" [ref:web_firstname] value="Taro"
+      - textbox "Last Name" [ref:web_lastname]
+      - label "Email"
+      - textbox "name@example.com" [ref:web_useremail]
+      - text "Gender"
+      - radio "Male" [ref:web_gender_radio_1]
+      - label "Male"
+      - radio "Female" [ref:web_gender_radio_2]
+      - label "Female"
+      - radio "Other" [ref:web_gender_radio_3]
+      - label "Other"
+      - label "Mobile(10 Digits)"
+        - text "(10 Digits)"
+      - textbox "Mobile Number" [ref:web_usernumber]
+      - label "Date of Birth"
+      - textbox "08 May 2026" [ref:web_dateofbirthinput]
+      - label "Subjects"
+      - log
+      - ...
+      - ...
+      - ...
+      - label "Hobbies"
+      - checkbox "1" [ref:web_hobbies_checkbox_1]
+      - label "Sports"
+      - checkbox "2" [ref:web_hobbies_checkbox_2]
+      - label "Reading"
+      - checkbox "3" [ref:web_hobbies_checkbox_3]
+      - label "Music"
+      - label "Picture"
+      - file [ref:web_uploadpicture]
+      - label "Current Address"
+      - textbox "Current Address" [ref:web_currentaddress]
+      - label "State and City"
+      - log
+      - ...
+      - ...
+      - ...
+      - log
+      - element [disabled]
+        - ...
+        - ...
+      - button "Submit" [ref:web_submit]
+    - element "Advertisement" [ref:web_google_ads_iframe_21849154601_22343295815_ad_plus_970x250_2_0]
+    - element "Advertisement" [ref:web_google_ads_iframe_21849154601_22343295815_ad_plus_300x250_1_0]
+    - element
+      - text "© 2013- 2026 TOOLSQA.COM | ALL RIGHTS RESERVED."
+
+alerts: none
+nav: back=True

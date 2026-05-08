@@ -1,0 +1,22 @@
+screen: WEBVIEW_chrome https://demoqa.com/automation-practice-form
+screen_id: 4cff01
+context: WEBVIEW_chrome
+source: web
+title: demosite
+url: https://demoqa.com/automation-practice-form
+truncated: true
+WARNING: Snapshot output is truncated; some nodes are omitted. Increase --max-nodes/--depth or narrow the scope.
+
+- document "demosite"
+  - element [ref:web_root]
+    - element
+      - link [ref:web_link]
+        - image
+    - ...
+    - ...
+    - ...
+    - element
+      - text "© 2013- 2026 TOOLSQA.COM | ALL RIGHTS RESERVED."
+
+alerts: none
+nav: back=True

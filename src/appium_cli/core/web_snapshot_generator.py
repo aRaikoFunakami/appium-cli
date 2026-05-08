@@ -21,12 +21,11 @@ _TAG_TO_ROLE: dict[str, str] = {
     "button": "button",
     "input": "textbox",
     "textarea": "textbox",
-    "select": "select",
+    "select": "combobox",
     "option": "option",
     "img": "image",
     "video": "video",
     "audio": "audio",
-    "label": "label",
     "h1": "heading",
     "h2": "heading",
     "h3": "heading",
@@ -34,11 +33,28 @@ _TAG_TO_ROLE: dict[str, str] = {
     "h5": "heading",
     "h6": "heading",
     "table": "table",
+    "tr": "row",
+    "td": "cell",
+    "th": "columnheader",
     "form": "form",
     "nav": "navigation",
     "dialog": "dialog",
     "main": "main",
+    "header": "banner",
+    "footer": "contentinfo",
+    "aside": "complementary",
+    "article": "article",
     "section": "group",
+    "fieldset": "group",
+    "legend": "legend",
+    "ul": "list",
+    "ol": "list",
+    "menu": "list",
+    "li": "listitem",
+    "p": "paragraph",
+    "hr": "separator",
+    "details": "group",
+    "summary": "button",
 }
 
 _INPUT_TYPE_ROLE: dict[str, str] = {
@@ -49,14 +65,18 @@ _INPUT_TYPE_ROLE: dict[str, str] = {
     "image": "button",
     "reset": "button",
     "range": "slider",
-    "file": "file",
+    "number": "spinbutton",
+    "search": "searchbox",
+    "file": "button",
 }
 
 _ROLE_PREFIX: dict[str, str] = {
     "link": "link",
     "button": "btn",
     "textbox": "input",
-    "select": "select",
+    "combobox": "select",
+    "searchbox": "search",
+    "spinbutton": "input",
     "checkbox": "chk",
     "radio": "radio",
     "image": "img",
@@ -64,18 +84,20 @@ _ROLE_PREFIX: dict[str, str] = {
     "slider": "slider",
     "tab": "tab",
     "menuitem": "menuitem",
+    "generic": "el",
 }
 
 _ACTIONABLE_ROLES = {
     "button",
     "checkbox",
-    "file",
+    "combobox",
     "link",
     "menuitem",
     "option",
     "radio",
-    "select",
+    "searchbox",
     "slider",
+    "spinbutton",
     "switch",
     "tab",
     "textbox",
@@ -89,6 +111,18 @@ return (function(maxDepth, maxNodes) {
     maxNodes = maxNodes || __WEB_DEFAULT_MAX_NODES__;
     var seen = 0;
     var truncated = false;
+
+    var SEMANTIC_TAGS = {
+        'article':1,'aside':1,'blockquote':1,'button':1,'caption':1,'code':1,
+        'datalist':1,'dd':1,'del':1,'details':1,'dfn':1,'dialog':1,'dt':1,
+        'em':1,'fieldset':1,'figure':1,'h1':1,'h2':1,'h3':1,'h4':1,'h5':1,'h6':1,
+        'hr':1,'ins':1,'li':1,'main':1,'mark':1,'math':1,'menu':1,'meter':1,
+        'nav':1,'ol':1,'ul':1,'optgroup':1,'option':1,'output':1,'p':1,
+        'progress':1,'search':1,'strong':1,'sub':1,'sup':1,'svg':1,
+        'table':1,'thead':1,'tbody':1,'tfoot':1,'tr':1,'th':1,'td':1,
+        'textarea':1,'time':1,'select':1,'video':1,'audio':1,'canvas':1,
+        'header':1,'footer':1,'legend':1,'summary':1
+    };
 
     function clean(text, limit) {
         if (!text) return '';
@@ -120,6 +154,20 @@ return (function(maxDepth, maxNodes) {
         return false;
     }
 
+    function isSemantic(el) {
+        if (el.getAttribute('role')) return true;
+        var tag = el.tagName.toLowerCase();
+        if (SEMANTIC_TAGS[tag]) return true;
+        if (tag === 'a' || tag === 'area') return el.hasAttribute('href');
+        if (tag === 'form' || tag === 'section')
+            return el.hasAttribute('aria-label') || el.hasAttribute('aria-labelledby');
+        if (tag === 'img') return el.getAttribute('alt') !== '';
+        if (tag === 'input') return (el.type || 'text').toLowerCase() !== 'hidden';
+        if (el.hasAttribute('tabindex') || el.onclick || el.isContentEditable) return true;
+        if (el.getAttribute('aria-label')) return true;
+        return false;
+    }
+
     function roleOf(el) {
         var explicit = (el.getAttribute('role') || '').toLowerCase();
         if (explicit) return explicit;
@@ -127,25 +175,43 @@ return (function(maxDepth, maxNodes) {
         if (tag === 'a') return 'link';
         if (tag === 'button') return 'button';
         if (tag === 'textarea') return 'textbox';
-        if (tag === 'select') return 'select';
+        if (tag === 'select') return 'combobox';
         if (tag === 'option') return 'option';
         if (tag === 'img') return 'image';
-        if (tag === 'label') return 'label';
         if (/^h[1-6]$/.test(tag)) return 'heading';
         if (tag === 'nav') return 'navigation';
         if (tag === 'main') return 'main';
+        if (tag === 'header') return 'banner';
+        if (tag === 'footer') return 'contentinfo';
+        if (tag === 'aside') return 'complementary';
+        if (tag === 'article') return 'article';
         if (tag === 'form') return 'form';
         if (tag === 'dialog') return 'dialog';
+        if (tag === 'fieldset') return 'group';
+        if (tag === 'legend') return 'legend';
+        if (tag === 'ul' || tag === 'ol' || tag === 'menu') return 'list';
+        if (tag === 'li') return 'listitem';
+        if (tag === 'table') return 'table';
+        if (tag === 'tr') return 'row';
+        if (tag === 'td') return 'cell';
+        if (tag === 'th') return 'columnheader';
+        if (tag === 'p') return 'paragraph';
+        if (tag === 'hr') return 'separator';
+        if (tag === 'details') return 'group';
+        if (tag === 'summary') return 'button';
         if (tag === 'input') {
             var type = (el.type || 'text').toLowerCase();
             if (type === 'checkbox') return 'checkbox';
             if (type === 'radio') return 'radio';
             if (['submit', 'button', 'image', 'reset'].includes(type)) return 'button';
             if (type === 'range') return 'slider';
-            if (type === 'file') return 'file';
+            if (type === 'number') return 'spinbutton';
+            if (type === 'file') return 'button';
+            if (type === 'search') return 'searchbox';
             return 'textbox';
         }
-        return 'element';
+        if (el.isContentEditable) return 'textbox';
+        return 'generic';
     }
 
     function nameOf(el, role) {
@@ -156,7 +222,7 @@ return (function(maxDepth, maxNodes) {
             el.getAttribute('title') ||
             el.getAttribute('placeholder') ||
             (tag === 'input' ? el.value : '') ||
-            (['link', 'button', 'heading', 'label', 'option', 'tab', 'menuitem'].includes(role) ? el.innerText : '') ||
+            (['link', 'button', 'heading', 'option', 'tab', 'menuitem', 'listitem'].includes(role) ? el.innerText : '') ||
             directText(el),
             __WEB_DOM_TEXT_LIMIT__
         );
@@ -174,22 +240,11 @@ return (function(maxDepth, maxNodes) {
         return '';
     }
 
-    function walk(el, depth) {
-        if (!el || el.nodeType !== Node.ELEMENT_NODE || isHidden(el)) return null;
-        if (seen >= maxNodes) {
-            truncated = true;
-            return {tag: '', role: 'text', name: '...', children: [], omitted: true};
-        }
-        if (depth > maxDepth) {
-            truncated = true;
-            return {tag: '', role: 'text', name: '...', children: [], omitted: true};
-        }
-
-        seen += 1;
+    function buildNode(el) {
         var tag = el.tagName.toLowerCase();
         var role = roleOf(el);
         var rect = el.getBoundingClientRect();
-        var node = {
+        return {
             tag: tag,
             id: el.id || '',
             test_id: el.getAttribute('data-testid') || '',
@@ -215,23 +270,44 @@ return (function(maxDepth, maxNodes) {
             children: [],
             omitted: false
         };
-
-        for (var i = 0; i < el.children.length; i++) {
-            var child = walk(el.children[i], depth + 1);
-            if (child) node.children.push(child);
-            if (seen >= maxNodes) {
-                truncated = true;
-                break;
-            }
-        }
-        return node;
     }
 
-    var root = walk(document.body || document.documentElement, 0) ||
-        {tag: 'body', role: 'document', name: document.title || '', children: []};
-    root.role = 'document';
-    root.name = document.title || root.name || '';
-    root.truncated = truncated;
+    function walkCollect(el, semanticDepth, results) {
+        if (!el || el.nodeType !== Node.ELEMENT_NODE || isHidden(el)) return;
+        if (seen >= maxNodes) { truncated = true; return; }
+        if (semanticDepth > maxDepth) { truncated = true; return; }
+        seen += 1;
+
+        if (isSemantic(el)) {
+            var node = buildNode(el);
+            results.push(node);
+            for (var i = 0; i < el.children.length; i++) {
+                walkCollect(el.children[i], semanticDepth + 1, node.children);
+                if (seen >= maxNodes) { truncated = true; break; }
+            }
+        } else {
+            var text = directText(el);
+            if (text) {
+                results.push({tag: '', role: 'text', name: text, children: [], omitted: false});
+            }
+            for (var i = 0; i < el.children.length; i++) {
+                walkCollect(el.children[i], semanticDepth, results);
+                if (seen >= maxNodes) { truncated = true; break; }
+            }
+        }
+    }
+
+    var rootChildren = [];
+    var startEl = document.body || document.documentElement;
+    walkCollect(startEl, 0, rootChildren);
+    var root = {
+        tag: 'body',
+        role: 'document',
+        name: document.title || '',
+        children: rootChildren,
+        truncated: truncated,
+        omitted: false
+    };
     return JSON.stringify(root);
 })(arguments[0], arguments[1]);
 """.replace("__WEB_DEFAULT_MAX_DEPTH__", str(WEB_DEFAULT_MAX_DEPTH)).replace(
@@ -282,7 +358,7 @@ def _make_unique(base: str, existing: set[str]) -> str:
 def _determine_role(elem: dict[str, Any]) -> str:
     """Determine the element role from tag/type/role attributes."""
     aria_role = str(elem.get("role") or "").lower()
-    if aria_role and aria_role != "element":
+    if aria_role and aria_role not in ("element", "generic"):
         return aria_role
 
     tag = str(elem.get("tag") or "").lower()
@@ -290,7 +366,7 @@ def _determine_role(elem: dict[str, Any]) -> str:
         input_type = str(elem.get("type") or "text").lower()
         return _INPUT_TYPE_ROLE.get(input_type, "textbox")
 
-    return _TAG_TO_ROLE.get(tag, "element")
+    return _TAG_TO_ROLE.get(tag, "generic")
 
 
 def _is_actionable(elem: dict[str, Any], role: str) -> bool:
@@ -330,7 +406,7 @@ def _build_strategies(elem: dict[str, Any]) -> list[LocatorStrategy]:
     elif name:
         literal = _xpath_literal(name[:WEB_LOCATOR_TEXT_LIMIT])
         role = str(elem.get("role") or "").lower()
-        if role and role != "element":
+        if role and role not in ("element", "generic"):
             strategies.append(
                 LocatorStrategy(
                     by="xpath",
@@ -505,7 +581,7 @@ class WebSnapshotGenerator:
             for child in elem.get("children", [])
             if isinstance(child, dict)
         ]
-        if role == "element" and name and not ref:
+        if role == "generic" and name and not ref:
             role = "group" if children else "text"
 
         return WebSnapshotNode(

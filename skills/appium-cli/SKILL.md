@@ -80,11 +80,13 @@ appium-cli get_page_source                  # token-heavy diagnostic escape hatc
 
 ### depth parameter
 
-`snapshot` and `web_snapshot` accept an optional `depth` parameter to limit the depth of the snapshot tree. By default, the full tree is returned with no depth limit. Use `depth` only when you need a shallow overview of a specific subtree:
+`snapshot` and `web_snapshot` accept an optional `depth` parameter to limit the depth of the snapshot tree. By default, the full tree is returned with no depth limit.
+
+Depth counts only **semantic levels** (interactive elements, landmarks, headings, lists, tables) — layout wrappers like `<div>` and `<span>` are automatically flattened. This means `depth=2` reaches inputs, buttons, and links directly:
 
 ```bash
-appium-cli snapshot --depth=2         # top-level structure only
-appium-cli web_snapshot --depth=3     # shallow DOM overview
+appium-cli web_snapshot --depth=2     # form > textbox, button, combobox
+appium-cli snapshot --depth=1         # top-level landmarks only
 ```
 
 Do not set `depth` for full-page observations — the default (full tree) ensures all elements are visible.
