@@ -106,9 +106,11 @@ def call_tool(name: str, arguments: dict[str, Any] | str | None = None) -> dict[
             "exit_code": exit_codes.GENERAL_ERROR,
         }
 
-    # Call the daemon
+    # Call the daemon with raw=True so snapshot tools return the full tree
+    # content instead of just artifact file paths (metadata-only mode is for
+    # human CLI usage; programmatic callers need the tree text).
     try:
-        response = request(daemon_tool, args=merged_args if merged_args else None)
+        response = request(daemon_tool, args=merged_args if merged_args else None, raw=True)
     except (FileNotFoundError, ConnectionError, OSError) as exc:
         return {
             "ok": False,

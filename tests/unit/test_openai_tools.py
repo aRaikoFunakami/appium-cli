@@ -61,9 +61,10 @@ class TestCallTool:
     def test_dict_arguments(self, monkeypatch) -> None:
         captured = {}
 
-        def fake_request(tool, args=None):
+        def fake_request(tool, args=None, **kwargs):
             captured["tool"] = tool
             captured["args"] = args
+            captured["raw"] = kwargs.get("raw", False)
             return {"ok": True, "text": "OK", "data": {}}
 
         monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
@@ -72,11 +73,12 @@ class TestCallTool:
         assert result["ok"] is True
         assert captured["tool"] == "tap"
         assert captured["args"] == {"ref": "login_btn"}
+        assert captured["raw"] is True
 
     def test_json_string_arguments(self, monkeypatch) -> None:
         captured = {}
 
-        def fake_request(tool, args=None):
+        def fake_request(tool, args=None, **kwargs):
             captured["tool"] = tool
             captured["args"] = args
             return {"ok": True, "text": "OK", "data": {}}
@@ -90,7 +92,7 @@ class TestCallTool:
     def test_empty_string_arguments(self, monkeypatch) -> None:
         captured = {}
 
-        def fake_request(tool, args=None):
+        def fake_request(tool, args=None, **kwargs):
             captured["tool"] = tool
             captured["args"] = args
             return {"ok": True, "text": "pong", "data": {}}
@@ -104,7 +106,7 @@ class TestCallTool:
     def test_none_arguments(self, monkeypatch) -> None:
         captured = {}
 
-        def fake_request(tool, args=None):
+        def fake_request(tool, args=None, **kwargs):
             captured["tool"] = tool
             captured["args"] = args
             return {"ok": True, "text": "OK", "data": {}}
@@ -118,7 +120,7 @@ class TestCallTool:
     def test_directional_alias_merges_args(self, monkeypatch) -> None:
         captured = {}
 
-        def fake_request(tool, args=None):
+        def fake_request(tool, args=None, **kwargs):
             captured["tool"] = tool
             captured["args"] = args
             return {"ok": True, "text": "OK\nsnap", "data": {}}
@@ -142,7 +144,7 @@ class TestCallTool:
         assert "Invalid JSON" in result["error"]
 
     def test_daemon_not_running_returns_error(self, monkeypatch) -> None:
-        def fake_request(tool, args=None):
+        def fake_request(tool, args=None, **kwargs):
             raise FileNotFoundError("socket not found")
 
         monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
@@ -161,7 +163,7 @@ class TestCallTool:
             "data": {"some": "metadata"},
         }
 
-        def fake_request(tool, args=None):
+        def fake_request(tool, args=None, **kwargs):
             return daemon_response
 
         monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
