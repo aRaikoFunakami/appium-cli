@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from agent_browser.schemas import (
+    BillingInfo,
     MemoryEvent,
     SafetyCategory,
     SafetyDecision,
@@ -53,6 +54,31 @@ class TestTaskResult:
         data = json.loads(r.model_dump_json())
         assert data["tool_calls"] == 3
         assert data["artifacts"] == ["a.png"]
+
+
+class TestBillingInfo:
+    def test_billing_call_breakdown_defaults_empty(self) -> None:
+        b = BillingInfo(model="gpt-5.4")
+        assert b.call_breakdown == []
+
+    def test_billing_call_breakdown_serializes(self) -> None:
+        b = BillingInfo(
+            model="gpt-5.4",
+            call_breakdown=[
+                BillingInfo.BillingCall(
+                    index=1,
+                    call_type="action",
+                    input_tokens=10,
+                    cached_tokens=2,
+                    output_tokens=3,
+                    total_tokens=13,
+                    cost_usd=0.0001,
+                )
+            ],
+        )
+        data = json.loads(b.model_dump_json())
+        assert data["call_breakdown"][0]["index"] == 1
+        assert data["call_breakdown"][0]["call_type"] == "action"
 
 
 class TestMemoryEvent:

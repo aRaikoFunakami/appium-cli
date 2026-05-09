@@ -87,6 +87,32 @@ class MemoryEvent(_BaseModel):
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class BillingInfo(_BaseModel):
+    """Token usage and cost summary for a task run."""
+
+    class BillingCall(_BaseModel):
+        index: int
+        call_type: Literal["action", "brain", "unknown"] = "unknown"
+        input_tokens: int = 0
+        cached_tokens: int = 0
+        output_tokens: int = 0
+        total_tokens: int = 0
+        cost_usd: float | None = None
+        billing_status: Literal["ok", "uncomputable"] = "ok"
+        uncomputable_reason: str | None = None
+
+    model: str
+    api_calls: int = 0
+    input_tokens: int = 0
+    cached_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    total_cost_usd: float | None = None
+    billing_status: Literal["ok", "uncomputable"] = "ok"
+    uncomputable_reason: str | None = None
+    call_breakdown: list[BillingCall] = Field(default_factory=list)
+
+
 class TaskResult(_BaseModel):
     """Final structured result returned by run_browser_task()."""
 
@@ -100,4 +126,5 @@ class TaskResult(_BaseModel):
     retries: int = 0
     artifacts: list[str] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
+    billing: BillingInfo | None = None
     finished_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

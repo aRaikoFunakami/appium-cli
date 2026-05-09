@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_browser.agent.prompt import build_input_items
+from agent_browser.agent.prompt import SYSTEM_PROMPT, build_input_items
 from agent_browser.agent.state import BrowserOperationState
 from agent_browser.config import AgentBrowserConfig
 
@@ -34,3 +34,12 @@ def test_prompt_includes_only_operation_state() -> None:
     assert "function_call" not in text
     assert "reasoning" not in text
     assert len(text) < 1200
+
+
+def test_system_prompt_mentions_single_input_submit_rule() -> None:
+    assert "single-input forms" in SYSTEM_PROMPT
+    assert "use submit=true" in SYSTEM_PROMPT
+
+
+def test_system_prompt_mentions_snapshot_depth_guidance() -> None:
+    assert "depth=8" in SYSTEM_PROMPT

@@ -24,3 +24,16 @@ def test_from_env_honors_max_turns_override(monkeypatch) -> None:
     cfg = AgentBrowserConfig.from_env()
 
     assert cfg.max_turns == 75
+
+
+def test_default_working_state_char_cap_is_2400() -> None:
+    cfg = AgentBrowserConfig()
+    assert cfg.working_state_char_cap == 2400
+
+
+def test_from_env_honors_working_state_char_cap_override(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_BROWSER_WORKING_STATE_CHARS", "1800")
+
+    cfg = AgentBrowserConfig.from_env()
+
+    assert cfg.working_state_char_cap == 1800

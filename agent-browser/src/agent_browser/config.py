@@ -58,7 +58,7 @@ class AgentBrowserConfig:
     max_observation_chars: int = 4000
     max_action_result_chars: int = 500
     max_error_chars: int = 300
-    working_state_char_cap: int = 1200
+    working_state_char_cap: int = 2400
     max_output_tokens: int = 4096
     temperature: float = 0.2
     reasoning_effort: str | None = None
@@ -96,7 +96,7 @@ class AgentBrowserConfig:
             max_observation_chars=_env_int("AGENT_BROWSER_MAX_OBSERVATION_CHARS", 4000),
             max_action_result_chars=_env_int("AGENT_BROWSER_MAX_ACTION_RESULT_CHARS", 500),
             max_error_chars=_env_int("AGENT_BROWSER_MAX_ERROR_CHARS", 300),
-            working_state_char_cap=_env_int("AGENT_BROWSER_WORKING_STATE_CHARS", 1200),
+            working_state_char_cap=_env_int("AGENT_BROWSER_WORKING_STATE_CHARS", 2400),
             max_output_tokens=_env_int("AGENT_BROWSER_MAX_OUTPUT_TOKENS", 4096),
             temperature=_env_float("AGENT_BROWSER_TEMPERATURE", 0.2),
             reasoning_effort=_env_str("AGENT_BROWSER_REASONING_EFFORT"),

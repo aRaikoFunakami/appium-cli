@@ -15,7 +15,8 @@ from agent_browser.agent.state import BrowserOperationState, clamp_text
 from agent_browser.appium_tools import _SNAPSHOT_TOOLS
 from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult, execute_appium_tool
 from agent_browser.config import AgentBrowserConfig
-from agent_browser.schemas import MemoryEvent, TaskResult
+from agent_browser.schemas import BillingInfo, MemoryEvent, TaskResult
+from agent_browser.token_counter import CallUsage, OpenAIPricingCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,60 @@ def _latest_observation_from_result(result: ToolExecutionResult, cfg: AgentBrows
     return clamp_text(result.output, cfg.max_observation_chars)
 
 
+def _build_billing_info(call_usages: list[CallUsage], model: str) -> BillingInfo:
+    """Aggregate per-call usages into a BillingInfo summary."""
+    total_in = sum(c.input_tokens for c in call_usages)
+    total_cached = sum(c.cached_tokens for c in call_usages)
+    total_out = sum(c.output_tokens for c in call_usages)
+    total_cost = 0.0
+    billing_status = "ok"
+    uncomputable_reason = None
+    call_breakdown: list[BillingInfo.BillingCall] = []
+
+    for idx, call in enumerate(call_usages, start=1):
+        per_call_status = "ok"
+        per_call_reason = None
+        per_call_cost: float | None = None
+        try:
+            cost = OpenAIPricingCalculator.cost_for(
+                model, call.input_tokens, call.cached_tokens, call.output_tokens
+            )
+            total_cost += cost["total_cost"]
+            per_call_cost = round(cost["total_cost"], 6)
+        except ValueError as exc:
+            billing_status = "uncomputable"
+            if uncomputable_reason is None:
+                uncomputable_reason = str(exc)
+            per_call_status = "uncomputable"
+            per_call_reason = str(exc)
+        call_breakdown.append(
+            BillingInfo.BillingCall(
+                index=idx,
+                call_type=call.call_type if call.call_type in {"action", "brain"} else "unknown",
+                input_tokens=call.input_tokens,
+                cached_tokens=call.cached_tokens,
+                output_tokens=call.output_tokens,
+                total_tokens=call.total_tokens,
+                cost_usd=per_call_cost,
+                billing_status=per_call_status,
+                uncomputable_reason=per_call_reason,
+            )
+        )
+
+    return BillingInfo(
+        model=model,
+        api_calls=len(call_usages),
+        input_tokens=total_in,
+        cached_tokens=total_cached,
+        output_tokens=total_out,
+        total_tokens=total_in + total_out,
+        total_cost_usd=round(total_cost, 6) if billing_status == "ok" else None,
+        billing_status=billing_status,
+        uncomputable_reason=uncomputable_reason,
+        call_breakdown=call_breakdown,
+    )
+
+
 async def run_react_loop(
     *,
     goal: str,
@@ -161,6 +216,7 @@ async def run_react_loop(
             input_items=input_items,
             instructions=SYSTEM_PROMPT,
             tools=tools,
+            call_type="action",
         )
         calls = _function_calls(response)
         tool_results: list[ToolExecutionResult] = []
@@ -180,6 +236,7 @@ async def run_react_loop(
                 input_items=continuation_input,
                 instructions=SYSTEM_PROMPT,
                 tools=None,
+                call_type="brain",
             )
 
         text = _extract_text_with_diagnostics(response, logger)
@@ -257,6 +314,7 @@ async def run_react_loop(
                     retries=context.memory.total_retries(),
                     artifacts=list(context.memory.artifacts),
                     failures=list(context.memory.failures),
+                    billing=_build_billing_info(client.call_usages, cfg.model),
                 )
 
         if loop_warning and loop_detector.warning_count >= 3:
@@ -275,4 +333,5 @@ async def run_react_loop(
         retries=context.memory.total_retries(),
         artifacts=list(context.memory.artifacts),
         failures=list(context.memory.failures),
+        billing=_build_billing_info(client.call_usages, cfg.model),
     )

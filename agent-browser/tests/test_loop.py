@@ -7,7 +7,12 @@ from typing import Any
 
 import pytest
 
-from agent_browser.agent.loop import _extract_text_with_diagnostics, _items_to_input
+from agent_browser.agent.loop import (
+    _build_billing_info,
+    _extract_text_with_diagnostics,
+    _items_to_input,
+)
+from agent_browser.token_counter import CallUsage
 
 
 class DumpableItem:
@@ -133,3 +138,22 @@ def test_extract_text_returns_empty_when_no_text() -> None:
     )
     result = _extract_text_with_diagnostics(response, _test_logger)
     assert result == ""
+
+
+def test_build_billing_info_includes_per_call_breakdown() -> None:
+    usages = [
+        CallUsage(input_tokens=1000, cached_tokens=200, output_tokens=100, call_type="action"),
+        CallUsage(input_tokens=500, cached_tokens=0, output_tokens=50, call_type="brain"),
+    ]
+
+    billing = _build_billing_info(usages, "gpt-5.4")
+
+    assert billing.api_calls == 2
+    assert billing.input_tokens == 1500
+    assert billing.cached_tokens == 200
+    assert billing.output_tokens == 150
+    assert len(billing.call_breakdown) == 2
+    assert billing.call_breakdown[0].call_type == "action"
+    assert billing.call_breakdown[1].call_type == "brain"
+    assert billing.call_breakdown[0].total_tokens == 1100
+    assert billing.call_breakdown[1].total_tokens == 550

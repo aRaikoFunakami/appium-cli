@@ -20,6 +20,7 @@ Memory rules:
 
 Form rules:
 - For simple inputs, fill and continue.
+- For single-input forms (search bars, URL bars, filter boxes), use submit=true so the input is applied.
 - Never use submit=true for intermediate fields in a multi-field form.
 - For React-Select/autocomplete/combobox: use fill(ref, text, slowly=true), then web_snapshot to see suggestions, then click the matching option.
 - Never use web_eval to set .value on React-controlled inputs.
@@ -28,6 +29,7 @@ Ref rules:
 - Refs from snapshot (web_firstname, web_usernumber) are used with fill/click/tap.
 - CSS selectors from web_query (#firstName, input[name=q]) cannot be used as refs.
 - If the ref you need is not in the current snapshot, take a fresh web_snapshot first.
+- Prefer web_snapshot depth=8 unless there is a clear reason to use a shallower depth.
 - After fill/click/tap, refs remain valid until the next snapshot replaces the ref map.
 
 Completion:

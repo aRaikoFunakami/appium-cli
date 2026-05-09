@@ -211,6 +211,7 @@ class CallUsage:
     input_tokens: int
     cached_tokens: int
     output_tokens: int
+    call_type: str = "unknown"
 
     @property
     def total_tokens(self) -> int:

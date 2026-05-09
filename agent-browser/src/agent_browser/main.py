@@ -83,6 +83,22 @@ async def run_browser_task(
         len(result.artifacts),
         len(result.failures),
     )
+    if result.billing is not None:
+        b = result.billing
+        if b.billing_status == "ok":
+            cost_str = f"${b.total_cost_usd:.6f}" if b.total_cost_usd is not None else "$0.000000"
+        else:
+            cost_str = f"uncomputable ({b.uncomputable_reason})"
+        logger.info(
+            "[token] summary model=%s calls=%d in=%d cached=%d out=%d total=%d cost=%s",
+            b.model,
+            b.api_calls,
+            b.input_tokens,
+            b.cached_tokens,
+            b.output_tokens,
+            b.total_tokens,
+            cost_str,
+        )
     return result
 
 
@@ -138,6 +154,26 @@ def cli_main(argv: list[str] | None = None) -> int:
         if result.url:
             print(f"  url:   {result.url}")
         print(f"  tools={result.tool_calls} retries={result.retries} artifacts={len(result.artifacts)}")
+        if result.billing:
+            b = result.billing
+            if b.billing_status == "ok":
+                cost = f"${b.total_cost_usd:.6f}" if b.total_cost_usd is not None else "$0.000000"
+            else:
+                cost = f"uncomputable ({b.uncomputable_reason})"
+            print(f"  billing: model={b.model} calls={b.api_calls} tokens={b.total_tokens} cost={cost}")
+            if b.call_breakdown:
+                print("  billing_calls:")
+                for call in b.call_breakdown:
+                    if call.billing_status == "ok":
+                        call_cost = f"${call.cost_usd:.6f}" if call.cost_usd is not None else "$0.000000"
+                    else:
+                        call_cost = f"uncomputable ({call.uncomputable_reason})"
+                    print(
+                        "    - "
+                        f"#{call.index} type={call.call_type} in={call.input_tokens} "
+                        f"cached={call.cached_tokens} out={call.output_tokens} "
+                        f"total={call.total_tokens} cost={call_cost}"
+                    )
         if result.failures:
             print("  failures:")
             for failure in result.failures[-5:]:
