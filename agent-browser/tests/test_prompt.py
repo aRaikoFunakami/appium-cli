@@ -43,3 +43,15 @@ def test_system_prompt_mentions_single_input_submit_rule() -> None:
 
 def test_system_prompt_mentions_snapshot_depth_guidance() -> None:
     assert "depth=8" in SYSTEM_PROMPT
+
+
+def test_system_prompt_mentions_result_must_contain_actual_data() -> None:
+    assert "MUST contain the actual data" in SYSTEM_PROMPT
+
+
+def test_system_prompt_warns_against_preview_results() -> None:
+    assert "not a preview or promise" in SYSTEM_PROMPT
+
+
+def test_system_prompt_mentions_runtime_verifier() -> None:
+    assert "runtime verifier" in SYSTEM_PROMPT

@@ -37,3 +37,38 @@ def test_from_env_honors_working_state_char_cap_override(monkeypatch) -> None:
     cfg = AgentBrowserConfig.from_env()
 
     assert cfg.working_state_char_cap == 1800
+
+
+def test_default_verification_fields() -> None:
+    cfg = AgentBrowserConfig()
+    assert cfg.max_verification_retries == 2
+    assert cfg.max_wall_seconds == 300.0
+    assert cfg.max_no_progress_steps == 8
+    assert cfg.verify_with_llm is True
+    assert cfg.min_result_chars == 50
+    assert cfg.judge_model == "gpt-4.1-mini"
+    assert cfg.judge_fail_open is True
+
+
+def test_from_env_honors_verify_with_llm_false(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_BROWSER_VERIFY_WITH_LLM", "false")
+    cfg = AgentBrowserConfig.from_env()
+    assert cfg.verify_with_llm is False
+
+
+def test_from_env_honors_verify_with_llm_true(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_BROWSER_VERIFY_WITH_LLM", "1")
+    cfg = AgentBrowserConfig.from_env()
+    assert cfg.verify_with_llm is True
+
+
+def test_from_env_honors_max_wall_seconds(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_BROWSER_MAX_WALL_SECONDS", "600.0")
+    cfg = AgentBrowserConfig.from_env()
+    assert cfg.max_wall_seconds == 600.0
+
+
+def test_from_env_honors_judge_model(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_BROWSER_JUDGE_MODEL", "gpt-4o-mini")
+    cfg = AgentBrowserConfig.from_env()
+    assert cfg.judge_model == "gpt-4o-mini"

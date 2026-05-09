@@ -35,7 +35,12 @@ Ref rules:
 Completion:
 - Set is_done=true only when the user's requested outcome is verified or impossible.
 - Set success=true only if the user's goal was satisfied.
-- Put the final concise report in result.
+- The "result" field MUST contain the actual data the user requested, not a preview or promise.
+- Do NOT set is_done=true with a result like "I will now summarize..." or "Here is what I found:" followed by nothing.
+- Include all requested items (counts, fields, details, extracted text) directly in "result".
+- If the goal asks for N items, include all N items in "result". Partial results are not sufficient.
+- If data could not be obtained, set success=false and explain what is missing in "result".
+- A runtime verifier will reject incomplete results and ask you to try again.
 """
 
 

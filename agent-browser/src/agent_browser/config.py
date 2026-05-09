@@ -43,6 +43,13 @@ def _env_float(key: str, default: float) -> float:
         return default
 
 
+def _env_bool(key: str, default: bool) -> bool:
+    raw = os.environ.get(key)
+    if raw is None or raw == "":
+        return default
+    return raw.lower() in ("1", "true", "yes")
+
+
 @dataclass(slots=True)
 class AgentBrowserConfig:
     """Runtime configuration for the Browser Agent."""
@@ -65,6 +72,14 @@ class AgentBrowserConfig:
     artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
     memory_path: Path = field(default_factory=lambda: Path(".agent-browser-memory.jsonl"))
     log_level: str = "INFO"
+    # --- Completion verification ---
+    max_verification_retries: int = 2
+    max_wall_seconds: float = 300.0
+    max_no_progress_steps: int = 8
+    verify_with_llm: bool = True
+    min_result_chars: int = 50
+    judge_model: str = "gpt-4.1-mini"
+    judge_fail_open: bool = True
     # Secret. Never include in repr/logs.
     openai_api_key: str | None = field(default=None, repr=False)
 
@@ -103,6 +118,13 @@ class AgentBrowserConfig:
             artifacts_dir=artifacts,
             memory_path=memory,
             log_level=_env_str("AGENT_BROWSER_LOG_LEVEL", "INFO") or "INFO",
+            max_verification_retries=_env_int("AGENT_BROWSER_MAX_VERIFICATION_RETRIES", 2),
+            max_wall_seconds=_env_float("AGENT_BROWSER_MAX_WALL_SECONDS", 300.0),
+            max_no_progress_steps=_env_int("AGENT_BROWSER_MAX_NO_PROGRESS_STEPS", 8),
+            verify_with_llm=_env_bool("AGENT_BROWSER_VERIFY_WITH_LLM", True),
+            min_result_chars=_env_int("AGENT_BROWSER_MIN_RESULT_CHARS", 50),
+            judge_model=_env_str("AGENT_BROWSER_JUDGE_MODEL", "gpt-4.1-mini") or "gpt-4.1-mini",
+            judge_fail_open=_env_bool("AGENT_BROWSER_JUDGE_FAIL_OPEN", True),
             openai_api_key=_env_str("OPENAI_API_KEY"),
         )
 

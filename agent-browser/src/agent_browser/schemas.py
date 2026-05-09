@@ -127,4 +127,7 @@ class TaskResult(_BaseModel):
     artifacts: list[str] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
     billing: BillingInfo | None = None
+    verification_passed: bool | None = None
+    verification_reason: str | None = None
+    verification_attempts: int = 0
     finished_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from agent_browser.agent.brain import parse_agent_brain
@@ -12,6 +13,7 @@ from agent_browser.agent.llm import ResponsesClient
 from agent_browser.agent.prompt import SYSTEM_PROMPT, build_input_items
 from agent_browser.agent.registry import get_response_tool_schemas
 from agent_browser.agent.state import BrowserOperationState, clamp_text
+from agent_browser.agent.verifier import CompletionVerifier, LLMJudge, StructuralGuard
 from agent_browser.appium_tools import _SNAPSHOT_TOOLS
 from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult, execute_appium_tool
 from agent_browser.config import AgentBrowserConfig
@@ -187,6 +189,19 @@ def _build_billing_info(call_usages: list[CallUsage], model: str) -> BillingInfo
     )
 
 
+def _build_verifier(cfg: AgentBrowserConfig) -> CompletionVerifier:
+    """Construct the two-layer completion verifier from config."""
+    guard = StructuralGuard(min_result_chars=cfg.min_result_chars)
+    judge: LLMJudge | None = None
+    if cfg.verify_with_llm and cfg.openai_api_key:
+        judge = LLMJudge(
+            api_key=cfg.openai_api_key,
+            model=cfg.judge_model,
+            fail_open=cfg.judge_fail_open,
+        )
+    return CompletionVerifier(guard=guard, judge=judge)
+
+
 async def run_react_loop(
     *,
     goal: str,
@@ -200,8 +215,57 @@ async def run_react_loop(
     state = BrowserOperationState(goal=goal, working_state="No browser actions completed yet.")
     history = OperationHistory(recent_steps=cfg.recent_steps)
     loop_detector = LoopDetector()
+    verifier = _build_verifier(cfg)
+
+    verification_attempts = 0
+    start_time = time.monotonic()
+    last_progress_step = 0
+    prev_observation_hash: int | None = None
 
     for step in range(1, cfg.max_turns + 1):
+        # --- Wall-time safeguard ---
+        elapsed = time.monotonic() - start_time
+        if elapsed > cfg.max_wall_seconds:
+            summary = f"Wall-time limit ({cfg.max_wall_seconds}s) exceeded at step {step}."
+            context.memory.record_failure(summary)
+            if context.episodic is not None:
+                context.episodic.record(MemoryEvent(event_type="task_failed", detail=summary))
+            return TaskResult(
+                goal=goal,
+                success=False,
+                url=context.memory.current_url,
+                summary=summary,
+                tool_calls=len(context.memory.tool_calls),
+                retries=context.memory.total_retries(),
+                artifacts=list(context.memory.artifacts),
+                failures=list(context.memory.failures),
+                billing=_build_billing_info(client.call_usages, cfg.model),
+                verification_passed=False,
+                verification_reason="wall-time limit exceeded",
+                verification_attempts=verification_attempts,
+            )
+
+        # --- No-progress safeguard ---
+        if step - last_progress_step >= cfg.max_no_progress_steps:
+            summary = f"No progress for {cfg.max_no_progress_steps} consecutive steps."
+            context.memory.record_failure(summary)
+            if context.episodic is not None:
+                context.episodic.record(MemoryEvent(event_type="task_failed", detail=summary))
+            return TaskResult(
+                goal=goal,
+                success=False,
+                url=context.memory.current_url,
+                summary=summary,
+                tool_calls=len(context.memory.tool_calls),
+                retries=context.memory.total_retries(),
+                artifacts=list(context.memory.artifacts),
+                failures=list(context.memory.failures),
+                billing=_build_billing_info(client.call_usages, cfg.model),
+                verification_passed=False,
+                verification_reason="no progress detected",
+                verification_attempts=verification_attempts,
+            )
+
         loop_warning = loop_detector.detect()
         input_items = build_input_items(
             state,
@@ -282,6 +346,12 @@ async def run_react_loop(
             history.add(item)
             state.last_step = item.to_prompt_line()
             loop_detector.record(primary_result.name, primary_result.args_summary, state.latest_observation)
+
+            # Track progress: observation hash changed or tool succeeded
+            obs_hash = hash(state.latest_observation)
+            if primary_result.ok or obs_hash != prev_observation_hash:
+                last_progress_step = step
+                prev_observation_hash = obs_hash
         else:
             item = HistoryItem(
                 step=step,
@@ -297,25 +367,69 @@ async def run_react_loop(
         if brain is not None:
             state.working_state = brain.working_state
             if brain.is_done:
-                if context.episodic is not None:
-                    context.episodic.record(
-                        MemoryEvent(
-                            event_type="task_complete",
-                            detail=(brain.result or brain.evaluation)[:240],
+                # --- Completion verification ---
+                vr = await verifier.verify(goal, brain, context.memory)
+                if vr.passed:
+                    if context.episodic is not None:
+                        context.episodic.record(
+                            MemoryEvent(
+                                event_type="task_complete",
+                                detail=(brain.result or brain.evaluation)[:240],
+                            )
                         )
+                    return TaskResult(
+                        goal=goal,
+                        success=brain.success,
+                        url=context.memory.current_url,
+                        summary=brain.result or brain.evaluation,
+                        notes=brain.next_goal,
+                        tool_calls=len(context.memory.tool_calls),
+                        retries=context.memory.total_retries(),
+                        artifacts=list(context.memory.artifacts),
+                        failures=list(context.memory.failures),
+                        billing=_build_billing_info(client.call_usages, cfg.model),
+                        verification_passed=True,
+                        verification_reason=vr.reason,
+                        verification_attempts=verification_attempts,
                     )
-                return TaskResult(
-                    goal=goal,
-                    success=brain.success,
-                    url=context.memory.current_url,
-                    summary=brain.result or brain.evaluation,
-                    notes=brain.next_goal,
-                    tool_calls=len(context.memory.tool_calls),
-                    retries=context.memory.total_retries(),
-                    artifacts=list(context.memory.artifacts),
-                    failures=list(context.memory.failures),
-                    billing=_build_billing_info(client.call_usages, cfg.model),
-                )
+                else:
+                    verification_attempts += 1
+                    logger.info(
+                        "[loop] verification FAILED (attempt %d/%d, layer=%s): %s",
+                        verification_attempts,
+                        cfg.max_verification_retries,
+                        vr.layer,
+                        vr.reason,
+                    )
+                    if verification_attempts >= cfg.max_verification_retries:
+                        context.memory.record_failure(
+                            f"verification_failed: {vr.reason}"
+                        )
+                        if context.episodic is not None:
+                            context.episodic.record(
+                                MemoryEvent(
+                                    event_type="task_failed",
+                                    detail=f"verification failed: {vr.reason}"[:240],
+                                )
+                            )
+                        return TaskResult(
+                            goal=goal,
+                            success=False,
+                            url=context.memory.current_url,
+                            summary=brain.result or brain.evaluation or "Verification failed.",
+                            notes=brain.next_goal,
+                            tool_calls=len(context.memory.tool_calls),
+                            retries=context.memory.total_retries(),
+                            artifacts=list(context.memory.artifacts),
+                            failures=list(context.memory.failures),
+                            billing=_build_billing_info(client.call_usages, cfg.model),
+                            verification_passed=False,
+                            verification_reason=vr.reason,
+                            verification_attempts=verification_attempts,
+                        )
+                    # Feed back to agent and continue
+                    state.reflection = vr.feedback
+                    brain.is_done = False
 
         if loop_warning and loop_detector.warning_count >= 3:
             state.reflection = loop_warning
@@ -334,4 +448,5 @@ async def run_react_loop(
         artifacts=list(context.memory.artifacts),
         failures=list(context.memory.failures),
         billing=_build_billing_info(client.call_usages, cfg.model),
+        verification_attempts=verification_attempts,
     )

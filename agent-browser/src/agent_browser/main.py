@@ -154,6 +154,14 @@ def cli_main(argv: list[str] | None = None) -> int:
         if result.url:
             print(f"  url:   {result.url}")
         print(f"  tools={result.tool_calls} retries={result.retries} artifacts={len(result.artifacts)}")
+        if result.verification_passed is not None:
+            if result.verification_passed:
+                v_status = "passed"
+            else:
+                v_status = f"FAILED ({result.verification_reason or 'unknown reason'})"
+            print(f"  verification: {v_status}")
+            if result.verification_attempts > 0:
+                print(f"  verification_attempts: {result.verification_attempts}")
         if result.billing:
             b = result.billing
             if b.billing_status == "ok":

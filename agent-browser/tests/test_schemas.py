@@ -41,6 +41,26 @@ class TestTaskResult:
         assert r.artifacts == []
         assert r.failures == []
 
+    def test_verification_defaults(self) -> None:
+        r = TaskResult(goal="g", success=False, summary="s")
+        assert r.verification_passed is None
+        assert r.verification_reason is None
+        assert r.verification_attempts == 0
+
+    def test_verification_fields_serialize(self) -> None:
+        r = TaskResult(
+            goal="g",
+            success=False,
+            summary="s",
+            verification_passed=False,
+            verification_reason="result too short",
+            verification_attempts=2,
+        )
+        data = json.loads(r.model_dump_json())
+        assert data["verification_passed"] is False
+        assert data["verification_reason"] == "result too short"
+        assert data["verification_attempts"] == 2
+
     def test_json_serializable(self) -> None:
         r = TaskResult(
             goal="g",
