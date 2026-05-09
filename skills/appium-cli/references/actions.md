@@ -32,6 +32,8 @@ appium-cli click web_btn_login
 appium-cli type_text input_email "user@example.com" --submit
 appium-cli fill web_search "query"
 appium-cli select web_country "JP" --by=value
+appium-cli select_option web_state "NCR"
+appium-cli set_date web_dateofbirthinput "15 May 1990"
 appium-cli press_key back
 appium-cli wait 1
 ```
@@ -92,10 +94,49 @@ appium-cli web_snapshot
 appium-cli click web_btn_submit
 appium-cli fill web_input_email "user@example.com"
 appium-cli select web_country "JP" --by=value
+appium-cli select_option web_state "NCR"
+appium-cli select_option web_city "Delhi" --no-exact
+appium-cli set_date web_dateofbirthinput "15 May 1990"
 appium-cli press_key Enter
 ```
 
 Web actions use Selenium/DOM behavior. Touch gestures (`long_press`, `drag`, `pinch_*`, `fling_*`, native `swipe_*`) are not available in WebView context; switch to native if you need real touch gestures.
+
+## CSS selector fallback
+
+When snapshot refs are insufficient, use `css:` prefix to target elements by CSS selector:
+
+```bash
+appium-cli click "css:#submit"
+appium-cli fill "css:[name='userEmail']" "taro@example.com"
+appium-cli select_option "css:.react-select__input input" "NCR"
+```
+
+Shorthand: `#id`, `.class`, and `[attr]` are also recognized as CSS selectors. Prefer the explicit `css:` prefix in scripts.
+
+## File upload
+
+Upload files to `<input type="file">` elements. Local files are automatically pushed to the device.
+
+```bash
+appium-cli file_upload web_photo_input /path/to/photo.jpg
+appium-cli file_upload "css:input[type='file']" ~/Documents/resume.pdf
+```
+
+The file is pushed to `/sdcard/Download/` on the device via `mobile: pushFile`, then set on the input via `send_keys`. For Android 10+, ensure `noReset: true` in session capabilities to preserve Chrome storage permissions.
+
+## Wait for conditions
+
+Wait for text to appear/disappear or an element to become visible:
+
+```bash
+appium-cli wait_for --text "Welcome"
+appium-cli wait_for --gone "Loading..."
+appium-cli wait_for --ref web_modal --timeout 10
+appium-cli wait_for --text "Success" --timeout 30 --poll 1
+```
+
+Uses Selenium `WebDriverWait` in WebView context. Default timeout is 15 seconds, poll interval 0.5 seconds.
 
 ## Targeting layers
 

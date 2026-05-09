@@ -201,6 +201,54 @@ _add("select", "Select an option in an HTML <select> element.",
                           enum=["value", "label", "index"]),
      }, required=["ref", "value"]))
 
+_add("select_option", "Select an option from a dropdown (custom or native) by visible text.",
+     parameters=_schema({
+         "ref": _str_param("Ref or CSS selector of the dropdown trigger/input."),
+         "text": _str_param("Visible text of the option to select."),
+         "timeout": _float_param("Max seconds to wait for options to appear.", default=3.0),
+         "exact": _bool_param("Require exact text match (default true). Set false for partial match."),
+     }, required=["ref", "text"]))
+
+_add("set_date", "Set a date value on an input element (react-datepicker, native date, etc.).",
+     parameters=_schema({
+         "ref": _str_param("Ref or CSS selector of the date input."),
+         "date": _str_param("Date string: '15 May 1990', '1990-05-15', or '05/15/1990'."),
+     }, required=["ref", "date"]))
+
+_add("file_upload", "Upload a file to an <input type='file'> element.",
+     parameters=_schema({
+         "ref": _str_param("Ref or CSS selector of the file input."),
+         "path": _str_param("Local file path or device path (e.g. /sdcard/Download/photo.jpg)."),
+     }, required=["ref", "path"]))
+
+_add("wait_for", "Wait for text to appear/disappear or element to become visible.",
+     parameters=_schema({
+         "text": _str_param("Text to wait for (appear)."),
+         "gone": _str_param("Text to wait for (disappear)."),
+         "ref": _str_param("Ref of element to wait for visibility."),
+         "timeout": _float_param("Timeout in seconds.", default=15.0),
+         "poll": _float_param("Poll interval in seconds.", default=0.5),
+     }))
+
+_add("console_messages", "Read browser console messages from WebView/Chrome.",
+     parameters=_schema({
+         "level": _str_param("Log level filter: all, error, warning, info, debug.", default="all",
+                             enum=["all", "error", "warning", "info", "debug"]),
+     }))
+
+_add("tabs", "Manage WebView tabs/windows: list, switch, close, new.",
+     parameters=_schema({
+         "action": _str_param("Tab action.", enum=["list", "switch", "close", "new"]),
+         "index": {"type": "integer", "description": "Tab index for switch/close."},
+         "url": _str_param("URL for new tab."),
+     }, required=["action"]))
+
+_add("network_requests", "List captured network requests (requires --enable-network-log on session start).",
+     parameters=_schema({
+         "filter": _str_param("URL regexp filter."),
+         "static": {"type": "boolean", "description": "Include static resources (images, fonts, etc.).", "default": False},
+     }))
+
 _add("scroll", "Scroll in a direction.",
      parameters=_schema({
          "direction": _str_param("Scroll direction.", enum=["up", "down", "left", "right"]),

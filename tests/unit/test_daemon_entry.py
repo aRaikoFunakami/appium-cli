@@ -22,7 +22,7 @@ def test_main_ignores_invalid_session_during_driver_quit(monkeypatch) -> None:
     driver = DriverWithInvalidQuit()
 
     monkeypatch.setattr(sys, "argv", ["entry", "--server-url", "http://127.0.0.1:4723", "--udid", "device-1"])
-    monkeypatch.setattr(entry, "_create_driver", lambda _server_url, _udid: driver)
+    monkeypatch.setattr(entry, "_create_driver", lambda _server_url, _udid, **_kw: driver)
     monkeypatch.setattr(entry, "serve", lambda handler: None)
 
     entry.main()

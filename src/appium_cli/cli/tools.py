@@ -206,6 +206,79 @@ def select(
     _daemon_request("select", json_output, {"ref": ref, "value": value, "by": by})
 
 
+def select_option(
+    ref: Annotated[str, typer.Argument(help="Ref or CSS selector of the dropdown trigger/input.")],
+    text: Annotated[str, typer.Argument(help="Visible text of the option to select.")],
+    timeout: Annotated[float, typer.Option("--timeout", help="Max seconds to wait for options.")] = 3.0,
+    exact: Annotated[bool, typer.Option("--exact/--no-exact", help="Require exact text match.")] = True,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Select an option from a dropdown (custom or native) by visible text."""
+    _daemon_request("select_option", json_output, {"ref": ref, "text": text, "timeout": timeout, "exact": exact})
+
+
+def set_date(
+    ref: Annotated[str, typer.Argument(help="Ref or CSS selector of the date input.")],
+    date: Annotated[str, typer.Argument(help="Date string: '15 May 1990', '1990-05-15', '05/15/1990'.")],
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Set a date value on an input element."""
+    _daemon_request("set_date", json_output, {"ref": ref, "date": date})
+
+
+def file_upload(
+    ref: Annotated[str, typer.Argument(help="Ref or CSS selector of the file input.")],
+    path: Annotated[str, typer.Argument(help="Local file path or device path.")],
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Upload a file to an <input type='file'> element."""
+    _daemon_request("file_upload", json_output, {"ref": ref, "path": path})
+
+
+def wait_for(
+    text: Annotated[str, typer.Option("--text", help="Text to wait for (appear).")] = "",
+    gone: Annotated[str, typer.Option("--gone", help="Text to wait for (disappear).")] = "",
+    ref: Annotated[str, typer.Option("--ref", help="Ref of element to wait for visibility.")] = "",
+    timeout: Annotated[float, typer.Option("--timeout", help="Timeout in seconds.")] = 15.0,
+    poll: Annotated[float, typer.Option("--poll", help="Poll interval in seconds.")] = 0.5,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Wait for text to appear/disappear or element to become visible."""
+    _daemon_request("wait_for", json_output, {"text": text, "gone": gone, "ref": ref, "timeout": timeout, "poll": poll})
+
+
+def console_messages(
+    level: Annotated[str, typer.Option("--level", help="Log level: all, error, warning, info, debug.")] = "all",
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Read browser console messages from WebView/Chrome."""
+    _daemon_request("console_messages", json_output, {"level": level})
+
+
+def tabs_cmd(
+    action: Annotated[str, typer.Argument(help="Tab action: list, switch, close, new.")],
+    index: Annotated[int | None, typer.Option("--index", help="Tab index for switch/close.")] = None,
+    url: Annotated[str, typer.Option("--url", help="URL for new tab.")] = "",
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Manage WebView tabs/windows."""
+    args: dict = {"action": action}
+    if index is not None:
+        args["index"] = index
+    if url:
+        args["url"] = url
+    _daemon_request("tabs", json_output, args)
+
+
+def network_requests_cmd(
+    filter: Annotated[str, typer.Option("--filter", help="URL regexp filter.")] = "",
+    static: Annotated[bool, typer.Option("--static/--no-static", help="Include static resources.")] = False,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """List captured network requests (requires --enable-network-log on session start)."""
+    _daemon_request("network_requests", json_output, {"filter": filter, "static": static})
+
+
 def scroll(direction: str, ref: Annotated[str, typer.Option("--ref")] = "", percent: Annotated[float, typer.Option("--percent")] = 0.8, json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
     _daemon_request("scroll", json_output, {"direction": direction, "ref": ref, "percent": percent})
 

@@ -34,17 +34,21 @@ from appium_cli.tools.observation import (
     web_query,
     webview_title,
     webview_url,
+    console_messages,
+    network_requests,
 )
 from appium_cli.tools.session import format_driver_status, is_driver_alive
 
 
-def _create_driver(server_url: str, udid: str | None):
+def _create_driver(server_url: str, udid: str | None, *, enable_network_log: bool = False):
     options = UiAutomator2Options()
     options.set_capability("platformName", "Android")
     options.set_capability("appium:automationName", "UiAutomator2")
     if udid:
         options.set_capability("appium:udid", udid)
         options.set_capability("appium:deviceName", udid)
+    if enable_network_log:
+        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
     return webdriver.Remote(server_url, options=options)
 
 
@@ -131,6 +135,12 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return {"text": web_dialogs.dialog_dismiss(), "data": {}}
     if tool == "dialog_text":
         return {"text": web_dialogs.dialog_text(), "data": {}}
+    if tool == "console_messages":
+        return {"text": console_messages(**args), "data": {}}
+    if tool == "network_requests":
+        return {"text": network_requests(**args), "data": {}}
+    if tool == "tabs":
+        return {"text": web_navigation.tabs(**args), "data": {}}
     if tool == "double_tap" and "by" in args:
         return {"text": interaction.double_tap(**args), "data": {}}
     if hasattr(actions, str(tool)):
@@ -151,6 +161,7 @@ def main() -> None:
     parser.add_argument("--server-url", required=True)
     parser.add_argument("--udid")
     parser.add_argument("--adb-fallback", action="store_true")
+    parser.add_argument("--enable-network-log", action="store_true")
     parser.add_argument("--app-dir", help="Absolute path to .appium-cli directory parent")
     args = parser.parse_args()
 
@@ -161,7 +172,7 @@ def main() -> None:
 
     driver = None
     try:
-        driver = _create_driver(args.server_url, args.udid)
+        driver = _create_driver(args.server_url, args.udid, enable_network_log=args.enable_network_log)
         shell_capable = _probe_shell(driver)
         state.driver = driver
         state.session_metadata = {
@@ -170,6 +181,7 @@ def main() -> None:
             "session_id": driver.session_id,
             "shell_capable": shell_capable,
             "adb_fallback": args.adb_fallback,
+            "network_log_enabled": args.enable_network_log,
         }
         serve(handler=_handler)
     finally:

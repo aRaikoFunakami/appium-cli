@@ -63,8 +63,8 @@ Use `web_eval` for diagnostics and attribute reads. Prefer ref actions for norma
 
 ## Targeting layers
 
-1. **Refs first**: use `web_...` refs from `web_snapshot`/`snapshot_refs` with `click`, `fill`, `select`, and `press_key`.
-2. **CSS/locator second**: use `web_query` to discover CSS selectors and `generate_locator <ref>` to extract the best selector stored for a ref.
+1. **Refs first**: use `web_...` refs from `web_snapshot`/`snapshot_refs` with `click`, `fill`, `select`, `select_option`, `set_date`, and `press_key`.
+2. **CSS/locator second**: use `css:` prefix (e.g. `appium-cli click "css:#submit"`) or `web_query` to discover CSS selectors and `generate_locator <ref>` to extract the best selector stored for a ref.
 3. **Legacy locators last**: use locator tools only for expert recovery or compatibility.
 
 ```bash
@@ -81,6 +81,8 @@ appium-cli tap web_btn_login
 appium-cli fill web_search "query"
 appium-cli type_text web_search "query" --submit
 appium-cli select web_country "JP" --by=value
+appium-cli select_option web_state "NCR"
+appium-cli set_date web_dateofbirthinput "15 May 1990"
 appium-cli scroll_down
 appium-cli press_key Enter
 ```
@@ -88,6 +90,8 @@ appium-cli press_key Enter
 WebView actions use Selenium methods and JavaScript scrolling. Native touch-only gestures are not supported in WebView context and fail with exit code 8.
 
 ## Navigation and dialogs
+
+`goto` and other navigation commands auto-switch to WebView context if needed. No manual `webview_switch` is required before `goto`.
 
 ```bash
 appium-cli goto "https://example.com"
@@ -102,6 +106,54 @@ appium-cli dialog_dismiss
 ```
 
 After navigation or reload, take a new `web_snapshot`; old web refs may be stale.
+
+## Console messages
+
+Read browser console logs from the WebView:
+
+```bash
+appium-cli console_messages
+appium-cli console_messages --level error
+appium-cli console_messages --level warning
+```
+
+Uses `driver.get_log('browser')`. Note: each call consumes (clears) the returned entries.
+
+## Tab management
+
+List, switch, close, and open WebView tabs/windows:
+
+```bash
+appium-cli tabs list
+appium-cli tabs switch --index 1
+appium-cli tabs close --index 0
+appium-cli tabs new --url "https://example.com"
+```
+
+Uses `driver.window_handles` and `driver.switch_to.window()`. In embedded WebViews, tab creation depends on the app's `onCreateWindow()` implementation. CHROMIUM context (Chrome browser) fully supports multi-tab.
+
+## Network requests
+
+Capture and list HTTP requests made by the WebView page. Requires the session to be started with `--enable-network-log`:
+
+```bash
+appium-cli session start --enable-network-log
+appium-cli goto "https://example.com"
+appium-cli network_requests
+appium-cli network_requests --filter "/api/"
+appium-cli network_requests --static
+```
+
+Output is a numbered list (similar to Playwright `browser_network_requests`):
+
+```
+1. GET 200 https://example.com/ (text/html)
+2. POST 201 https://example.com/api/data (application/json)
+```
+
+Static resources (images, fonts, scripts, stylesheets) are excluded by default. Use `--static` to include them. Use `--filter` to match URLs by regexp.
+
+Note: `get_log("performance")` is consumptive — each call returns only new entries since the last call.
 
 ## Raw and diff workflow
 

@@ -78,6 +78,13 @@ appium-cli get_page_source                  # token-heavy diagnostic escape hatc
 
 `snapshot` is primary. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
 
+```bash
+appium-cli console_messages                 # browser console logs
+appium-cli console_messages --level error   # errors only
+appium-cli network_requests                 # network requests (requires --enable-network-log)
+appium-cli network_requests --filter "/api" # filter by URL
+```
+
 ### depth parameter
 
 `snapshot` and `web_snapshot` accept an optional `depth` parameter to limit the depth of the snapshot tree. By default, the full tree is returned with no depth limit.
@@ -101,6 +108,9 @@ appium-cli scroll_down                      # full visible screen
 appium-cli swipe_left carousel
 appium-cli press_key back
 appium-cli wait 1
+appium-cli wait_for --text "Welcome"        # wait for text to appear
+appium-cli wait_for --gone "Loading..."     # wait for text to disappear
+appium-cli file_upload web_photo /path/to/photo.jpg  # upload file
 ```
 
 Ref-first targeting is the default. Directional aliases accept an optional ref; omit it only for full-screen gestures. Compatibility commands such as `scroll down --ref=recycler_view` still exist, but prefer `scroll_down recycler_view`.
@@ -116,6 +126,9 @@ appium-cli web_eval "el.getAttribute('data-testid')" web_btn_submit
 appium-cli click web_btn_submit
 appium-cli fill web_search "query"
 appium-cli native_switch
+appium-cli tabs list                        # list WebView tabs
+appium-cli tabs switch --index 1            # switch to tab
+appium-cli tabs new --url "https://example.com"  # open new tab
 ```
 
 React Select / autocomplete inputs require special handling. Use `--slowly` to type one character at a time, then click the suggestion:

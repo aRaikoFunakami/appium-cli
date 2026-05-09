@@ -69,6 +69,8 @@ from appium_cli.cli.tools import (
     scroll_to_element,
     scroll_up,
     select,
+    select_option,
+    set_date,
     set_orientation,
     send_keys,
     snapshot,
@@ -85,6 +87,7 @@ from appium_cli.cli.tools import (
     terminate_app,
     type_text,
     wait,
+    wait_for,
     wait_short_loading,
     web_eval,
     web_query,
@@ -94,6 +97,10 @@ from appium_cli.cli.tools import (
     webview_title,
     webview_url,
     within_container,
+    file_upload,
+    console_messages,
+    tabs_cmd,
+    network_requests_cmd,
 )
 from appium_cli.cli.usage_suggestions import format_suggestion, suggest_usage
 from appium_cli.utils import exit_codes
@@ -255,6 +262,13 @@ app.command(name="web_eval")(web_eval)
 app.command(name="dialog_accept")(dialog_accept)
 app.command(name="dialog_dismiss")(dialog_dismiss)
 app.command(name="dialog_text")(dialog_text)
+app.command(name="select_option")(select_option)
+app.command(name="set_date")(set_date)
+app.command(name="file_upload")(file_upload)
+app.command(name="wait_for")(wait_for)
+app.command(name="console_messages")(console_messages)
+app.command(name="tabs")(tabs_cmd)
+app.command(name="network_requests")(network_requests_cmd)
 app.command(name="install")(install)
 app.add_typer(server_app, name="server")
 app.add_typer(session_app, name="session")

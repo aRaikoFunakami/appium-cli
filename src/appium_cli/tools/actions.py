@@ -9,6 +9,7 @@ web (Selenium click/send_keys/JS) depending on the ref's stored context.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -60,6 +61,22 @@ def _is_web_ref(ref: str) -> bool:
     return is_web_context(entry.context)
 
 
+def _css_selector_from_target(target: str) -> str | None:
+    """Extract CSS selector from target string, or None if not a CSS target."""
+    if target.startswith("css:"):
+        return target[4:]
+    if target.startswith(("#", ".", "[")):
+        return target
+    return None
+
+
+def _is_web_target(ref: str) -> bool:
+    """Check if ref is a web target (web ref or CSS selector)."""
+    if _css_selector_from_target(ref) is not None:
+        return True
+    return _is_web_ref(ref)
+
+
 def _ref_context(ref: str) -> str:
     """Get the context of a ref, or current context."""
     clean = ref.strip("[]").removeprefix("ref:")
@@ -75,7 +92,20 @@ def _ok(message: str = "OK") -> str:
 
 
 def _resolve_element(ref: str) -> Any:
-    """Resolve ref to WebElement via RefResolver with bounds verification."""
+    """Resolve ref to WebElement via RefResolver with bounds verification.
+
+    Also supports CSS selectors: ``css:#submit``, ``#submit``, ``.btn``, ``[name=x]``.
+    """
+    css = _css_selector_from_target(ref)
+    if css is not None:
+        driver = _require_driver()
+        elements = driver.find_elements("css selector", css)
+        if not elements:
+            raise ElementNotFoundError(
+                f"CSS selector '{css}' matched no elements. "
+                "Check the selector or use web_query to inspect the DOM."
+            )
+        return elements[0]
     driver = _require_driver()
     return state.ref_resolver.resolve(ref, driver)
 
@@ -105,7 +135,7 @@ def _require_native_context(action: str) -> None:
 
 def tap(ref: str) -> str:
     try:
-        if _is_web_ref(ref):
+        if _is_web_target(ref):
             element = _resolve_element(ref)
             if isinstance(element, _CoordinateElement):
                 _require_driver().execute_script(
@@ -147,7 +177,7 @@ def type_text(ref: str, text: str, submit: bool = False, slowly: bool = False) -
         element = _resolve_element(ref)
         if isinstance(element, _CoordinateElement):
             return _failed(f"ref '{ref}' resolved to coordinates only; type_text requires a real element")
-        web = _is_web_ref(ref)
+        web = _is_web_target(ref)
         if web:
             if slowly:
                 # Autocomplete/React-Select: click to focus, type char-by-char
@@ -216,13 +246,161 @@ def select(ref: str, value: str, by: str = "value") -> str:
         return _failed(str(exc))
 
 
+def select_option(ref: str, text: str, timeout: float = 3.0, exact: bool = True) -> str:
+    """Select an option from a custom dropdown (react-select, etc.) or native <select> by visible text."""
+    try:
+        element = _resolve_element(ref)
+        if isinstance(element, _CoordinateElement):
+            return _failed("select_option requires a real element, not coordinates")
+        driver = _require_driver()
+
+        # Check if this is a native <select>
+        tag = driver.execute_script("return arguments[0].tagName.toLowerCase()", element)
+        if tag == "select":
+            from selenium.webdriver.support.ui import Select
+            try:
+                Select(element).select_by_visible_text(text)
+            except Exception:
+                Select(element).select_by_value(text)
+            time.sleep(0.3)
+            return _ok()
+
+        # Custom dropdown: click to open
+        element.click()
+        time.sleep(0.5)
+
+        # Search for the option via JS
+        found = driver.execute_script("""
+            var text = arguments[0];
+            var exact = arguments[1];
+            var selectors = [
+                '[role="option"]',
+                '[class*="option"]',
+                '[id*="-option-"]',
+                '.dropdown-item',
+                'li[role="menuitem"]'
+            ];
+            var candidates = document.querySelectorAll(selectors.join(','));
+            var available = [];
+            for (var i = 0; i < candidates.length; i++) {
+                var el = candidates[i];
+                if (el.offsetParent === null) continue;
+                var t = el.innerText.trim();
+                if (!t) continue;
+                if (exact ? (t === text) : (t.indexOf(text) !== -1)) {
+                    el.click();
+                    return {found: true};
+                }
+                if (available.length < 10) available.push(t);
+            }
+            return {found: false, available: available};
+        """, text, exact)
+
+        if found and found.get("found"):
+            time.sleep(0.3)
+            return _ok()
+
+        available = found.get("available", []) if found else []
+        hint = f" Available: {', '.join(available)}" if available else ""
+        return _failed(
+            f"Option '{text}' not found in dropdown.{hint} "
+            "Try web_query('[role=option],[class*=option]') to see options."
+        )
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
+    except AppiumCliError:
+        raise
+    except Exception as exc:
+        return _failed(str(exc))
+
+
+_MONTH_NAMES = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6,
+    "jul": 7, "july": 7, "aug": 8, "august": 8, "sep": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+_MONTH_ABBR = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _parse_date(date_str: str) -> tuple[int, int, int] | None:
+    """Parse date string to (year, month, day). Returns None on failure."""
+    s = date_str.strip()
+    # ISO: 1990-05-15
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", s)
+    if m:
+        return int(m.group(1)), int(m.group(2)), int(m.group(3))
+    # US: 05/15/1990
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", s)
+    if m:
+        return int(m.group(3)), int(m.group(1)), int(m.group(2))
+    # Display: 15 May 1990
+    m = re.match(r"^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$", s)
+    if m:
+        month = _MONTH_NAMES.get(m.group(2).lower())
+        if month:
+            return int(m.group(3)), month, int(m.group(1))
+    return None
+
+
+def set_date(ref: str, date: str) -> str:
+    """Set a date value on an input element, supporting react-datepicker and native date inputs."""
+    parsed = _parse_date(date)
+    if parsed is None:
+        return _failed(
+            f"Cannot parse date '{date}'. "
+            "Supported formats: '15 May 1990', '1990-05-15', '05/15/1990'."
+        )
+    year, month, day = parsed
+    try:
+        element = _resolve_element(ref)
+        if isinstance(element, _CoordinateElement):
+            return _failed("set_date requires a real element, not coordinates")
+        driver = _require_driver()
+
+        # Determine input type
+        input_type = driver.execute_script(
+            "return (arguments[0].type || '').toLowerCase()", element
+        )
+
+        if input_type == "date":
+            # Native date input: use ISO format
+            iso = f"{year:04d}-{month:02d}-{day:02d}"
+            driver.execute_script("""
+                var nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                nativeSetter.call(arguments[0], arguments[1]);
+                arguments[0].dispatchEvent(new Event('input', {bubbles: true}));
+                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
+            """, element, iso)
+        else:
+            # Text input (react-datepicker, etc.): use display format
+            display = f"{day:02d} {_MONTH_ABBR[month]} {year}"
+            driver.execute_script("""
+                var nativeSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                nativeSetter.call(arguments[0], arguments[1]);
+                arguments[0].dispatchEvent(new Event('input', {bubbles: true}));
+                arguments[0].dispatchEvent(new Event('change', {bubbles: true}));
+            """, element, display)
+
+        time.sleep(0.3)
+        return _ok()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
+    except AppiumCliError:
+        raise
+    except Exception as exc:
+        return _failed(str(exc))
+
+
 def scroll(direction: str, ref: str = "", percent: float = 0.8) -> str:
     try:
         if direction not in _SCROLL_DIRECTION_REVERSE:
             return _failed("direction must be one of: up, down, left, right")
 
         # Web context scroll via JS
-        if (ref and _is_web_ref(ref)) or (not ref and is_web_context(state.current_context)):
+        if (ref and _is_web_target(ref)) or (not ref and is_web_context(state.current_context)):
             return _web_scroll(direction, ref, percent)
 
         params: dict[str, Any] = {"direction": _SCROLL_DIRECTION_REVERSE[direction], "percent": percent}
@@ -275,7 +453,7 @@ def swipe(direction: str, ref: str = "", percent: float = 0.8) -> str:
     try:
         if direction not in _SCROLL_DIRECTION_REVERSE:
             return _failed("direction must be one of: up, down, left, right")
-        if (ref and _is_web_ref(ref)) or (not ref and is_web_context(state.current_context)):
+        if (ref and _is_web_target(ref)) or (not ref and is_web_context(state.current_context)):
             _require_native_context("swipe")
         params: dict[str, Any] = {"direction": direction, "percent": min(percent, 1.0)}
         if ref:
@@ -342,7 +520,7 @@ def wait(seconds: float = 1.0) -> str:
 
 def long_press(ref: str, duration: int = 500) -> str:
     try:
-        if _is_web_ref(ref):
+        if _is_web_target(ref):
             raise AppiumCliError(
                 "long_press is not supported in WebView context.",
                 exit_code=FEATURE_NOT_ENABLED,
@@ -362,7 +540,7 @@ def long_press(ref: str, duration: int = 500) -> str:
 
 def double_tap(ref: str) -> str:
     try:
-        if _is_web_ref(ref):
+        if _is_web_target(ref):
             raise AppiumCliError(
                 "double_tap is not supported in WebView context.",
                 exit_code=FEATURE_NOT_ENABLED,
@@ -380,7 +558,7 @@ def double_tap(ref: str) -> str:
 
 def drag(ref: str, end_x: int, end_y: int, speed: int | None = None) -> str:
     try:
-        if _is_web_ref(ref):
+        if _is_web_target(ref):
             raise AppiumCliError(
                 "drag is not supported in WebView context.",
                 exit_code=FEATURE_NOT_ENABLED,
@@ -402,7 +580,7 @@ def drag(ref: str, end_x: int, end_y: int, speed: int | None = None) -> str:
 
 def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
     try:
-        if (ref and _is_web_ref(ref)) or (not ref and is_web_context(state.current_context)):
+        if (ref and _is_web_target(ref)) or (not ref and is_web_context(state.current_context)):
             raise AppiumCliError(
                 "fling is not supported in WebView context.",
                 exit_code=FEATURE_NOT_ENABLED,
@@ -426,7 +604,7 @@ def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
 
 
 def pinch_open(ref: str, percent: float = 0.5, speed: int | None = None) -> str:
-    if _is_web_ref(ref):
+    if _is_web_target(ref):
         raise AppiumCliError(
             "pinch_open is not supported in WebView context.",
             exit_code=FEATURE_NOT_ENABLED,
@@ -435,7 +613,7 @@ def pinch_open(ref: str, percent: float = 0.5, speed: int | None = None) -> str:
 
 
 def pinch_close(ref: str, percent: float = 0.5, speed: int | None = None) -> str:
-    if _is_web_ref(ref):
+    if _is_web_target(ref):
         raise AppiumCliError(
             "pinch_close is not supported in WebView context.",
             exit_code=FEATURE_NOT_ENABLED,
@@ -481,3 +659,109 @@ def web_eval(script: str, ref: str = "") -> str:
         return _failed(str(exc))
     except Exception as exc:
         return _failed(str(exc))
+
+
+def file_upload(ref: str, path: str) -> str:
+    """Upload a file to an <input type='file'> element."""
+    import base64
+    import os
+
+    try:
+        element = _resolve_element(ref)
+        if isinstance(element, _CoordinateElement):
+            return _failed("file_upload requires a real element, not coordinates")
+        driver = _require_driver()
+
+        local_path = os.path.expanduser(path)
+        if os.path.isfile(local_path):
+            filename = os.path.basename(local_path)
+            device_path = f"/sdcard/Download/{filename}"
+            with open(local_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            driver.push_file(device_path, base64data=b64)
+            element.send_keys(device_path)
+        else:
+            # Assume path is already a device path
+            element.send_keys(path)
+
+        time.sleep(0.3)
+        return _ok()
+    except ElementNotFoundError as exc:
+        return _failed(str(exc))
+    except AppiumCliError:
+        raise
+    except Exception as exc:
+        return _failed(str(exc))
+
+
+def wait_for(
+    text: str = "",
+    gone: str = "",
+    ref: str = "",
+    timeout: float = 15.0,
+    poll: float = 0.5,
+) -> str:
+    """Wait for text to appear/disappear or element to become visible/invisible."""
+    driver = _require_driver()
+
+    if not text and not gone and not ref:
+        return _failed("Specify --text, --gone, or --ref.")
+
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.common.by import By
+    from selenium.common.exceptions import TimeoutException
+
+    wait = WebDriverWait(driver, timeout, poll_frequency=poll)
+
+    try:
+        if text:
+            # Wait for text to appear anywhere in the page
+            if is_web_context(state.current_context):
+                wait.until(lambda d: d.execute_script(
+                    "return document.body && document.body.innerText.indexOf(arguments[0]) !== -1",
+                    text,
+                ))
+            else:
+                wait.until(lambda d: text in (d.page_source or ""))
+            return _ok(f"Text '{text}' appeared")
+
+        if gone:
+            # Wait for text to disappear
+            if is_web_context(state.current_context):
+                wait.until(lambda d: d.execute_script(
+                    "return !document.body || document.body.innerText.indexOf(arguments[0]) === -1",
+                    gone,
+                ))
+            else:
+                wait.until(lambda d: gone not in (d.page_source or ""))
+            return _ok(f"Text '{gone}' disappeared")
+
+        if ref:
+            # Wait for ref element to be visible
+            entry = state.ref_resolver.get_entry(ref.strip("[]").removeprefix("ref:"))
+            if entry is not None:
+                # Known ref: resolve and check visibility
+                wait.until(lambda d: _try_resolve_visible(ref, d))
+                return _ok(f"Element '{ref}' is visible")
+            else:
+                return _failed(f"Ref '{ref}' not found in current snapshot. Take a new snapshot first.")
+
+    except TimeoutException:
+        target = text or gone or ref
+        return _failed(f"Timed out after {timeout}s waiting for '{target}'")
+    except Exception as exc:
+        return _failed(str(exc))
+
+    return _failed("No wait condition specified")
+
+
+def _try_resolve_visible(ref: str, driver: Any) -> bool:
+    """Try to resolve and check element visibility. Returns False on failure."""
+    try:
+        element = state.ref_resolver.resolve(ref, driver)
+        if isinstance(element, _CoordinateElement):
+            return True
+        return element.is_displayed()
+    except Exception:
+        return False

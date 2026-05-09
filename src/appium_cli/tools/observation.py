@@ -1205,3 +1205,166 @@ def webview_title() -> str:
         return driver.title or ""
     except Exception as exc:
         raise AppiumCliError(f"Failed to get WebView title: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Console messages
+# ---------------------------------------------------------------------------
+
+_LOG_LEVELS = {"error", "warning", "info", "debug", "all"}
+
+
+def console_messages(level: str = "all") -> str:
+    """Read browser console messages from the WebView/Chrome context.
+
+    Uses ``driver.get_log('browser')`` when in a WebView context and
+    falls back to ``driver.get_log('logcat')`` (filtered for chromium
+    messages) in native context.
+
+    Note: ``get_log`` is *consumptive* -- each call clears returned entries
+    from the server. Subsequent calls return only *new* messages.
+    """
+    if state.driver is None:
+        raise ValueError("Driver is not initialized")
+    driver = state.driver
+    lvl = level.lower().strip()
+    if lvl not in _LOG_LEVELS:
+        raise AppiumCliError(
+            f"Invalid level '{level}'. Use one of: {', '.join(sorted(_LOG_LEVELS))}",
+        )
+
+    ctx = state.current_context
+    entries: list[dict] = []
+    try:
+        if is_web_context(ctx):
+            entries = driver.get_log("browser")
+        else:
+            raw = driver.get_log("logcat")
+            entries = [e for e in raw if "chromium" in str(e.get("message", "")).lower()
+                       or "console" in str(e.get("message", "")).lower()]
+    except Exception as exc:
+        raise AppiumCliError(f"Failed to get console logs: {exc}") from exc
+
+    # Filter by level
+    if lvl != "all":
+        level_map = {"error": {"SEVERE"}, "warning": {"WARNING"}, "info": {"INFO"}, "debug": {"DEBUG", "FINE"}}
+        allowed = level_map.get(lvl, set())
+        entries = [e for e in entries if str(e.get("level", "")).upper() in allowed]
+
+    if not entries:
+        return "No console messages."
+
+    lines: list[str] = []
+    for e in entries:
+        entry_level = str(e.get("level", "INFO")).upper()
+        msg = str(e.get("message", ""))
+        lines.append(f"[{entry_level}] {msg}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Network requests
+# ---------------------------------------------------------------------------
+
+
+def network_requests(filter: str = "", static: bool = False) -> str:
+    """Read network requests from ChromeDriver performance log.
+
+    Requires that the session was started with ``--enable-network-log`` so
+    that ``goog:loggingPrefs: {"performance": "ALL"}`` was set in capabilities.
+
+    Returns a numbered list of requests.  Use ``--filter`` to restrict by URL
+    regexp.  Static resources (images, fonts, stylesheets, scripts) are
+    excluded by default unless ``--static`` is passed.
+    """
+    if state.driver is None:
+        raise ValueError("Driver is not initialized")
+
+    if not state.session_metadata.get("network_log_enabled"):
+        raise AppiumCliError(
+            "Network logging is not enabled. "
+            "Restart the session with: appium-cli session start --enable-network-log",
+            exit_code=FEATURE_NOT_ENABLED,
+        )
+
+    driver = state.driver
+    try:
+        raw_logs = driver.get_log("performance")
+    except Exception as exc:
+        raise AppiumCliError(f"Failed to get performance logs: {exc}") from exc
+
+    import re as _re
+
+    filter_re = _re.compile(filter, _re.IGNORECASE) if filter else None
+
+    _STATIC_TYPES = {"Image", "Font", "Stylesheet", "Script", "Media"}
+    _STATIC_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico",
+                    ".woff", ".woff2", ".ttf", ".eot", ".otf",
+                    ".css", ".js", ".mjs"}
+
+    requests_map: dict[str, dict] = {}
+    for entry in raw_logs:
+        try:
+            outer = json.loads(entry.get("message", "{}"))
+            msg = outer.get("message", {})
+        except (json.JSONDecodeError, AttributeError):
+            continue
+
+        method = msg.get("method", "")
+        params = msg.get("params", {})
+
+        if method == "Network.requestWillBeSent":
+            req = params.get("request", {})
+            req_id = params.get("requestId", "")
+            url = req.get("url", "")
+            if not url or url.startswith("data:"):
+                continue
+            requests_map[req_id] = {
+                "url": url,
+                "method": req.get("method", "GET"),
+                "type": params.get("type", ""),
+                "status": None,
+                "status_text": "",
+                "mime": "",
+            }
+        elif method == "Network.responseReceived":
+            req_id = params.get("requestId", "")
+            resp = params.get("response", {})
+            if req_id in requests_map:
+                requests_map[req_id]["status"] = resp.get("status")
+                requests_map[req_id]["status_text"] = resp.get("statusText", "")
+                requests_map[req_id]["mime"] = resp.get("mimeType", "")
+                if not requests_map[req_id]["type"]:
+                    requests_map[req_id]["type"] = params.get("type", "")
+
+    results: list[dict] = []
+    for info in requests_map.values():
+        url = info["url"]
+        res_type = info.get("type", "")
+
+        # Filter static resources
+        if not static:
+            if res_type in _STATIC_TYPES:
+                continue
+            from pathlib import PurePosixPath
+            url_path = PurePosixPath(url.split("?")[0].split("#")[0])
+            if url_path.suffix.lower() in _STATIC_EXTS:
+                continue
+
+        # Apply URL filter
+        if filter_re and not filter_re.search(url):
+            continue
+
+        results.append(info)
+
+    if not results:
+        return "No network requests captured."
+
+    lines: list[str] = []
+    for i, r in enumerate(results, 1):
+        status = r["status"] if r["status"] is not None else "pending"
+        line = f"{i}. {r['method']} {status} {r['url']}"
+        if r.get("mime"):
+            line += f" ({r['mime']})"
+        lines.append(line)
+    return "\n".join(lines)

@@ -240,15 +240,41 @@ return (function(maxDepth, maxNodes) {
         return '';
     }
 
+    function labelTextFor(el) {
+        if (el.id) {
+            try {
+                var lbl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+                if (lbl) { var t = clean(lbl.innerText, 64); if (t) return t; }
+            } catch(e) {}
+        }
+        var lblBy = el.getAttribute('aria-labelledby');
+        if (lblBy) {
+            var lblEl = document.getElementById(lblBy);
+            if (lblEl) { var t = clean(lblEl.innerText, 64); if (t) return t; }
+        }
+        var parent = el.parentElement;
+        if (parent && parent.tagName.toLowerCase() === 'label') {
+            var t = clean(parent.innerText, 64);
+            if (t) return t;
+        }
+        return '';
+    }
+
     function buildNode(el) {
         var tag = el.tagName.toLowerCase();
         var role = roleOf(el);
         var rect = el.getBoundingClientRect();
+        var inputType = (tag === 'input') ? (el.type || 'text').toLowerCase() : '';
+        var lbl = '';
+        if (inputType === 'checkbox' || inputType === 'radio') {
+            lbl = labelTextFor(el);
+        }
         return {
             tag: tag,
             id: el.id || '',
             test_id: el.getAttribute('data-testid') || '',
             aria_label: el.getAttribute('aria-label') || '',
+            label_text: lbl,
             role: role,
             name: nameOf(el, role),
             value: el.value || '',
@@ -328,6 +354,11 @@ def _to_snake(text: str) -> str:
 
 def _derive_ref(elem: dict[str, Any], role: str) -> str:
     """Derive a web ref base name from element attributes."""
+    # For checkbox/radio, prefer label text over id for meaningful ref names
+    if role in ("checkbox", "radio") and elem.get("label_text"):
+        prefix = _ROLE_PREFIX.get(role, role)
+        return _WEB_PREFIX + prefix + "_" + _to_snake(str(elem["label_text"]))[:WEB_REF_TEXT_LIMIT]
+
     if elem.get("id"):
         return _WEB_PREFIX + _to_snake(str(elem["id"]))
     if elem.get("test_id"):
@@ -548,7 +579,12 @@ class WebSnapshotGenerator:
             return WebSnapshotNode(role="text", name="...", omitted=True)
 
         role = "document" if force_document else _determine_role(elem)
-        name = str(elem.get("aria_label") or elem.get("name") or elem.get("placeholder") or "")
+        label_text = str(elem.get("label_text") or "")
+        # For checkbox/radio, prefer label_text for the display name
+        if role in ("checkbox", "radio") and label_text:
+            name = label_text
+        else:
+            name = str(elem.get("aria_label") or elem.get("name") or elem.get("placeholder") or "")
         value = str(elem.get("value") or "") or None
         state_list: list[str] = []
         if elem.get("disabled"):

@@ -114,6 +114,10 @@ def start(
         bool,
         typer.Option("--allow-adb-shell/--no-allow-adb-shell", help="Allow mobile: shell when starting Appium."),
     ] = True,
+    enable_network_log: Annotated[
+        bool,
+        typer.Option("--enable-network-log", help="Enable network request logging (goog:loggingPrefs)."),
+    ] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
     """Start the daemon-owned WebDriver session."""
@@ -163,6 +167,8 @@ def start(
     ]
     if server_state.ownership == "external":
         command.append("--adb-fallback")
+    if enable_network_log:
+        command.append("--enable-network-log")
 
     log_file = daemon_log_path(sid).open("ab")
     process = subprocess.Popen(
