@@ -1236,34 +1236,25 @@ def console_messages(level: str = "all") -> str:
     ctx = state.current_context
     entries: list[dict] = []
     try:
-        available_types: set[str] = set()
-        try:
-            available_types = {str(t) for t in driver.log_types}
-        except Exception:
-            pass
-
         if is_web_context(ctx):
-            if "browser" in available_types:
-                entries = driver.get_log("browser")
-            elif "logcat" in available_types:
-                raw = driver.get_log("logcat")
-                entries = [e for e in raw if "chromium" in str(e.get("message", "")).lower()
-                           or "console" in str(e.get("message", "")).lower()]
+            # Try 'browser' first (ChromeDriver), fall back to logcat
+            for log_type in ("browser", "logcat"):
+                try:
+                    raw = driver.get_log(log_type)
+                    if log_type == "logcat":
+                        entries = [e for e in raw if "chromium" in str(e.get("message", "")).lower()
+                                   or "console" in str(e.get("message", "")).lower()]
+                    else:
+                        entries = raw
+                    break
+                except Exception:
+                    continue
             else:
-                raise AppiumCliError(
-                    "No supported log type available. "
-                    f"Available: {', '.join(sorted(available_types)) or 'none'}",
-                )
+                raise AppiumCliError("Neither 'browser' nor 'logcat' log type is available.")
         else:
-            if "logcat" in available_types:
-                raw = driver.get_log("logcat")
-                entries = [e for e in raw if "chromium" in str(e.get("message", "")).lower()
-                           or "console" in str(e.get("message", "")).lower()]
-            else:
-                raise AppiumCliError(
-                    "logcat log type not available in native context. "
-                    f"Available: {', '.join(sorted(available_types)) or 'none'}",
-                )
+            raw = driver.get_log("logcat")
+            entries = [e for e in raw if "chromium" in str(e.get("message", "")).lower()
+                       or "console" in str(e.get("message", "")).lower()]
     except Exception as exc:
         raise AppiumCliError(f"Failed to get console logs: {exc}") from exc
 
