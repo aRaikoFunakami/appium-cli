@@ -1,13 +1,20 @@
 # Session Lifecycle
 
-`appium-cli` separates the Appium HTTP server from the daemon-owned WebDriver session. Start or reuse a server, then start a persistent session before using snapshot/action tools.
+`appium-cli` separates the Appium HTTP server from the daemon-owned WebDriver session. Start or reuse a server, then start a fresh session before using snapshot/action tools.
+
+**Important:** Always create a fresh session at the start of each task and stop it when done. Do not reuse sessions across different tasks or prompts. Stale WebDriver sessions cause `InvalidSessionIdException` errors. One task = one session.
 
 ```bash
-appium-cli server status
+# Task start — always begin with a clean session
+appium-cli session stop    # clean up any leftover session (safe even if none running)
 appium-cli server start --port 4723
-appium-cli session status
 appium-cli session start
+
 appium-cli snapshot
+# ... do work ...
+
+# Task end — always tear down
+appium-cli session stop
 ```
 
 `server start` reuses an existing Appium server when one is already running. `server stop` only stops a server that `appium-cli` started itself; it will not terminate external servers.
@@ -34,7 +41,7 @@ appium-cli session start
 appium-cli session stop
 ```
 
-The daemon keeps WebDriver state and latest snapshot/ref artifacts across short-lived CLI invocations. If refs look stale or the daemon loses the session:
+The daemon keeps WebDriver state and latest snapshot/ref artifacts across short-lived CLI invocations within a single task. If refs look stale or the daemon loses the session, restart it:
 
 ```bash
 appium-cli session stop

@@ -15,13 +15,27 @@ appium-cli doctor
 appium-cli devices --platform android
 appium-cli server status
 appium-cli server start --port 4723
-appium-cli session status
 appium-cli session start
 
 appium-cli snapshot
 appium-cli snapshot_refs
 appium-cli tap btn_login
 appium-cli snapshot_search "Welcome"
+
+appium-cli session stop
+```
+
+**Session lifecycle rule:** Always create a fresh session at the start of each task and stop it when done. Do not reuse sessions across tasks — stale WebDriver state causes errors. One task = one session.
+
+```bash
+# Task start
+appium-cli session stop    # clean up any leftover session
+appium-cli session start
+
+# ... do work ...
+
+# Task end
+appium-cli session stop
 ```
 
 Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. Action commands automatically append a post-action snapshot artifact link in normal output.
