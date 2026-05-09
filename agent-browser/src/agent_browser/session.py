@@ -2,7 +2,8 @@
 
 This module never starts an Appium server itself and never installs
 prerequisites. It only orchestrates the existing ``appium-cli session``
-sub-commands, reusing a healthy daemon when available.
+sub-commands, always creating a fresh session per task and tearing it
+down on exit.
 """
 
 from __future__ import annotations
@@ -84,20 +85,17 @@ class AppiumSessionManager:
         return self._info
 
     async def __aenter__(self) -> SessionInfo:
-        self._info = await self._ensure_running()
+        self._info = await self._fresh_session()
         return self._info
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         if self._info is None:
             return
-        if not self._info.started_by_us:
-            logger.debug("Leaving externally-owned appium-cli session running")
-            return
-        logger.info("Stopping appium-cli session daemon (started by us)")
+        logger.info("Stopping appium-cli session daemon")
         try:
             await self._stop()
-        except AppiumSessionError as exc:
-            logger.warning("Failed to stop appium-cli session: %s", exc)
+        except AppiumSessionError as stop_exc:
+            logger.warning("Failed to stop appium-cli session: %s", stop_exc)
 
     async def _status(self) -> SessionInfo:
         rc, stdout, stderr = await _run_cli("session", "status", "--json", timeout=15.0)
@@ -153,15 +151,17 @@ class AppiumSessionManager:
             error = payload.get("error") or stderr.strip() or f"appium-cli exited with {rc}"
             raise AppiumSessionError(f"Failed to stop appium-cli session: {error}")
 
-    async def _ensure_running(self) -> SessionInfo:
+    async def _fresh_session(self) -> SessionInfo:
+        """Always create a fresh session. Stop any existing one first."""
         info = await self._status()
         if info.running:
-            logger.info(
-                "Reusing existing appium-cli session: udid=%s server=%s",
-                info.udid,
-                info.server_url,
-            )
-            return info
+            logger.info("Stopping existing appium-cli session for a fresh start")
+            try:
+                await self._stop()
+            except AppiumSessionError as exc:
+                logger.warning("Failed to stop old session: %s", exc)
 
         logger.info("Starting appium-cli session daemon (port=%d)", self._config.appium_port)
-        return await self._start()
+        new_info = await self._start()
+        new_info.started_by_us = True
+        return new_info
