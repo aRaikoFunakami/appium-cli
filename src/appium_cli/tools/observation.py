@@ -131,8 +131,14 @@ return (function(selector, attrs, limit) {
     return nodes.map(function(el) {
         var role = roleOf(el);
         var extra = {};
+        var domProps = {checked:1, selected:1, disabled:1, value:1, indeterminate:1};
         attrs.forEach(function(attr) {
-            if (attr) extra[attr] = el.getAttribute(attr) || '';
+            if (!attr) return;
+            if (attr in domProps) {
+                extra[attr] = el[attr];
+            } else {
+                extra[attr] = el.getAttribute(attr) || '';
+            }
         });
         return {
             tag: el.tagName.toLowerCase(),
@@ -951,6 +957,8 @@ def _parse_attrs(attrs: str | list[str] | None) -> list[str]:
 
 
 def _format_web_query_field(key: str, value: Any) -> str:
+    if isinstance(value, bool):
+        return f"{key}={'true' if value else 'false'}"
     text = str(value)
     if text == "":
         return ""
@@ -1010,7 +1018,10 @@ def web_query(
         }
         extra_attrs = item.get("attrs")
         if isinstance(extra_attrs, dict) and extra_attrs:
-            row["attrs"] = {str(key): str(value) for key, value in extra_attrs.items()}
+            row["attrs"] = {
+                str(key): value if isinstance(value, bool) else str(value)
+                for key, value in extra_attrs.items()
+            }
         mapped_ref = _map_web_query_ref(row, refs)
         if mapped_ref:
             row["ref"] = mapped_ref

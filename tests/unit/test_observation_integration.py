@@ -8,6 +8,8 @@ from contextlib import nullcontext
 from pathlib import Path
 
 
+import pytest
+
 from appium_cli.core.native_snapshot import NativeSnapshot, NativeSnapshotNode
 from appium_cli.core.snapshot import LocatorStrategy, RefEntry
 from appium_cli.core.snapshot_artifacts import create_snapshot_bundle_payload
@@ -15,6 +17,7 @@ from appium_cli.core.web_snapshot import WebSnapshot, WebSnapshotNode
 from appium_cli.core.web_snapshot_generator import WEB_DEFAULT_MAX_DEPTH, WEB_DEFAULT_MAX_NODES
 from appium_cli.daemon import state
 from appium_cli.tools import actions, container, observation
+from appium_cli.utils.errors import AppiumCliError
 
 
 def _build_native_snapshot() -> NativeSnapshot:
@@ -474,6 +477,53 @@ def test_web_query_raw_returns_json_array():
     assert payload[0]["data_testid"] == "search-box"
     assert payload[0]["value"] == ""
     assert payload[0]["attrs"]["data-testid"] == "search-box"
+
+
+def test_web_query_attrs_use_dom_properties(monkeypatch):
+    """web_query --attrs=checked should return DOM property boolean, not getAttribute string."""
+    state.reset()
+
+    class FakeDriver:
+        current_url = "https://example.com"
+        current_context = "WEBVIEW_1"
+
+        def execute_script(self, script, *args):
+            if "querySelectorAll" in script or "roleOf" in script:
+                return [
+                    {
+                        "tag": "input",
+                        "role": "checkbox",
+                        "accessible_name": "Accept",
+                        "id": "accept",
+                        "name": "accept",
+                        "type": "checkbox",
+                        "placeholder": "",
+                        "aria_label": "",
+                        "data_testid": "",
+                        "value": "",
+                        "text": "",
+                        "href": "",
+                        "selector": "input#accept",
+                        "attrs": {"checked": True, "disabled": False},
+                    }
+                ]
+            return None
+
+    state.driver = FakeDriver()
+    state.current_context = "WEBVIEW_1"
+    state.current_ref_map = {}
+    monkeypatch.setattr("appium_cli.tools.observation.is_web_context", lambda ctx: True)
+
+    out = observation.web_query("input[type=checkbox]", attrs="checked,disabled")
+    # Boolean true/false should appear, not empty string from getAttribute
+    assert "checked=true" in out
+    assert "disabled=false" in out
+
+    # raw JSON should preserve booleans
+    raw = observation.web_query("input[type=checkbox]", attrs="checked,disabled", raw=True)
+    payload = json.loads(raw)
+    assert payload[0]["attrs"]["checked"] is True
+    assert payload[0]["attrs"]["disabled"] is False
 
 
 def test_container_output_limit_constants_match_contract():
@@ -974,3 +1024,211 @@ def test_refresh_web_snapshot_preserves_explicit_expanded_limits(monkeypatch, tm
     _script, depth, max_nodes = driver.execute_script_calls[0]
     assert depth == 50
     assert max_nodes == 2000
+
+
+def test_tap_webview_click_intercepted_recovery_succeeds(monkeypatch):
+    """tap should scrollIntoView and retry when click is intercepted."""
+    state.reset()
+    click_count = [0]
+    scrolled = [False]
+
+    class FakeElement:
+        def click(self):
+            click_count[0] += 1
+            if click_count[0] == 1:
+                raise Exception("element click intercepted")
+
+    class FakeDriver:
+        def execute_script(self, script, *args):
+            if "scrollIntoView" in script:
+                scrolled[0] = True
+
+    element = FakeElement()
+    state.driver = FakeDriver()
+    state.current_context = "WEBVIEW_1"
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    monkeypatch.setattr(actions, "_is_web_target", lambda _ref: True)
+    monkeypatch.setattr(actions, "_is_web_ref", lambda _ref: True)
+    monkeypatch.setattr(actions, "_resolve_element", lambda _ref: element)
+
+    result = actions.tap("submit_btn")
+    assert result == "OK"
+    assert scrolled[0] is True
+    assert click_count[0] == 2
+
+
+def test_tap_webview_click_intercepted_reports_blocker(monkeypatch):
+    """tap should report blocking element info after retry failure."""
+    state.reset()
+
+    class FakeElement:
+        def click(self):
+            raise Exception("element click intercepted by overlay")
+
+    class FakeDriver:
+        def execute_script(self, script, *args):
+            if "scrollIntoView" in script:
+                return None
+            if "elementFromPoint" in script:
+                return "div#cookie-banner.overlay"
+            return None
+
+    element = FakeElement()
+    state.driver = FakeDriver()
+    state.current_context = "WEBVIEW_1"
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    monkeypatch.setattr(actions, "_is_web_target", lambda _ref: True)
+    monkeypatch.setattr(actions, "_is_web_ref", lambda _ref: True)
+    monkeypatch.setattr(actions, "_resolve_element", lambda _ref: element)
+
+    with pytest.raises(AppiumCliError, match="intercepted.*cookie-banner"):
+        actions.tap("submit_btn")
+
+
+def test_tap_native_not_affected_by_recovery(monkeypatch):
+    """Native tap should not trigger click intercepted recovery."""
+    state.reset()
+    gesture_called = [False]
+
+    class FakeDriver:
+        def execute_script(self, script, *args):
+            if "clickGesture" in script:
+                gesture_called[0] = True
+
+    state.driver = FakeDriver()
+    state.current_context = "NATIVE_APP"
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    monkeypatch.setattr(actions, "_is_web_target", lambda _ref: False)
+    monkeypatch.setattr(actions, "_gesture_target", lambda _ref: {"x": 100, "y": 200})
+
+    result = actions.tap("button")
+    assert result == "OK"
+    assert gesture_called[0] is True
+
+
+def test_type_text_web_submit_uses_enter_key(monkeypatch):
+    """Web submit should use Keys.ENTER, not element.submit()."""
+    state.reset()
+    calls = []
+
+    class FakeElement:
+        def click(self):
+            pass
+        def clear(self):
+            pass
+        def send_keys(self, *args):
+            calls.append(("send_keys", args))
+        def submit(self):
+            calls.append(("submit",))
+            raise AssertionError("submit() should not be called")
+
+    element = FakeElement()
+    state.driver = object()
+    state.current_context = "WEBVIEW_1"
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    monkeypatch.setattr(actions, "_is_web_target", lambda _ref: True)
+    monkeypatch.setattr(actions, "_resolve_element", lambda _ref: element)
+
+    result = actions.type_text("input", "hello", submit=True)
+    assert result == "OK"
+    # Should have send_keys("hello") and send_keys(Keys.ENTER)
+    assert len(calls) == 2
+    assert calls[0] == ("send_keys", ("hello",))
+    # Second call should be Keys.ENTER
+    assert calls[1][0] == "send_keys"
+    assert len(calls[1][1]) == 1  # one argument
+
+
+def test_type_text_web_slowly_with_submit(monkeypatch):
+    """slowly=True with submit=True should type chars then send Enter."""
+    state.reset()
+    calls = []
+
+    class FakeElement:
+        def click(self):
+            pass
+        def send_keys(self, *args):
+            calls.append(("send_keys", args))
+        def submit(self):
+            raise AssertionError("submit() should not be called")
+
+    element = FakeElement()
+    state.driver = object()
+    state.current_context = "WEBVIEW_1"
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    monkeypatch.setattr(actions, "_is_web_target", lambda _ref: True)
+    monkeypatch.setattr(actions, "_resolve_element", lambda _ref: element)
+
+    result = actions.type_text("input", "ab", submit=True, slowly=True)
+    assert result == "OK"
+    # Should have: send_keys("a"), send_keys("b"), send_keys(ENTER)
+    assert len(calls) == 3
+    assert calls[0] == ("send_keys", ("a",))
+    assert calls[1] == ("send_keys", ("b",))
+    assert calls[2][0] == "send_keys"
+
+
+# ---------------------------------------------------------------------------
+# select_option polling / timeout tests
+# ---------------------------------------------------------------------------
+
+def test_select_option_polls_until_found(monkeypatch):
+    """select_option should poll for options within timeout."""
+    state.reset()
+    call_count = [0]
+
+    class FakeElement:
+        def click(self):
+            pass
+
+    class FakeDriver:
+        def execute_script(self, script, *args):
+            if "tagName" in script:
+                return "div"  # not a native <select>
+            call_count[0] += 1
+            if call_count[0] < 3:
+                return {"found": False, "available": ["Other Option"]}
+            return {"found": True}
+
+    state.driver = FakeDriver()
+    state.current_context = "WEBVIEW_1"
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    monkeypatch.setattr(actions, "_resolve_element", lambda _ref: FakeElement())
+    monkeypatch.setattr(actions, "_is_web_target", lambda _ref: True)
+
+    result = actions.select_option("dropdown", "Target Option", timeout=5.0)
+    assert result == "OK"
+    assert call_count[0] >= 3
+
+
+def test_select_option_timeout_raises(monkeypatch):
+    """select_option should raise AppiumCliError after timeout."""
+    state.reset()
+
+    class FakeElement:
+        def click(self):
+            pass
+
+    class FakeDriver:
+        def execute_script(self, script, *args):
+            if "tagName" in script:
+                return "div"
+            return {"found": False, "available": ["A", "B"]}
+
+    state.driver = FakeDriver()
+    state.current_context = "WEBVIEW_1"
+    monkeypatch.setattr(actions.time, "sleep", lambda _: None)
+    # Make time.monotonic advance past deadline immediately
+    counter = [0]
+
+    def fake_monotonic():
+        counter[0] += 1
+        return float(counter[0] * 10)  # jumps 10s each call
+
+    monkeypatch.setattr(actions.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(actions, "_resolve_element", lambda _ref: FakeElement())
+    monkeypatch.setattr(actions, "_is_web_target", lambda _ref: True)
+
+    import pytest
+    with pytest.raises(AppiumCliError, match="not found in dropdown"):
+        actions.select_option("dropdown", "Missing", timeout=1.0)

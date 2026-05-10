@@ -106,10 +106,10 @@ def tabs(action: str, index: int | None = None, url: str = "") -> str:
 
     if action == "switch":
         if index is None:
-            return "FAILED: --index is required for tabs switch"
+            raise AppiumCliError("--index is required for tabs switch")
         handles = driver.window_handles
         if index < 0 or index >= len(handles):
-            return f"FAILED: index {index} out of range (0-{len(handles) - 1})"
+            raise AppiumCliError(f"index {index} out of range (0-{len(handles) - 1})")
         driver.switch_to.window(handles[index])
         try:
             title = driver.title or ""
@@ -121,11 +121,11 @@ def tabs(action: str, index: int | None = None, url: str = "") -> str:
     if action == "close":
         handles = driver.window_handles
         if len(handles) <= 1:
-            return "FAILED: Cannot close the last remaining tab"
+            raise AppiumCliError("Cannot close the last remaining tab")
         current = driver.current_window_handle
         target_idx = index if index is not None else handles.index(current)
         if target_idx < 0 or target_idx >= len(handles):
-            return f"FAILED: index {target_idx} out of range (0-{len(handles) - 1})"
+            raise AppiumCliError(f"index {target_idx} out of range (0-{len(handles) - 1})")
         target_handle = handles[target_idx]
         driver.switch_to.window(target_handle)
         driver.close()
@@ -146,4 +146,4 @@ def tabs(action: str, index: int | None = None, url: str = "") -> str:
         except Exception:
             return f"Opened new tab {len(handles) - 1}"
 
-    return f"FAILED: Unknown tabs action '{action}'. Use list, switch, close, or new."
+    raise AppiumCliError(f"Unknown tabs action '{action}'. Use list, switch, close, or new.")

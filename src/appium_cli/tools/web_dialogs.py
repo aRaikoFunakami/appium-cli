@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from appium_cli.daemon import state
+from appium_cli.utils.errors import AppiumCliError
 
 
 def _require_driver():
@@ -24,7 +25,7 @@ def dialog_accept(prompt_text: str = "") -> str:
         alert.accept()
         return "Dialog accepted"
     except Exception as exc:
-        return f"FAILED: {exc}"
+        raise AppiumCliError(str(exc)) from exc
 
 
 def dialog_dismiss() -> str:
@@ -35,7 +36,7 @@ def dialog_dismiss() -> str:
         alert.dismiss()
         return "Dialog dismissed"
     except Exception as exc:
-        return f"FAILED: {exc}"
+        raise AppiumCliError(str(exc)) from exc
 
 
 def dialog_text() -> str:
@@ -45,4 +46,4 @@ def dialog_text() -> str:
         alert = driver.switch_to.alert
         return alert.text or ""
     except Exception as exc:
-        return f"FAILED: {exc}"
+        raise AppiumCliError(str(exc)) from exc

@@ -70,3 +70,19 @@ def test_client_request_includes_raw_flag(monkeypatch) -> None:
     assert captured["payload"]["tool"] == "snapshot"
     assert captured["payload"]["args"] == {"scope": "full"}
     assert captured["payload"]["raw"] is True
+
+
+def test_response_converts_failed_string_to_error():
+    """Compatibility: FAILED: strings should produce ok=False responses."""
+    from appium_cli.daemon.server import _response
+    resp = _response("req-1", {"text": "FAILED: element not found", "data": {}})
+    assert resp["ok"] is False
+    assert resp["error"] == "FAILED: element not found"
+    assert "exit_code" in resp
+
+
+def test_response_passes_success_as_ok():
+    from appium_cli.daemon.server import _response
+    resp = _response("req-2", {"text": "OK", "data": {}})
+    assert resp["ok"] is True
+    assert resp["text"] == "OK"

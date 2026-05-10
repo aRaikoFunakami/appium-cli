@@ -49,7 +49,8 @@ def _require_driver():
 
 
 def _failed(message: str) -> str:
-    return f"FAILED: {message}"
+    """Deprecated: raise AppiumCliError instead of returning FAILED strings."""
+    raise AppiumCliError(message)
 
 
 def _is_web_ref(ref: str) -> bool:
@@ -153,18 +154,49 @@ def tap(ref: str) -> str:
                 )
                 time.sleep(0.5)
                 return _ok()
-            element.click()
+            try:
+                element.click()
+            except Exception as click_exc:
+                if "intercepted" not in str(click_exc).lower():
+                    raise
+                driver = _require_driver()
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center',inline:'center'})",
+                    element,
+                )
+                time.sleep(0.3)
+                try:
+                    element.click()
+                except Exception as retry_exc:
+                    if "intercepted" not in str(retry_exc).lower():
+                        raise
+                    blocker_info = driver.execute_script("""
+                        var rect = arguments[0].getBoundingClientRect();
+                        var cx = rect.x + rect.width / 2;
+                        var cy = rect.y + rect.height / 2;
+                        var top = document.elementFromPoint(cx, cy);
+                        if (!top || top === arguments[0]) return null;
+                        var tag = top.tagName.toLowerCase();
+                        var cls = top.className ? ('.' + String(top.className).split(' ')[0]) : '';
+                        var id = top.id ? ('#' + top.id) : '';
+                        return tag + id + cls;
+                    """, element)
+                    msg = f"Click intercepted on '{ref}'"
+                    if blocker_info:
+                        msg += f" by <{blocker_info}>"
+                    msg += ". Try closing overlays or scrolling."
+                    raise AppiumCliError(msg) from retry_exc
             time.sleep(0.5)
             return _ok()
         _require_driver().execute_script("mobile: clickGesture", _gesture_target(ref))
         time.sleep(0.5)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def click(ref: str) -> str:
@@ -176,7 +208,7 @@ def type_text(ref: str, text: str, submit: bool = False, slowly: bool = False) -
     try:
         element = _resolve_element(ref)
         if isinstance(element, _CoordinateElement):
-            return _failed(f"ref '{ref}' resolved to coordinates only; type_text requires a real element")
+            raise AppiumCliError(f"ref '{ref}' resolved to coordinates only; type_text requires a real element")
         web = _is_web_target(ref)
         if web:
             if slowly:
@@ -188,12 +220,9 @@ def type_text(ref: str, text: str, submit: bool = False, slowly: bool = False) -
             else:
                 element.clear()
                 element.send_keys(text)
-                if submit:
-                    try:
-                        element.submit()
-                    except Exception:
-                        from selenium.webdriver.common.keys import Keys
-                        element.send_keys(Keys.ENTER)
+            if submit:
+                from selenium.webdriver.common.keys import Keys
+                element.send_keys(Keys.ENTER)
         else:
             element.click()
             try:
@@ -206,11 +235,11 @@ def type_text(ref: str, text: str, submit: bool = False, slowly: bool = False) -
         time.sleep(0.5)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def fill(ref: str, text: str, submit: bool = False, slowly: bool = False) -> str:
@@ -223,7 +252,7 @@ def select(ref: str, value: str, by: str = "value") -> str:
     try:
         element = _resolve_element(ref)
         if isinstance(element, _CoordinateElement):
-            return _failed("select requires a real element, not coordinates")
+            raise AppiumCliError("select requires a real element, not coordinates")
 
         from selenium.webdriver.support.ui import Select
         sel = Select(element)
@@ -234,16 +263,16 @@ def select(ref: str, value: str, by: str = "value") -> str:
         elif by == "index":
             sel.select_by_index(int(value))
         else:
-            return _failed(f"Unknown select method: '{by}'. Use value, label, or index.")
+            raise AppiumCliError(f"Unknown select method: '{by}'. Use value, label, or index.")
 
         time.sleep(0.3)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def select_option(ref: str, text: str, timeout: float = 3.0, exact: bool = True) -> str:
@@ -251,7 +280,7 @@ def select_option(ref: str, text: str, timeout: float = 3.0, exact: bool = True)
     try:
         element = _resolve_element(ref)
         if isinstance(element, _CoordinateElement):
-            return _failed("select_option requires a real element, not coordinates")
+            raise AppiumCliError("select_option requires a real element, not coordinates")
         driver = _require_driver()
 
         # Check if this is a native <select>
@@ -267,51 +296,57 @@ def select_option(ref: str, text: str, timeout: float = 3.0, exact: bool = True)
 
         # Custom dropdown: click to open
         element.click()
-        time.sleep(0.5)
 
-        # Search for the option via JS
-        found = driver.execute_script("""
-            var text = arguments[0];
-            var exact = arguments[1];
-            var selectors = [
-                '[role="option"]',
-                '[class*="option"]',
-                '[id*="-option-"]',
-                '.dropdown-item',
-                'li[role="menuitem"]'
-            ];
-            var candidates = document.querySelectorAll(selectors.join(','));
-            var available = [];
-            for (var i = 0; i < candidates.length; i++) {
-                var el = candidates[i];
-                if (el.offsetParent === null) continue;
-                var t = el.innerText.trim();
-                if (!t) continue;
-                if (exact ? (t === text) : (t.indexOf(text) !== -1)) {
-                    el.click();
-                    return {found: true};
-                }
-                if (available.length < 10) available.push(t);
-            }
-            return {found: false, available: available};
-        """, text, exact)
-
-        if found and found.get("found"):
+        # Poll for option appearance with timeout
+        deadline = time.monotonic() + max(timeout, 0)
+        found = None
+        while True:
             time.sleep(0.3)
-            return _ok()
+            found = driver.execute_script("""
+                var text = arguments[0];
+                var exact = arguments[1];
+                var selectors = [
+                    '[role="option"]',
+                    '[class*="option"]',
+                    '[id*="-option-"]',
+                    '.dropdown-item',
+                    'li[role="menuitem"]'
+                ];
+                var candidates = document.querySelectorAll(selectors.join(','));
+                var available = [];
+                for (var i = 0; i < candidates.length; i++) {
+                    var el = candidates[i];
+                    if (el.offsetParent === null) continue;
+                    var t = el.innerText.trim();
+                    if (!t) continue;
+                    if (exact ? (t === text) : (t.indexOf(text) !== -1)) {
+                        el.click();
+                        return {found: true};
+                    }
+                    if (available.length < 10) available.push(t);
+                }
+                return {found: false, available: available};
+            """, text, exact)
+
+            if found and found.get("found"):
+                time.sleep(0.3)
+                return _ok()
+
+            if time.monotonic() >= deadline:
+                break
 
         available = found.get("available", []) if found else []
         hint = f" Available: {', '.join(available)}" if available else ""
-        return _failed(
-            f"Option '{text}' not found in dropdown.{hint} "
+        raise AppiumCliError(
+            f"Option '{text}' not found in dropdown after {timeout}s.{hint} "
             "Try web_query('[role=option],[class*=option]') to see options."
         )
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 _MONTH_NAMES = {
@@ -347,7 +382,7 @@ def set_date(ref: str, date: str) -> str:
     """Set a date value on an input element, supporting react-datepicker and native date inputs."""
     parsed = _parse_date(date)
     if parsed is None:
-        return _failed(
+        raise AppiumCliError(
             f"Cannot parse date '{date}'. "
             "Supported formats: '15 May 1990', '1990-05-15', '05/15/1990'."
         )
@@ -355,7 +390,7 @@ def set_date(ref: str, date: str) -> str:
     try:
         element = _resolve_element(ref)
         if isinstance(element, _CoordinateElement):
-            return _failed("set_date requires a real element, not coordinates")
+            raise AppiumCliError("set_date requires a real element, not coordinates")
         driver = _require_driver()
 
         # Determine input type
@@ -387,17 +422,17 @@ def set_date(ref: str, date: str) -> str:
         time.sleep(0.3)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def scroll(direction: str, ref: str = "", percent: float = 0.8) -> str:
     try:
         if direction not in _SCROLL_DIRECTION_REVERSE:
-            return _failed("direction must be one of: up, down, left, right")
+            raise AppiumCliError("direction must be one of: up, down, left, right")
 
         # Web context scroll via JS
         if (ref and _is_web_target(ref)) or (not ref and is_web_context(state.current_context)):
@@ -413,11 +448,11 @@ def scroll(direction: str, ref: str = "", percent: float = 0.8) -> str:
         ctx = _ref_context(ref) if ref else state.current_context
         return _ok(f"OK\ncan_scroll_more: {can_scroll_more}")
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def _web_scroll(direction: str, ref: str, percent: float) -> str:
@@ -452,7 +487,7 @@ def _web_scroll(direction: str, ref: str, percent: float) -> str:
 def swipe(direction: str, ref: str = "", percent: float = 0.8) -> str:
     try:
         if direction not in _SCROLL_DIRECTION_REVERSE:
-            return _failed("direction must be one of: up, down, left, right")
+            raise AppiumCliError("direction must be one of: up, down, left, right")
         if (ref and _is_web_target(ref)) or (not ref and is_web_context(state.current_context)):
             _require_native_context("swipe")
         params: dict[str, Any] = {"direction": direction, "percent": min(percent, 1.0)}
@@ -464,11 +499,11 @@ def swipe(direction: str, ref: str = "", percent: float = 0.8) -> str:
         time.sleep(0.5)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def press_key(key: str) -> str:
@@ -476,13 +511,13 @@ def press_key(key: str) -> str:
     if is_web_context(ctx):
         return _web_press_key(key)
     if key not in _KEYCODE_MAP:
-        return _failed(f"unknown key '{key}'. Use one of: {', '.join(sorted(_KEYCODE_MAP))}")
+        raise AppiumCliError(f"unknown key '{key}'. Use one of: {', '.join(sorted(_KEYCODE_MAP))}")
     try:
         _require_driver().press_keycode(_KEYCODE_MAP[key])
         time.sleep(0.5)
         return _ok()
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def _web_press_key(key: str) -> str:
@@ -500,7 +535,7 @@ def _web_press_key(key: str) -> str:
             attr = key.upper().replace(" ", "_")
             w3c_val = getattr(Keys, attr, None)
             if w3c_val is None:
-                return _failed(
+                raise AppiumCliError(
                     f"unknown W3C key '{key}'. Use one of: "
                     f"{', '.join(sorted(_W3C_KEY_MAP))} or a single character."
                 )
@@ -510,7 +545,7 @@ def _web_press_key(key: str) -> str:
         time.sleep(0.5)
         return _ok()
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def wait(seconds: float = 1.0) -> str:
@@ -531,11 +566,11 @@ def long_press(ref: str, duration: int = 500) -> str:
         time.sleep(0.5)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def double_tap(ref: str) -> str:
@@ -549,11 +584,11 @@ def double_tap(ref: str) -> str:
         time.sleep(0.5)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def drag(ref: str, end_x: int, end_y: int, speed: int | None = None) -> str:
@@ -571,11 +606,11 @@ def drag(ref: str, end_x: int, end_y: int, speed: int | None = None) -> str:
         time.sleep(0.5)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
@@ -596,11 +631,11 @@ def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
         time.sleep(0.5)
         return _ok(f"OK\ncan_scroll_more: {can_scroll_more}")
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def pinch_open(ref: str, percent: float = 0.5, speed: int | None = None) -> str:
@@ -631,9 +666,9 @@ def _pinch(script: str, ref: str, percent: float, speed: int | None) -> str:
         time.sleep(0.5)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def web_eval(script: str, ref: str = "") -> str:
@@ -648,7 +683,7 @@ def web_eval(script: str, ref: str = "") -> str:
         if ref:
             element = _resolve_element(ref)
             if isinstance(element, _CoordinateElement):
-                return _failed("web_eval ref must be a real element, not coordinates")
+                raise AppiumCliError("web_eval ref must be a real element, not coordinates")
             result = driver.execute_script(script, element)
         else:
             result = driver.execute_script(script)
@@ -656,9 +691,9 @@ def web_eval(script: str, ref: str = "") -> str:
             return "null"
         return str(result)
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def file_upload(ref: str, path: str) -> str:
@@ -669,7 +704,7 @@ def file_upload(ref: str, path: str) -> str:
     try:
         element = _resolve_element(ref)
         if isinstance(element, _CoordinateElement):
-            return _failed("file_upload requires a real element, not coordinates")
+            raise AppiumCliError("file_upload requires a real element, not coordinates")
         driver = _require_driver()
 
         local_path = os.path.expanduser(path)
@@ -687,11 +722,11 @@ def file_upload(ref: str, path: str) -> str:
         time.sleep(0.3)
         return _ok()
     except ElementNotFoundError as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
         raise
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
 
 def wait_for(
@@ -705,7 +740,7 @@ def wait_for(
     driver = _require_driver()
 
     if not text and not gone and not ref:
-        return _failed("Specify --text, --gone, or --ref.")
+        raise AppiumCliError("Specify --text, --gone, or --ref.")
 
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
@@ -745,15 +780,15 @@ def wait_for(
                 wait.until(lambda d: _try_resolve_visible(ref, d))
                 return _ok(f"Element '{ref}' is visible")
             else:
-                return _failed(f"Ref '{ref}' not found in current snapshot. Take a new snapshot first.")
+                raise AppiumCliError(f"Ref '{ref}' not found in current snapshot. Take a new snapshot first.")
 
-    except TimeoutException:
+    except TimeoutException as exc:
         target = text or gone or ref
-        return _failed(f"Timed out after {timeout}s waiting for '{target}'")
+        raise AppiumCliError(f"Timed out after {timeout}s waiting for '{target}'") from exc
     except Exception as exc:
-        return _failed(str(exc))
+        raise AppiumCliError(str(exc)) from exc
 
-    return _failed("No wait condition specified")
+    raise AppiumCliError("No wait condition specified")
 
 
 def _try_resolve_visible(ref: str, driver: Any) -> bool:

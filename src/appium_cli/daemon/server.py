@@ -28,10 +28,13 @@ def _default_handler(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _response(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
+    text = result.get("text", "")
+    if isinstance(text, str) and text.startswith("FAILED:"):
+        return {"id": request_id, "ok": False, "error": text, "exit_code": exit_codes.GENERAL_ERROR}
     return {
         "id": request_id,
         "ok": True,
-        "text": result.get("text", ""),
+        "text": text,
         "data": result.get("data", {}),
     }
 
