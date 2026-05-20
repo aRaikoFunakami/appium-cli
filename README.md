@@ -57,6 +57,29 @@ appium-cli session stop
 
 `server stop` only stops an Appium server started by `appium-cli`. Externally started Appium servers are reused but never killed.
 
+### Remote ADB server (containerized / cross-host setups)
+
+When `appium-cli` runs inside a container or VM while the Android device is attached to a different host (for example on Apple Silicon + Colima, where USB cannot be passed into the Linux VM), set the following environment variables before `appium-cli session start` so the Appium server is told to reach `adb` over TCP instead of localhost:
+
+| Variable | Maps to W3C capability | Example |
+|---|---|---|
+| `APPIUM_REMOTE_ADB_HOST` | `appium:remoteAdbHost` | `host.docker.internal` |
+| `APPIUM_REMOTE_ADB_PORT` | `appium:adbPort`       | `5037` |
+
+```bash
+# On the host: expose adb on all interfaces
+adb kill-server
+adb -a -P 5037 nodaemon server &
+
+# Inside the container
+export APPIUM_REMOTE_ADB_HOST=host.docker.internal
+export APPIUM_REMOTE_ADB_PORT=5037
+appium-cli server start --port 4723
+appium-cli session start --udid <serial>
+```
+
+Both variables are optional and have no effect when unset; existing local-only setups are unchanged.
+
 ### Chrome/WebView Chromedriver autodownload
 
 For Chrome or WebView automation, Appium must be able to find a Chromedriver that matches the device's Chrome/WebView version. When `appium-cli server start` starts a new Appium server, Chromedriver autodownload is enabled by default using the Appium 3-compatible insecure feature name `uiautomator2:chromedriver_autodownload`.

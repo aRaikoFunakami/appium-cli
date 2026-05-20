@@ -47,6 +47,19 @@ def _create_driver(server_url: str, udid: str | None, *, enable_network_log: boo
     if udid:
         options.set_capability("appium:udid", udid)
         options.set_capability("appium:deviceName", udid)
+    # Optional: route adb traffic through a remote adb server (e.g. when running
+    # inside a container while the device is attached to the host). When set,
+    # these are forwarded to the Appium server as W3C capabilities so that
+    # appium-uiautomator2-driver uses the remote adb server instead of localhost.
+    remote_adb_host = os.environ.get("APPIUM_REMOTE_ADB_HOST")
+    remote_adb_port = os.environ.get("APPIUM_REMOTE_ADB_PORT")
+    if remote_adb_host:
+        options.set_capability("appium:remoteAdbHost", remote_adb_host)
+    if remote_adb_port:
+        try:
+            options.set_capability("appium:adbPort", int(remote_adb_port))
+        except ValueError:
+            pass
     if enable_network_log:
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
     return webdriver.Remote(server_url, options=options)
