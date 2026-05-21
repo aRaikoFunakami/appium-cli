@@ -175,6 +175,18 @@ appium-cli get_device_info
 
 `doctor` is read-only. `server stop` only stops Appium servers started by `appium-cli`.
 
+### External / host-side Appium server
+
+`session start` can connect to an Appium server that is not local. Use either a CLI flag or the `APPIUM_SERVER_URL` env var:
+
+```bash
+appium-cli session start --server-url http://host.docker.internal:4723
+# or
+APPIUM_SERVER_URL=http://host.docker.internal:4723 appium-cli session start
+```
+
+External servers are treated as ownership `external` and are never stopped by `appium-cli`. This is the recommended way to run Chrome/WebView automation on Apple Silicon Mac with an arm64 Linux devcontainer (see [WebView and Chrome](references/webview.md) for why arm64 Linux Docker cannot launch ChromeDriver locally).
+
 ## Launch a known app
 
 When you already know the package id of the target app (e.g. `com.android.chrome`), launch it directly with `activate_app` instead of taking a launcher/home-screen snapshot and tapping the app label. App icons on the launcher often surface only as text refs that are not actionable, which leads to wasted snapshot loops.

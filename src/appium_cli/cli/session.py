@@ -10,10 +10,16 @@ import sys
 import time
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlparse
 
 import typer
 
-from appium_cli.cli.server import start_server
+from appium_cli.cli.server import (
+    DEFAULT_PORT,
+    ServerState,
+    resolve_external_url,
+    start_server,
+)
 from appium_cli.daemon.client import request
 from appium_cli.utils import exit_codes
 from appium_cli.utils.adb import list_android_devices
@@ -93,6 +99,39 @@ def _select_udid(explicit_udid: str | None) -> str:
     return devices[0].udid
 
 
+def _validate_external_url(value: str) -> str:
+    """Validate and normalize an external Appium server URL."""
+    try:
+        parsed = urlparse(value)
+    except Exception as exc:
+        raise ValueError(f"Invalid server URL: {value}") from exc
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"Invalid server URL '{value}': scheme must be http:// or https://"
+        )
+    if not parsed.hostname:
+        raise ValueError(f"Invalid server URL '{value}': missing host")
+    return value.rstrip("/")
+
+
+def _extract_port(url: str) -> int:
+    try:
+        parsed = urlparse(url)
+        if parsed.port:
+            return parsed.port
+        return 443 if parsed.scheme == "https" else 80
+    except Exception:
+        return DEFAULT_PORT
+
+
+def _is_loopback_url(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        return False
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
 @app.command("status")
 def status(
     json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
@@ -130,7 +169,14 @@ def status(
 
 @app.command("start")
 def start(
-    port: Annotated[int, typer.Option("--port", help="Appium server port.")] = 4723,
+    port: Annotated[int | None, typer.Option("--port", help="Appium server port (local mode).")] = None,
+    server_url: Annotated[
+        str | None,
+        typer.Option(
+            "--server-url",
+            help="Connect to an external Appium server (e.g. http://host.docker.internal:4723). Overrides --port and APPIUM_SERVER_URL.",
+        ),
+    ] = None,
     udid: Annotated[str | None, typer.Option("--udid", help="Android device UDID.")] = None,
     allow_adb_shell: Annotated[
         bool,
@@ -157,6 +203,32 @@ def start(
         typer.echo("Session daemon is already running.")
         return
 
+    # Resolve effective server location with precedence:
+    #   1. explicit --server-url
+    #   2. explicit --port (local)
+    #   3. APPIUM_SERVER_URL env (external)
+    #   4. default local port 4723
+    effective_url: str | None = None
+    if server_url is not None:
+        if port is not None:
+            typer.echo(
+                f"WARNING: --port {port} is ignored because --server-url was supplied.",
+                err=True,
+            )
+        try:
+            effective_url = _validate_external_url(server_url)
+        except ValueError as exc:
+            if json_output:
+                _echo_json({"ok": False, "error": str(exc), "exit_code": exit_codes.GENERAL_ERROR})
+            else:
+                typer.echo(f"ERROR: {exc}", err=True)
+            raise typer.Exit(exit_codes.GENERAL_ERROR) from exc
+    elif port is None:
+        # No explicit --port: honor APPIUM_SERVER_URL env if set.
+        env_url = resolve_external_url()
+        if env_url is not None:
+            effective_url = env_url
+
     app_dir = ensure_app_dir()
     ensure_runtime_dir()
     sid = generate_session_id()
@@ -168,7 +240,18 @@ def start(
         _unlink_safe(session_pid_path())
 
     try:
-        server_state = start_server(port=port, allow_adb_shell=allow_adb_shell)
+        if effective_url is not None:
+            server_state = ServerState(
+                running=True,
+                ownership="external",
+                port=_extract_port(effective_url),
+                url=effective_url,
+                pid=None,
+                shell_capable=None,
+            )
+        else:
+            local_port = port if port is not None else DEFAULT_PORT
+            server_state = start_server(port=local_port, allow_adb_shell=allow_adb_shell)
         selected_udid = _select_udid(udid)
     except Exception as exc:
         if json_output:
@@ -188,7 +271,9 @@ def start(
         "--app-dir",
         str(app_dir.resolve()),
     ]
-    if server_state.ownership == "external":
+    # Only enable adb fallback for self-owned local servers. External hosts
+    # (including host.docker.internal host-Appium) handle adb themselves.
+    if server_state.ownership == "external" and _is_loopback_url(server_state.url):
         command.append("--adb-fallback")
     if enable_network_log:
         command.append("--enable-network-log")

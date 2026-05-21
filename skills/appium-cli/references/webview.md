@@ -184,3 +184,32 @@ diff before.yml after.yml
 WebView automation requires WebView debugging, a compatible Chromedriver, and an Appium server configured for WebView automation. Use `appium-cli webview_status`.
 
 `get_page_source --context=webview` returns raw HTML and can be token-heavy. Use it only when `web_snapshot`, `web_query`, and artifact commands are insufficient.
+
+## Apple Silicon (arm64) macOS + Linux arm64 container
+
+Chrome / WebView automation needs a local ChromeDriver binary on the machine that runs Appium. In an arm64 Linux devcontainer on Apple Silicon Mac this cannot work directly because:
+
+- Google publishes ChromeDriver only for `linux64` (x86_64 Linux), `mac-arm64` (Apple Silicon macOS Mach-O), `mac-x64`, `win32`, `win64`. There is no `linux-arm64` build.
+- The `mac-arm64` binary cannot execute inside any Linux container (Mach-O is not ELF).
+- The `linux64` binary cannot execute in an arm64 Linux container without an x86 emulator. Appium downloads it via autodownload and it fails with `Chromedriver --version exited with code 255`.
+- Native Android (UiAutomator2) is unaffected and keeps working; the failure shows up only when switching context to WebView / fetching `webview_title` / `goto` / `web_query`.
+
+Supported pattern: run Appium on the macOS host (where `mac-arm64` ChromeDriver works), keep the container arm64, and connect through `host.docker.internal`:
+
+```bash
+# On the macOS host (one-time, NOT installed by appium-cli)
+npm install -g appium
+appium driver install uiautomator2
+
+# Start host Appium with insecure features needed for Chrome and shell.
+appium --address 0.0.0.0 --port 4723 \
+  --allow-insecure=uiautomator2:chromedriver_autodownload,uiautomator2:adb_shell
+
+# Inside the arm64 Linux container
+appium-cli session start --server-url http://host.docker.internal:4723
+# or rely on env: APPIUM_SERVER_URL=http://host.docker.internal:4723
+```
+
+Do not enable `APPIUM_REMOTE_ADB_HOST` when Appium runs on the macOS host; that variable is only for the reverse case (Appium inside the container, adb on the host).
+
+Rosetta / amd64 emulated devcontainers are not a supported workaround for this; keep the devcontainer arm64.

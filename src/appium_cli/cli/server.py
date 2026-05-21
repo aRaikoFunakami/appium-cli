@@ -12,12 +12,16 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from shutil import which
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
 import typer
 
 from appium_cli.utils import exit_codes
 from appium_cli.utils.paths import ensure_app_dir, server_log_path, server_state_path
 
+
+DEFAULT_PORT = 4723
+EXTERNAL_URL_ENV = "APPIUM_SERVER_URL"
 
 Ownership = Literal["self", "external", "none"]
 
@@ -39,8 +43,34 @@ def _url(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
+def _status_url_for(base_url: str) -> str:
+    return base_url.rstrip("/") + "/status"
+
+
 def _status_url(port: int) -> str:
-    return f"{_url(port)}/status"
+    return _status_url_for(_url(port))
+
+
+def resolve_external_url() -> str | None:
+    """Return a normalized external Appium URL from APPIUM_SERVER_URL, if set."""
+    raw = os.environ.get(EXTERNAL_URL_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    return raw.rstrip("/")
+
+
+def _url_responds(url: str, timeout: float = 1.0) -> bool:
+    try:
+        with urllib.request.urlopen(_status_url_for(url), timeout=timeout) as response:
+            return 200 <= response.status < 500
+    except (OSError, urllib.error.URLError):
+        return False
 
 
 def _read_state() -> dict:
@@ -83,7 +113,8 @@ def _pid_running(pid: int | None) -> bool:
         return False
 
 
-def get_status(port: int = 4723) -> ServerState:
+def _get_local_status(port: int) -> ServerState:
+    """Status of a local Appium server only (ignores APPIUM_SERVER_URL)."""
     saved = _read_state()
     saved_port = int(saved.get("port", port))
     running = _server_responds(saved_port)
@@ -100,8 +131,31 @@ def get_status(port: int = 4723) -> ServerState:
     return ServerState(running=False, ownership="none", port=port, url=_url(port), shell_capable=None)
 
 
-def start_server(port: int = 4723, allow_adb_shell: bool = True, chromedriver_autodownload: bool = True) -> ServerState:
-    current = get_status(port)
+def get_status(port: int = DEFAULT_PORT) -> ServerState:
+    # If APPIUM_SERVER_URL is set, report the external server's reachability.
+    external_url = resolve_external_url()
+    if external_url is not None:
+        try:
+            parsed = urlparse(external_url)
+            ext_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except Exception:
+            ext_port = port
+        running = _url_responds(external_url)
+        return ServerState(
+            running=running,
+            ownership="external" if running else "none",
+            port=ext_port,
+            url=external_url,
+            pid=None,
+            shell_capable=None,
+        )
+
+    return _get_local_status(port)
+
+
+def start_server(port: int = DEFAULT_PORT, allow_adb_shell: bool = True, chromedriver_autodownload: bool = True) -> ServerState:
+    # start_server is for self-owned local servers; ignore APPIUM_SERVER_URL here.
+    current = _get_local_status(port)
     if current.running:
         _write_state(current)
         return current
@@ -151,7 +205,7 @@ def start_server(port: int = 4723, allow_adb_shell: bool = True, chromedriver_au
 
 @app.command("status")
 def status(
-    port: Annotated[int, typer.Option("--port", help="Appium server port.")] = 4723,
+    port: Annotated[int, typer.Option("--port", help="Appium server port.")] = DEFAULT_PORT,
     json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
     """Show Appium server status."""
@@ -179,7 +233,7 @@ def status(
 
 @app.command("start")
 def start(
-    port: Annotated[int, typer.Option("--port", help="Appium server port.")] = 4723,
+    port: Annotated[int, typer.Option("--port", help="Appium server port.")] = DEFAULT_PORT,
     allow_adb_shell: Annotated[
         bool,
         typer.Option(
@@ -197,6 +251,47 @@ def start(
     json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
     """Start or reuse the singleton Appium server."""
+
+    # Host/external Appium mode: do not start a local server.
+    external_url = resolve_external_url()
+    if external_url is not None:
+        if not _url_responds(external_url):
+            message = (
+                f"External Appium server at {external_url} (from {EXTERNAL_URL_ENV}) "
+                f"is not reachable. Start it on the host first."
+            )
+            if json_output:
+                _echo_json({"ok": False, "error": message, "url": external_url, "exit_code": exit_codes.GENERAL_ERROR})
+            else:
+                typer.echo(f"ERROR: {message}", err=True)
+            raise typer.Exit(exit_codes.GENERAL_ERROR)
+        try:
+            parsed = urlparse(external_url)
+            ext_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except Exception:
+            ext_port = port
+        ext_state = ServerState(
+            running=True,
+            ownership="external",
+            port=ext_port,
+            url=external_url,
+            pid=None,
+            shell_capable=None,
+        )
+        if json_output:
+            _echo_json({
+                "ok": True,
+                "already_running": True,
+                "started": False,
+                "external": True,
+                **_state_payload(ext_state),
+            })
+            return
+        typer.echo(
+            f"Host/external Appium mode detected ({EXTERNAL_URL_ENV}={external_url}); "
+            f"use `appium-cli session start` directly."
+        )
+        return
 
     current = get_status(port)
     try:

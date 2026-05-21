@@ -80,6 +80,75 @@ appium-cli session start --udid <serial>
 
 Both variables are optional and have no effect when unset; existing local-only setups are unchanged.
 
+### External Appium server (host-side / Apple Silicon WebView)
+
+`appium-cli session start` can connect to an Appium server running outside the current host or container. Two equivalent ways:
+
+```bash
+# Via CLI flag
+appium-cli session start --server-url http://host.docker.internal:4723
+
+# Via environment variable (read by session start, server status, and server start)
+export APPIUM_SERVER_URL=http://host.docker.internal:4723
+appium-cli session start
+```
+
+When an external URL is provided:
+
+- `start_server` is not called; the external server is treated as ownership `external` and is never stopped by `appium-cli`.
+- `server status` reports the external URL with `ownership=external` and probes `<URL>/status` for liveness.
+- `server start` becomes a no-op that prints a friendly notice and exits 0 when the external endpoint is reachable; it errors out clearly if the endpoint is unreachable.
+- The session daemon's `--adb-fallback` is *not* enabled for non-loopback external hosts because the host Appium can use its own adb. For loopback external URLs, the fallback is still enabled.
+
+Precedence in `session start`:
+
+1. explicit `--server-url`
+2. explicit `--port` (local mode at that port)
+3. `APPIUM_SERVER_URL` env (external)
+4. default local port `4723`
+
+If both `--server-url` and `--port` are passed, the URL wins and a warning is printed to stderr.
+
+### Apple Silicon (arm64) macOS + Linux arm64 devcontainer: Chrome/WebView
+
+Running Android Chrome / WebView automation from an arm64 Linux devcontainer on an Apple Silicon Mac has a structural constraint that pure Android (native UiAutomator2) does *not* have.
+
+Why native Android automation works in arm64 Linux containers:
+
+- Native Appium + uiautomator2 talks to `adb` and the device-side UiAutomator2 server.
+- Nothing needs a Linux arm64 ChromeDriver, so the container architecture does not matter for native flows.
+
+Why Chrome/WebView automation breaks in arm64 Linux containers:
+
+- For WebView / context switching / `webview_title` / `goto` / `web_query`, Appium must launch a local **ChromeDriver** binary that matches the device's Chrome / WebView version.
+- "Local" means inside the OS where Appium itself runs (the container OS), not the macOS host.
+- Chrome for Testing publishes ChromeDriver for `linux64` (x86_64 Linux), `mac-arm64` (Apple Silicon **macOS**, Mach-O), `mac-x64`, `win32`, `win64`. **There is no `linux-arm64` ChromeDriver build.**
+- The Mach-O `mac-arm64` binary cannot be executed inside any Linux container; macOS executables are not ELF.
+- The `linux64` (x86_64) binary cannot execute in an arm64 Linux container without an x86_64 emulator. With Apple Silicon + arm64 Linux Docker images, this is what Appium downloads, and it fails with errors like `Chromedriver --version exited with code 255`.
+- Result: native Android keeps working, but the moment a flow needs WebView, it fails inside the container.
+
+Supported fix: run Appium on the macOS host (where `mac-arm64` ChromeDriver is valid), keep the agent / `appium-cli` arm64 in the container, and connect them via `host.docker.internal`:
+
+```bash
+# On the macOS host (one-time install: appium and uiautomator2 driver).
+# appium-cli does not install these.
+npm install -g appium
+appium driver install uiautomator2
+
+# Start Appium on the host with the right insecure features.
+appium --address 0.0.0.0 --port 4723 \
+  --allow-insecure=uiautomator2:chromedriver_autodownload,uiautomator2:adb_shell
+
+# From inside the arm64 Linux container.
+appium-cli session start --server-url http://host.docker.internal:4723
+```
+
+Notes:
+
+- Rosetta / amd64 emulated containers are *not* a supported workaround for this; keep the container arm64.
+- Do **not** set `APPIUM_REMOTE_ADB_HOST` when Appium runs on the macOS host, because the host Appium can reach `adb` locally; remote-ADB capabilities are only for the in-container Appium case.
+- `agent-sandbox` automates host Appium lifecycle and devcontainer wiring for this pattern (see its README).
+
 ### Chrome/WebView Chromedriver autodownload
 
 For Chrome or WebView automation, Appium must be able to find a Chromedriver that matches the device's Chrome/WebView version. When `appium-cli server start` starts a new Appium server, Chromedriver autodownload is enabled by default using the Appium 3-compatible insecure feature name `uiautomator2:chromedriver_autodownload`.
