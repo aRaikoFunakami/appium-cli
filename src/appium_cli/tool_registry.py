@@ -124,7 +124,9 @@ _add("snapshot_search",
 
 _add("snapshot_refs",
      "List actionable refs from the latest snapshot. Fast, compact output. "
-     "Use this to discover available refs instead of reading the full tree.",
+     "Use this to discover available refs instead of reading the full tree. "
+     "Not the right tool for launching apps: launcher app icons are often text-only "
+     "and will not appear here. To start a known app, use activate_app <package> instead.",
      parameters=_schema({
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
          "ref": _str_param("Optional ref to show in detail."),

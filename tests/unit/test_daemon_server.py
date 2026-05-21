@@ -86,3 +86,33 @@ def test_response_passes_success_as_ok():
     resp = _response("req-2", {"text": "OK", "data": {}})
     assert resp["ok"] is True
     assert resp["text"] == "OK"
+
+
+def test_serve_raises_clear_error_when_bind_fails(monkeypatch, tmp_path) -> None:
+    """Bind failure surfaces the attempted socket path and underlying error."""
+    import socket as socket_module
+    import pytest as _pytest
+    from appium_cli.daemon.server import serve
+
+    monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: tmp_path)
+    monkeypatch.setenv("APPIUM_CLI_RUNTIME_DIR", str(tmp_path / "runtime"))
+
+    real_socket = socket_module.socket
+
+    class FailingSocket(real_socket):
+        def bind(self, _addr):  # type: ignore[override]
+            raise OSError("Operation not supported")
+
+    monkeypatch.setattr(socket_module, "socket", FailingSocket)
+
+    sock_path = tmp_path / "runtime" / "session.sock"
+    with _pytest.raises(OSError) as exc_info:
+        serve(socket_path=sock_path)
+
+    assert str(sock_path) in str(exc_info.value)
+    assert "virtiofs" in str(exc_info.value)
+
+
+def test_unlink_safe_in_server_module(tmp_path) -> None:
+    from appium_cli.daemon.server import _unlink_safe
+    _unlink_safe(tmp_path / "missing")  # should not raise

@@ -120,18 +120,19 @@ Optionally set `appium:chromedriverExecutableDir` in the session capabilities to
 
 ## Artifact storage
 
-Runtime state and artifacts are stored under a project-local `.appium-cli/` directory (relative to cwd). This directory is `.gitignore`d.
+Persistent artifacts are stored under a project-local `.appium-cli/` directory (relative to cwd). This directory is `.gitignore`d.
 
 ```
 .appium-cli/
 ├── current-session                          # active session id
 ├── server.json / server.log                 # Appium server state
-├── session.sock / session.pid               # daemon IPC
 ├── session-2026-05-04T02-18-02-171Z.log     # CLI invocation log (JSONL)
 └── session-2026-05-04T02-18-02-171Z/        # per-session artifacts
     ├── daemon.log                            # daemon stdout/stderr
     └── screenshot-2026-05-04T02-20-15-033Z.png
 ```
+
+Daemon runtime coordination files (`session.sock`, `session.pid`) live in a per-workspace runtime directory under `/tmp` (`/tmp/.appium-cli-<cwd-hash>/`, mode `0700`). They are kept off the workspace filesystem because Unix domain sockets are unsupported on some bind mounts (notably `virtiofs` in Docker Desktop devcontainers). Set `APPIUM_CLI_RUNTIME_DIR` to override the location.
 
 **Invocation log** (`.log`): Each CLI command appends a JSONL line with timestamp, command, sanitized args, status, exit code, and duration.
 

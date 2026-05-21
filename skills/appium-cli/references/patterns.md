@@ -112,6 +112,24 @@ appium-cli generate_locator web_btn_submit
 
 Use refs first. Use CSS selectors and generated locators as the second layer when refs need explanation or when writing a durable selector for later.
 
+## Launch a known app
+
+Prefer `activate_app <package>` over tapping the app icon on the launcher. App icons on Android launchers are commonly exposed only as text elements, not actionable refs, so snapshot-driven taps will loop.
+
+```bash
+appium-cli activate_app com.android.chrome
+appium-cli snapshot
+appium-cli webview_switch                 # only if doing WebView work
+appium-cli web_snapshot
+```
+
+For an unknown package id:
+
+```bash
+appium-cli list_apps | grep -i chrome
+appium-cli activate_app com.android.chrome
+```
+
 ## Launch or reset an app
 
 ```bash
@@ -136,3 +154,5 @@ appium-cli snapshot
 ```
 
 If the UI is wrong, use `press_key back`, `activate_app`, or `restart_app`, then observe again. Avoid legacy locator fallbacks until snapshot refs, WebView refs, and CSS/locator discovery have failed.
+
+Do not loop on launcher snapshots to find an app icon. If `snapshot_refs` does not return an actionable ref for the app you want to start, switch to `activate_app <package>`.

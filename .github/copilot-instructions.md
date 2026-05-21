@@ -142,8 +142,8 @@ Avoid adding `pydantic`, formatters, linters, or new build tools unless the impl
 
 - Store runtime state in the project-local `.appium-cli/` directory relative to the current working directory.
 - Store server ownership at `.appium-cli/server.json`.
-- Store daemon socket at `.appium-cli/session.sock`.
-- Store daemon pid at `.appium-cli/session.pid`.
+- Store daemon socket at `/tmp/.appium-cli-<cwd-hash>/session.sock` (per-workspace runtime dir, mode 0700). `APPIUM_CLI_RUNTIME_DIR` overrides the location. Kept outside `.appium-cli/` because some bind mounts (e.g. virtiofs in Docker Desktop devcontainers) do not support Unix domain socket operations.
+- Store daemon pid at `/tmp/.appium-cli-<cwd-hash>/session.pid`.
 - `server stop` must only stop a self-owned Appium server.
 - Never kill an externally started Appium server.
 - `server status` should report:

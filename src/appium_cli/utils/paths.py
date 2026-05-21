@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+_RUNTIME_DIR_ENV = "APPIUM_CLI_RUNTIME_DIR"
+_RUNTIME_DIR_PREFIX = ".appium-cli-"
+_RUNTIME_DIR_HASH_LEN = 12
 
 
 def get_app_dir() -> Path:
@@ -20,6 +27,36 @@ def ensure_app_dir() -> Path:
     return d
 
 
+def get_runtime_dir() -> Path:
+    """Return the tmp-backed runtime directory for Unix sockets and PID files.
+
+    Unix domain socket operations (``bind``, ``unlink``, ``stat``) can fail on
+    filesystems such as virtiofs used by Docker Desktop devcontainers, even when
+    regular file IO succeeds. Persistent artifacts stay in the workspace-local
+    ``.appium-cli/`` directory; only the runtime coordination files live here.
+
+    The directory is per-workspace by hashing the resolved cwd, so multiple
+    devcontainers sharing ``/tmp`` do not collide. ``APPIUM_CLI_RUNTIME_DIR``
+    overrides the location for tests and unusual deployments.
+    """
+    override = os.environ.get(_RUNTIME_DIR_ENV)
+    if override:
+        return Path(override)
+    cwd_repr = str(Path.cwd().resolve()).encode("utf-8")
+    digest = hashlib.sha256(cwd_repr).hexdigest()[:_RUNTIME_DIR_HASH_LEN]
+    return Path("/tmp") / f"{_RUNTIME_DIR_PREFIX}{digest}"
+
+
+def ensure_runtime_dir() -> Path:
+    d = get_runtime_dir()
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    return d
+
+
 def server_state_path() -> Path:
     return get_app_dir() / "server.json"
 
@@ -29,11 +66,11 @@ def server_log_path() -> Path:
 
 
 def session_socket_path() -> Path:
-    return get_app_dir() / "session.sock"
+    return get_runtime_dir() / "session.sock"
 
 
 def session_pid_path() -> Path:
-    return get_app_dir() / "session.pid"
+    return get_runtime_dir() / "session.pid"
 
 
 def current_session_path() -> Path:

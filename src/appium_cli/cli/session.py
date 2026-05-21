@@ -21,6 +21,7 @@ from appium_cli.utils.paths import (
     clear_current_session,
     daemon_log_path,
     ensure_app_dir,
+    ensure_runtime_dir,
     generate_session_id,
     read_current_session,
     session_artifact_dir,
@@ -37,6 +38,27 @@ def _echo_json(payload: dict) -> None:
     typer.echo(json.dumps(payload, indent=2))
 
 
+def _path_exists_safe(path: Path) -> bool:
+    """Return True if path exists; treat OSError as not-exists.
+
+    Some filesystems (notably virtiofs on Docker Desktop devcontainers) can
+    raise OSError on stat() of leftover socket entries. Treat those as absent
+    so daemon lifecycle checks remain usable.
+    """
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _unlink_safe(path: Path) -> None:
+    """Unlink a path, ignoring missing-file and unsupported-FS errors."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _pid_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -46,7 +68,7 @@ def _pid_running(pid: int) -> bool:
 
 
 def _daemon_running() -> bool:
-    if not session_socket_path().exists():
+    if not _path_exists_safe(session_socket_path()):
         return False
     try:
         response = request("ping")
@@ -136,13 +158,14 @@ def start(
         return
 
     app_dir = ensure_app_dir()
+    ensure_runtime_dir()
     sid = generate_session_id()
     artifact_dir = session_artifact_dir(sid)
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
-    session_socket_path().unlink(missing_ok=True)
+    _unlink_safe(session_socket_path())
     if (pid := _read_pid()) and not _pid_running(pid):
-        session_pid_path().unlink(missing_ok=True)
+        _unlink_safe(session_pid_path())
 
     try:
         server_state = start_server(port=port, allow_adb_shell=allow_adb_shell)
@@ -231,8 +254,8 @@ def stop(
         if not _pid_running(pid):
             break
         time.sleep(0.2)
-    session_socket_path().unlink(missing_ok=True)
-    session_pid_path().unlink(missing_ok=True)
+    _unlink_safe(session_socket_path())
+    _unlink_safe(session_pid_path())
     clear_current_session()
     if json_output:
         _echo_json({"ok": True, "running": False, "stopped": True, "pid": pid})

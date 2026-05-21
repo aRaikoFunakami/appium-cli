@@ -11,7 +11,12 @@ from typing import Any, Callable
 from appium_cli.daemon import state
 from appium_cli.tools.session import format_driver_status, is_driver_alive
 from appium_cli.utils import exit_codes
-from appium_cli.utils.paths import ensure_app_dir, session_pid_path, session_socket_path
+from appium_cli.utils.paths import (
+    ensure_app_dir,
+    ensure_runtime_dir,
+    session_pid_path,
+    session_socket_path,
+)
 
 
 Handler = Callable[[dict[str, Any]], dict[str, Any]]
@@ -51,6 +56,13 @@ def _send_response(connection: socket.socket, response_payload: dict[str, Any]) 
     return True
 
 
+def _unlink_safe(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def serve(
     socket_path: Path | None = None,
     handler: Handler = _default_handler,
@@ -62,12 +74,21 @@ def serve(
     pid_path = session_pid_path()
 
     ensure_app_dir()
-    socket_path.unlink(missing_ok=True)
+    ensure_runtime_dir()
+    _unlink_safe(socket_path)
     pid_path.write_text(str(os.getpid()), encoding="utf-8")
     shutdown = False
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
-        server.bind(str(socket_path))
+        try:
+            server.bind(str(socket_path))
+        except OSError as exc:
+            _unlink_safe(pid_path)
+            raise OSError(
+                f"Failed to bind Unix domain socket at {socket_path}. "
+                f"Filesystem may not support Unix sockets (e.g. virtiofs). "
+                f"Underlying error: {exc}"
+            ) from exc
         server.listen(8)
         while not shutdown:
             connection, _ = server.accept()
@@ -88,5 +109,5 @@ def serve(
                     response_payload = _error(request_payload.get("id") if request_payload else None, exc)
                 _send_response(connection, response_payload)
 
-    socket_path.unlink(missing_ok=True)
-    pid_path.unlink(missing_ok=True)
+    _unlink_safe(socket_path)
+    _unlink_safe(pid_path)

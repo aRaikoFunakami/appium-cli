@@ -68,3 +68,36 @@ def test_session_status_reports_stopped_when_daemon_request_fails(monkeypatch, c
 
     assert exc_info.value.exit_code == exit_codes.STOPPED
     assert capsys.readouterr().out == "running: false\n"
+
+
+def test_daemon_running_handles_oserror_from_socket_exists(monkeypatch) -> None:
+    """_daemon_running must not crash when socket exists() raises OSError (virtiofs)."""
+    from pathlib import Path
+
+    class FailingPath(type(Path())):
+        def exists(self):  # type: ignore[override]
+            raise OSError("Operation not supported")
+
+    monkeypatch.setattr(
+        session_cli,
+        "session_socket_path",
+        lambda: FailingPath("/nonexistent/session.sock"),
+    )
+
+    assert session_cli._daemon_running() is False
+
+
+def test_unlink_safe_swallows_oserror(monkeypatch, tmp_path) -> None:
+    from pathlib import Path
+
+    class FailingPath(type(Path())):
+        def unlink(self, missing_ok=False):  # type: ignore[override]
+            raise OSError("Operation not supported")
+
+    session_cli._unlink_safe(FailingPath(str(tmp_path / "nope.sock")))
+
+
+def test_path_exists_safe_returns_true_on_real_file(tmp_path) -> None:
+    p = tmp_path / "file"
+    p.write_text("x")
+    assert session_cli._path_exists_safe(p) is True

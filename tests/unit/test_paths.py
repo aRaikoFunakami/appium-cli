@@ -1,17 +1,23 @@
 """Tests for appium_cli.utils.paths helpers."""
 
 import json
+import os
 import re
+from pathlib import Path
 
 from appium_cli.utils.paths import (
     clear_current_session,
+    ensure_runtime_dir,
     generate_snapshot_id,
     generate_session_id,
+    get_runtime_dir,
     latest_snapshot_path,
     read_current_session,
     screenshot_path,
     session_artifact_dir,
     session_log_path,
+    session_pid_path,
+    session_socket_path,
     snapshot_artifact_dir,
     snapshot_artifact_path,
     snapshot_bundle_paths,
@@ -144,3 +150,56 @@ def test_current_session_read_write_clear(monkeypatch, tmp_path):
 
     clear_current_session()
     assert read_current_session() is None
+
+
+def test_runtime_dir_is_tmp_backed_and_workspace_scoped(monkeypatch, tmp_path):
+    """Runtime dir lives under /tmp and varies per resolved cwd."""
+    monkeypatch.delenv("APPIUM_CLI_RUNTIME_DIR", raising=False)
+
+    workspace_a = tmp_path / "ws-a"
+    workspace_a.mkdir()
+    monkeypatch.chdir(workspace_a)
+    dir_a = get_runtime_dir()
+
+    workspace_b = tmp_path / "ws-b"
+    workspace_b.mkdir()
+    monkeypatch.chdir(workspace_b)
+    dir_b = get_runtime_dir()
+
+    assert dir_a.parent == Path("/tmp")
+    assert dir_b.parent == Path("/tmp")
+    assert dir_a.name.startswith(".appium-cli-")
+    assert dir_a != dir_b
+
+
+def test_runtime_dir_env_override(monkeypatch, tmp_path):
+    override = tmp_path / "custom-runtime"
+    monkeypatch.setenv("APPIUM_CLI_RUNTIME_DIR", str(override))
+    assert get_runtime_dir() == override
+
+
+def test_session_socket_and_pid_paths_use_runtime_dir(monkeypatch, tmp_path):
+    override = tmp_path / "runtime"
+    monkeypatch.setenv("APPIUM_CLI_RUNTIME_DIR", str(override))
+    assert session_socket_path() == override / "session.sock"
+    assert session_pid_path() == override / "session.pid"
+
+
+def test_session_socket_path_is_separate_from_app_dir(monkeypatch, tmp_path):
+    """Persistent artifacts stay under get_app_dir; socket moves to runtime dir."""
+    persistent = tmp_path / "ws" / ".appium-cli"
+    runtime = tmp_path / "runtime"
+    monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: persistent)
+    monkeypatch.setenv("APPIUM_CLI_RUNTIME_DIR", str(runtime))
+
+    assert session_socket_path().parent != persistent
+    assert session_pid_path().parent != persistent
+
+
+def test_ensure_runtime_dir_creates_with_0o700(monkeypatch, tmp_path):
+    override = tmp_path / "runtime-perm"
+    monkeypatch.setenv("APPIUM_CLI_RUNTIME_DIR", str(override))
+    d = ensure_runtime_dir()
+    assert d.exists()
+    mode = os.stat(d).st_mode & 0o777
+    assert mode == 0o700

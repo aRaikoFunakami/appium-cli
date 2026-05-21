@@ -175,6 +175,26 @@ appium-cli get_device_info
 
 `doctor` is read-only. `server stop` only stops Appium servers started by `appium-cli`.
 
+## Launch a known app
+
+When you already know the package id of the target app (e.g. `com.android.chrome`), launch it directly with `activate_app` instead of taking a launcher/home-screen snapshot and tapping the app label. App icons on the launcher often surface only as text refs that are not actionable, which leads to wasted snapshot loops.
+
+```bash
+appium-cli activate_app com.android.chrome
+appium-cli snapshot
+```
+
+For WebView work after launching Chrome:
+
+```bash
+appium-cli activate_app com.android.chrome
+appium-cli list_contexts
+appium-cli webview_switch
+appium-cli web_snapshot
+```
+
+If the package id is unknown, use `appium-cli list_apps` to discover it (requires shell capability), then call `activate_app`. Do not loop on launcher snapshots searching for the icon.
+
 ## Important rules
 
 - Keep `--raw` global: `appium-cli --raw snapshot`, not after the command.
