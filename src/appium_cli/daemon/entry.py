@@ -62,6 +62,8 @@ def _create_driver(server_url: str, udid: str | None, *, enable_network_log: boo
             pass
     if enable_network_log:
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+    adb_exec_timeout = int(os.environ.get("APPIUM_ADB_EXEC_TIMEOUT", "60000"))
+    options.set_capability("appium:adbExecTimeout", adb_exec_timeout)
     return webdriver.Remote(server_url, options=options)
 
 
