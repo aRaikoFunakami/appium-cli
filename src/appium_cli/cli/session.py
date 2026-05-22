@@ -73,6 +73,22 @@ def _pid_running(pid: int) -> bool:
         return False
 
 
+def _kill_pid(pid: int) -> None:
+    """Terminate *pid* gracefully (SIGTERM) then forcefully (SIGKILL)."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.time() + 3
+    while _pid_running(pid) and time.time() < deadline:
+        time.sleep(0.1)
+    if _pid_running(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
 def _daemon_running() -> bool:
     if not _path_exists_safe(session_socket_path()):
         return False
@@ -244,7 +260,13 @@ def start(
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     _unlink_safe(session_socket_path())
-    if (pid := _read_pid()) and not _pid_running(pid):
+    if existing_pid := _read_pid():
+        if _pid_running(existing_pid):
+            # An orphaned daemon is alive but not responding on the socket
+            # (e.g. stuck in driver.quit() after a prior webview ADB timeout).
+            # Kill it before starting a new daemon to prevent two daemons from
+            # racing on the same Appium server.
+            _kill_pid(existing_pid)
         _unlink_safe(session_pid_path())
 
     try:
@@ -354,18 +376,7 @@ def stop(
     # orphaned daemon keeps running and races with any subsequent session start,
     # which can crash the host Appium server.
     if pid and _pid_running(pid):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-        kill_deadline = time.time() + 3
-        while _pid_running(pid) and time.time() < kill_deadline:
-            time.sleep(0.1)
-        if _pid_running(pid):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
+        _kill_pid(pid)
 
     _unlink_safe(session_socket_path())
     _unlink_safe(session_pid_path())
