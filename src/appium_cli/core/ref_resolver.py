@@ -149,8 +149,10 @@ class RefResolver:
         Flow:
         1. If ref's context differs from driver's current context, switch
         2. Try strategies in order
-        3. After finding an element, verify bounds (+-20px)
-        4. If bounds mismatch, try next strategy
+        3. For Web strategies that may match multiple elements (css selector,
+           xpath, link text, partial link text, tag name), enumerate ALL
+           candidates via find_elements and pick the one whose bounds match.
+        4. If bounds mismatch on all candidates, try next strategy
         5. All failed -> ElementNotFoundError
 
         Args:
@@ -175,18 +177,24 @@ class RefResolver:
 
         for strategy in entry.strategies:
             try:
-                element = self._find_by_strategy(driver, strategy)
-                if element is None:
+                candidates = self._find_candidates(driver, strategy)
+                if not candidates:
                     errors.append(f"{strategy.by}={strategy.value}: not found")
                     continue
 
-                if self._verify_bounds(element, entry.expected_bounds):
-                    logger.info(
-                        f"ref '{ref}' resolved via {strategy.by}={strategy.value}"
-                    )
-                    return element
-                else:
-                    errors.append(f"{strategy.by}={strategy.value}: bounds mismatch")
+                # Check bounds on all candidates
+                for element in candidates:
+                    if self._verify_bounds(element, entry.expected_bounds):
+                        logger.info(
+                            f"ref '{ref}' resolved via {strategy.by}={strategy.value}"
+                            f" (checked {len(candidates)} candidate(s))"
+                        )
+                        return element
+
+                errors.append(
+                    f"{strategy.by}={strategy.value}: bounds mismatch"
+                    f" ({len(candidates)} candidate(s) checked)"
+                )
             except Exception as e:
                 errors.append(f"{strategy.by}={strategy.value}: {e}")
 
@@ -389,6 +397,70 @@ class RefResolver:
                 driver.switch_to.context(context)
             except Exception as exc:
                 logger.warning("Failed to switch to context %s: %s", context, exc)
+
+    @staticmethod
+    def _find_candidates(driver: Any, strategy: LocatorStrategy) -> list[Any]:
+        """Find all candidate elements for a strategy.
+
+        For strategies that may match multiple elements (css selector, xpath,
+        link text, partial link text, tag name), returns all matches so the
+        caller can verify bounds on each. For native id/accessibility_id and
+        coordinates, returns a single-element list.
+        """
+        by = strategy.by
+        value = strategy.value
+
+        if by == "id":
+            try:
+                return [driver.find_element(AppiumBy.ID, value)]
+            except Exception:
+                return []
+
+        if by == "accessibility_id":
+            try:
+                return [driver.find_element(AppiumBy.ACCESSIBILITY_ID, value)]
+            except Exception:
+                return []
+
+        if by == "xpath":
+            try:
+                return driver.find_elements(AppiumBy.XPATH, value) or []
+            except Exception:
+                return []
+
+        if by == "css selector":
+            try:
+                return driver.find_elements(By.CSS_SELECTOR, value) or []
+            except Exception:
+                return []
+
+        if by == "link text":
+            try:
+                return driver.find_elements(By.LINK_TEXT, value) or []
+            except Exception:
+                return []
+
+        if by == "partial link text":
+            try:
+                return driver.find_elements(By.PARTIAL_LINK_TEXT, value) or []
+            except Exception:
+                return []
+
+        if by == "tag name":
+            try:
+                return driver.find_elements(By.TAG_NAME, value) or []
+            except Exception:
+                return []
+
+        if by == "coordinates":
+            try:
+                parts = value.split(",")
+                x, y = int(parts[0]), int(parts[1])
+                return [_CoordinateElement(x, y, driver)]
+            except Exception:
+                return []
+
+        return []
 
     @staticmethod
     def _find_by_strategy(driver: Any, strategy: LocatorStrategy) -> Any | None:

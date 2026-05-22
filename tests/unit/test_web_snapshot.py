@@ -372,6 +372,148 @@ class TestWebSnapshotGeneratorFromDom:
         assert len(css_strategies) == 1
         assert css_strategies[0].value == "#btn1"
 
+    def test_duplicate_id_with_unique_css_generates_unique_selectors(self):
+        """When DOM extraction provides unique css selectors for duplicate-id elements,
+        _build_strategies should preserve them."""
+        tree = {
+            "tag": "body",
+            "role": "document",
+            "children": [
+                {
+                    "tag": "form",
+                    "name": "search",
+                    "role": "form",
+                    "children": [
+                        {
+                            "tag": "input",
+                            "id": "query_input",
+                            "type": "text",
+                            "name": "",
+                            "css": 'form[name="search"] input[name="from"]',
+                            "bounds": {"x1": 237, "y1": 468, "x2": 465, "y2": 504},
+                            "children": [],
+                        },
+                        {
+                            "tag": "input",
+                            "id": "query_input",
+                            "type": "text",
+                            "name": "",
+                            "css": 'form[name="search"] input[name="to"]',
+                            "bounds": {"x1": 552, "y1": 468, "x2": 780, "y2": 504},
+                            "children": [],
+                        },
+                        {
+                            "tag": "input",
+                            "id": "query_input",
+                            "type": "text",
+                            "name": "",
+                            "css": 'form[name="search"] input[name="via01"]',
+                            "bounds": {"x1": 394, "y1": 514, "x2": 623, "y2": 540},
+                            "children": [],
+                        },
+                    ],
+                }
+            ],
+        }
+        _, ref_map = self.gen.generate_from_dom(tree, "CHROMIUM")
+
+        # All three refs should exist
+        assert "web_query_input" in ref_map
+        assert "web_query_input_2" in ref_map
+        assert "web_query_input_3" in ref_map
+
+        # Each CSS selector should be distinct (not all #query_input)
+        css_values = set()
+        for ref_name in ["web_query_input", "web_query_input_2", "web_query_input_3"]:
+            entry = ref_map[ref_name]
+            css_strats = [s for s in entry.strategies if s.by == "css selector"]
+            assert len(css_strats) == 1, f"{ref_name} should have exactly one CSS strategy"
+            css_values.add(css_strats[0].value)
+
+        # All three selectors must be different
+        assert len(css_values) == 3, (
+            f"Expected 3 unique CSS selectors but got {len(css_values)}: {css_values}"
+        )
+        # None should be plain #query_input (duplicate id)
+        assert "#query_input" not in css_values
+
+    def test_duplicate_id_without_unique_css_still_produces_distinct_selectors(self):
+        """When the DOM extraction gives duplicate CSS (simulating the old cssFor behavior),
+        the Python-side _build_strategies cannot de-duplicate them because it only
+        receives the pre-computed css field. The actual fix is in the browser-side
+        DOM_EXTRACTION_SCRIPT cssFor() function which now generates form-scoped selectors.
+
+        This test verifies that when cssFor produces form-scoped selectors
+        (as the new JS code does for duplicate IDs with name attributes),
+        each ref gets a unique CSS strategy.
+        """
+        # Simulate what the IMPROVED cssFor produces for Yahoo Transit inputs:
+        # form[name="search"] input[name="from"], etc.
+        tree = {
+            "tag": "body",
+            "role": "document",
+            "children": [
+                {
+                    "tag": "form",
+                    "name": "search",
+                    "role": "form",
+                    "css": 'form[name="search"]',
+                    "children": [
+                        {
+                            "tag": "input",
+                            "id": "query_input",
+                            "type": "text",
+                            "name": "",
+                            "css": 'form[name="search"] input[name="from"]',
+                            "attr_name": "from",
+                            "bounds": {"x1": 237, "y1": 468, "x2": 465, "y2": 504},
+                            "children": [],
+                        },
+                        {
+                            "tag": "input",
+                            "id": "query_input",
+                            "type": "text",
+                            "name": "",
+                            "css": 'form[name="search"] input[name="to"]',
+                            "attr_name": "to",
+                            "bounds": {"x1": 552, "y1": 468, "x2": 780, "y2": 504},
+                            "children": [],
+                        },
+                        {
+                            "tag": "input",
+                            "id": "query_input",
+                            "type": "text",
+                            "name": "",
+                            "css": 'form[name="search"] input[name="via01"]',
+                            "attr_name": "via01",
+                            "bounds": {"x1": 394, "y1": 514, "x2": 623, "y2": 540},
+                            "children": [],
+                        },
+                    ],
+                }
+            ],
+        }
+        _, ref_map = self.gen.generate_from_dom(tree, "CHROMIUM")
+
+        # All three refs should exist
+        assert "web_query_input" in ref_map
+        assert "web_query_input_2" in ref_map
+        assert "web_query_input_3" in ref_map
+
+        # Each CSS selector should be distinct
+        css_values = []
+        for ref_name in ["web_query_input", "web_query_input_2", "web_query_input_3"]:
+            entry = ref_map[ref_name]
+            css_strats = [s for s in entry.strategies if s.by == "css selector"]
+            if css_strats:
+                css_values.append(css_strats[0].value)
+
+        # With the improved cssFor, each selector is unique
+        assert len(set(css_values)) == 3, (
+            f"Expected 3 unique CSS selectors but got {len(set(css_values))}: {css_values}. "
+            "The cssFor function should produce form-scoped selectors for duplicate IDs."
+        )
+
     def test_named_role_gets_xpath_strategy(self):
         tree = {
             "tag": "body",

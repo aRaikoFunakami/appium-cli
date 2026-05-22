@@ -114,7 +114,31 @@ return (function(selector, attrs, limit) {
     }
     function generatedSelector(el) {
         var tag = el.tagName.toLowerCase();
-        if (el.id) return '#' + esc(el.id);
+        if (el.id) {
+            var sameId = document.querySelectorAll('#' + esc(el.id));
+            if (sameId.length === 1) return '#' + esc(el.id);
+            // Duplicate id: try form-scoped or name-based selector
+            var elName = el.getAttribute('name') || '';
+            if (elName) {
+                var form = el.closest('form');
+                if (form) {
+                    var formSel = form.id ? 'form#' + esc(form.id)
+                        : form.getAttribute('name') ? 'form[name="' + quoteAttr(form.getAttribute('name')) + '"]'
+                        : 'form';
+                    return formSel + ' ' + tag + '[name="' + quoteAttr(elName) + '"]';
+                }
+                return tag + '[name="' + quoteAttr(elName) + '"]';
+            }
+            // No name: use nth-of-type within parent
+            var parent = el.parentElement;
+            if (parent) {
+                var siblings = parent.querySelectorAll('#' + esc(el.id));
+                for (var idx = 0; idx < siblings.length; idx++) {
+                    if (siblings[idx] === el) return '#' + esc(el.id) + ':nth-of-type(' + (idx + 1) + ')';
+                }
+            }
+            return '#' + esc(el.id);
+        }
         var testId = el.getAttribute('data-testid') || '';
         if (testId) return '[data-testid="' + quoteAttr(testId) + '"]';
         if (el.getAttribute('name')) return tag + '[name="' + quoteAttr(el.getAttribute('name')) + '"]';

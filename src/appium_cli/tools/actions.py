@@ -208,7 +208,12 @@ def type_text(ref: str, text: str, submit: bool = False, slowly: bool = False) -
     try:
         element = _resolve_element(ref)
         if isinstance(element, _CoordinateElement):
-            raise AppiumCliError(f"ref '{ref}' resolved to coordinates only; type_text requires a real element")
+            raise AppiumCliError(
+                f"ref '{ref}' resolved to coordinates only; type_text/fill requires a real element. "
+                "This usually means the element's CSS selector matches multiple DOM nodes "
+                "and none matched the expected bounds. Run 'appium-cli snapshot' or "
+                "'appium-cli web_snapshot' to refresh refs, then retry with the new ref."
+            )
         web = _is_web_target(ref)
         if web:
             if slowly:

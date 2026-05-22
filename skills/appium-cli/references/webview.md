@@ -114,6 +114,17 @@ appium-cli web_eval "el.value" web_search
 
 Use `web_eval` for diagnostics and attribute reads. Prefer ref actions for normal interaction.
 
+> **Warning — do NOT use `web_eval` to set form input values.**
+> Assigning `el.value = "..."` via JavaScript does not trigger the browser's internal input events (e.g. `input`, `change`, `compositionend`). Sites with autocomplete, React/Vue controlled inputs, or custom form serialization will ignore DOM-level value changes. Always use `fill` to type into inputs — it calls `clear()` + `send_keys()` which fires native input events correctly.
+>
+> ```bash
+> # WRONG — value may be ignored by the site
+> appium-cli web_eval "el.value = '秋葉原'" web_query_input
+>
+> # CORRECT — fires real input events
+> appium-cli fill web_query_input "秋葉原"
+> ```
+
 ## Targeting layers
 
 1. **Refs first**: use `web_...` refs from `web_snapshot`/`snapshot_refs` with `click`, `fill`, `select`, `select_option`, `set_date`, and `press_key`.

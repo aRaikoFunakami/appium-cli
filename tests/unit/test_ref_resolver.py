@@ -284,7 +284,7 @@ class TestRefResolverWebStrategies:
         driver = MagicMock()
         driver.current_context = "CHROMIUM"
         el = _mock_element()
-        driver.find_element.return_value = el
+        driver.find_elements.return_value = [el]
 
         result = resolver.resolve("web_submit", driver)
         assert result == el
@@ -310,10 +310,137 @@ class TestRefResolverWebStrategies:
         driver = MagicMock()
         driver.current_context = "NATIVE_APP"
         el = _mock_element()
-        driver.find_element.return_value = el
+        driver.find_elements.return_value = [el]
 
         resolver.resolve("web_btn", driver)
         driver.switch_to.context.assert_called_with("CHROMIUM")
+
+
+class TestRefResolverDuplicateIdCandidates:
+    """Tests for resolving Web refs when CSS selector matches multiple elements.
+
+    Simulates the Yahoo Transit scenario: 3 inputs all with id=query_input
+    but distinct bounds. RefResolver must use find_elements and pick the
+    candidate whose bounds match expected_bounds.
+    """
+
+    def test_css_selector_picks_second_candidate_by_bounds(self):
+        """web_query_input_2 should resolve to the 2nd input, not fall to coordinates."""
+        resolver = RefResolver()
+        # Second input: bounds (552, 468, 780, 504)
+        entry = RefEntry(
+            strategies=[
+                LocatorStrategy(by="css selector", value="#query_input"),
+                LocatorStrategy(by="coordinates", value="666,486"),
+            ],
+            expected_bounds=(552, 468, 780, 504),
+            role="textbox",
+            name="",
+            context="WEBVIEW_chrome",
+            source_type="web",
+        )
+        resolver.register_all({"web_query_input_2": entry})
+
+        driver = MagicMock()
+        driver.current_context = "WEBVIEW_chrome"
+
+        # Simulate 3 elements matching #query_input with different bounds
+        el1 = _mock_element(x=237, y=468, w=228, h=36)  # from
+        el2 = _mock_element(x=552, y=468, w=228, h=36)  # to  <-- target
+        el3 = _mock_element(x=394, y=514, w=229, h=26)  # via01
+
+        driver.find_elements.return_value = [el1, el2, el3]
+
+        result = resolver.resolve("web_query_input_2", driver)
+        # Should resolve to the SECOND element (el2), NOT coordinates fallback
+        assert result == el2
+        assert not isinstance(result, _CoordinateElement)
+
+    def test_css_selector_picks_third_candidate_by_bounds(self):
+        """web_query_input_3 should resolve to the 3rd input."""
+        resolver = RefResolver()
+        entry = RefEntry(
+            strategies=[
+                LocatorStrategy(by="css selector", value="#query_input"),
+                LocatorStrategy(by="coordinates", value="508,527"),
+            ],
+            expected_bounds=(394, 514, 623, 540),
+            role="textbox",
+            name="",
+            context="WEBVIEW_chrome",
+            source_type="web",
+        )
+        resolver.register_all({"web_query_input_3": entry})
+
+        driver = MagicMock()
+        driver.current_context = "WEBVIEW_chrome"
+
+        el1 = _mock_element(x=237, y=468, w=228, h=36)
+        el2 = _mock_element(x=552, y=468, w=228, h=36)
+        el3 = _mock_element(x=394, y=514, w=229, h=26)  # <-- target
+
+        driver.find_elements.return_value = [el1, el2, el3]
+
+        result = resolver.resolve("web_query_input_3", driver)
+        assert result == el3
+        assert not isinstance(result, _CoordinateElement)
+
+    def test_first_candidate_still_resolves_normally(self):
+        """web_query_input (first) should still work via find_elements."""
+        resolver = RefResolver()
+        entry = RefEntry(
+            strategies=[
+                LocatorStrategy(by="css selector", value="#query_input"),
+                LocatorStrategy(by="coordinates", value="351,486"),
+            ],
+            expected_bounds=(237, 468, 465, 504),
+            role="textbox",
+            name="",
+            context="WEBVIEW_chrome",
+            source_type="web",
+        )
+        resolver.register_all({"web_query_input": entry})
+
+        driver = MagicMock()
+        driver.current_context = "WEBVIEW_chrome"
+
+        el1 = _mock_element(x=237, y=468, w=228, h=36)  # <-- target
+        el2 = _mock_element(x=552, y=468, w=228, h=36)
+        el3 = _mock_element(x=394, y=514, w=229, h=26)
+
+        driver.find_elements.return_value = [el1, el2, el3]
+
+        result = resolver.resolve("web_query_input", driver)
+        assert result == el1
+        assert not isinstance(result, _CoordinateElement)
+
+    def test_xpath_strategy_also_uses_candidate_enumeration(self):
+        """XPath strategies should also enumerate candidates by bounds."""
+        resolver = RefResolver()
+        entry = RefEntry(
+            strategies=[
+                LocatorStrategy(by="xpath", value="//input[@id='query_input']"),
+                LocatorStrategy(by="coordinates", value="666,486"),
+            ],
+            expected_bounds=(552, 468, 780, 504),
+            role="textbox",
+            name="",
+            context="WEBVIEW_chrome",
+            source_type="web",
+        )
+        resolver.register_all({"web_query_input_2": entry})
+
+        driver = MagicMock()
+        driver.current_context = "WEBVIEW_chrome"
+
+        el1 = _mock_element(x=237, y=468, w=228, h=36)
+        el2 = _mock_element(x=552, y=468, w=228, h=36)  # <-- target
+
+        driver.find_elements.return_value = [el1, el2]
+
+        result = resolver.resolve("web_query_input_2", driver)
+        assert result == el2
+        assert not isinstance(result, _CoordinateElement)
 
 
 class TestRefParsing:

@@ -230,7 +230,36 @@ return (function(maxDepth, maxNodes) {
 
     function cssFor(el) {
         var tag = el.tagName.toLowerCase();
-        if (el.id) return '#' + CSS.escape(el.id);
+        if (el.id) {
+            // Only use #id if it's unique in the document
+            var sameId = document.querySelectorAll('#' + CSS.escape(el.id));
+            if (sameId.length === 1) {
+                return '#' + CSS.escape(el.id);
+            }
+            // Duplicate id: try form-scoped selector or name-based selector
+            var elName = el.getAttribute('name') || '';
+            if (elName) {
+                var form = el.closest('form');
+                if (form) {
+                    var formSel = form.id ? 'form#' + CSS.escape(form.id)
+                        : form.getAttribute('name') ? 'form[name=\"' + form.getAttribute('name').replace(/\"/g, '\\\\\"') + '\"]'
+                        : 'form';
+                    return formSel + ' ' + tag + '[name=\"' + elName.replace(/\"/g, '\\\\\"') + '\"]';
+                }
+                return tag + '[name=\"' + elName.replace(/\"/g, '\\\\\"') + '\"]';
+            }
+            // No name attr: use nth-of-type within parent or form
+            var parent = el.parentElement;
+            if (parent) {
+                var siblings = parent.querySelectorAll('#' + CSS.escape(el.id));
+                for (var idx = 0; idx < siblings.length; idx++) {
+                    if (siblings[idx] === el) {
+                        return '#' + CSS.escape(el.id) + ':nth-of-type(' + (idx + 1) + ')';
+                    }
+                }
+            }
+            return '#' + CSS.escape(el.id);
+        }
         var testId = el.getAttribute('data-testid') || '';
         if (testId) return '[data-testid=\"' + testId.replace(/\"/g, '\\\\\"') + '\"]';
         if (el.name) return tag + '[name=\"' + String(el.name).replace(/\"/g, '\\\\\"') + '\"]';
