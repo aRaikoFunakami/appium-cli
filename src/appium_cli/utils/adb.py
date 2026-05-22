@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from shutil import which
@@ -30,6 +31,22 @@ class AndroidDevice:
 
 def adb_available() -> bool:
     return which("adb") is not None
+
+
+def build_adb_base_cmd() -> list[str]:
+    """Build adb command prefix, adding ``-L`` when ADB_SERVER_SOCKET is set.
+
+    In devcontainer environments the env var is typically set to
+    ``unix:/host-services/adb.socket`` so the adb client connects to the
+    host's adb server. Modern adb honours the env var automatically, but
+    older versions may ignore it; passing ``-L`` explicitly is reliable
+    across all versions.
+    """
+    cmd = ["adb"]
+    socket = os.environ.get("ADB_SERVER_SOCKET")
+    if socket:
+        cmd += ["-L", socket]
+    return cmd
 
 
 def parse_adb_devices(output: str) -> list[AndroidDevice]:
@@ -64,7 +81,7 @@ def list_android_devices(timeout: float = 10.0) -> list[AndroidDevice]:
     if not adb_available():
         raise FileNotFoundError("adb was not found on PATH")
     result = subprocess.run(
-        ["adb", "devices", "-l"],
+        build_adb_base_cmd() + ["devices", "-l"],
         check=False,
         capture_output=True,
         text=True,

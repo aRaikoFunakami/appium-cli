@@ -140,7 +140,7 @@ def _capture_session_start(monkeypatch, tmp_path, **kwargs):
     monkeypatch.setattr(session_cli, "session_artifact_dir", lambda sid: tmp_path / sid)
     monkeypatch.setattr(session_cli, "generate_session_id", lambda: "sess-1")
     monkeypatch.setattr(session_cli, "write_current_session", lambda sid: None)
-    monkeypatch.setattr(session_cli, "_select_udid", lambda u: u or "device-1")
+    monkeypatch.setattr(session_cli, "_select_udid", lambda u, **kw: u or "device-1")
 
     # Pretend daemon becomes ready on first poll after spawn.
     poll_calls = {"n": 0}
@@ -248,3 +248,24 @@ def test_session_start_external_loopback_enables_adb_fallback(monkeypatch, tmp_p
         allow_adb_shell=True, enable_network_log=False, json_output=False,
     )
     assert "--adb-fallback" in cmd
+
+
+def test_select_udid_external_server_no_adb_gives_helpful_error(monkeypatch) -> None:
+    """When external server is used and adb is unavailable, error should mention --udid."""
+    monkeypatch.setattr(session_cli, "list_android_devices", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("adb was not found on PATH")))
+
+    with pytest.raises(RuntimeError, match="--udid"):
+        session_cli._select_udid(None, external_server=True)
+
+
+def test_select_udid_external_server_with_explicit_udid(monkeypatch) -> None:
+    """Explicit --udid should bypass adb enumeration entirely."""
+    assert session_cli._select_udid("my-device", external_server=True) == "my-device"
+
+
+def test_select_udid_local_server_no_adb_raises_original_error(monkeypatch) -> None:
+    """Without external_server flag, the original FileNotFoundError propagates."""
+    monkeypatch.setattr(session_cli, "list_android_devices", lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("adb was not found on PATH")))
+
+    with pytest.raises(FileNotFoundError, match="adb was not found"):
+        session_cli._select_udid(None, external_server=False)

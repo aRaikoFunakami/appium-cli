@@ -9,6 +9,7 @@ from selenium.common.exceptions import InvalidSessionIdException, WebDriverExcep
 
 from appium_cli.daemon import state
 from appium_cli.utils import exit_codes
+from appium_cli.utils.adb import build_adb_base_cmd
 from appium_cli.utils.errors import AppiumCliError
 
 
@@ -23,7 +24,7 @@ def _adb_shell(command: str, args: list[str]) -> str:
     if not udid:
         raise AppiumCliError("ADB fallback requires a known device udid", exit_codes.FEATURE_NOT_ENABLED)
     result = subprocess.run(
-        ["adb", "-s", udid, "shell", command, *args],
+        build_adb_base_cmd() + ["-s", udid, "shell", command, *args],
         check=False,
         capture_output=True,
         text=True,

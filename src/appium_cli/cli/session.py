@@ -90,10 +90,18 @@ def _read_pid() -> int | None:
         return None
 
 
-def _select_udid(explicit_udid: str | None) -> str:
+def _select_udid(explicit_udid: str | None, *, external_server: bool = False) -> str:
     if explicit_udid:
         return explicit_udid
-    devices = [device for device in list_android_devices() if device.status == "device"]
+    try:
+        devices = [device for device in list_android_devices() if device.status == "device"]
+    except (FileNotFoundError, RuntimeError) as exc:
+        if external_server:
+            raise RuntimeError(
+                "Cannot enumerate Android devices (adb not available). "
+                "Specify the device with --udid when using --server-url."
+            ) from exc
+        raise
     if not devices:
         raise RuntimeError("No connected Android device with status 'device' was found")
     return devices[0].udid
@@ -252,7 +260,7 @@ def start(
         else:
             local_port = port if port is not None else DEFAULT_PORT
             server_state = start_server(port=local_port, allow_adb_shell=allow_adb_shell)
-        selected_udid = _select_udid(udid)
+        selected_udid = _select_udid(udid, external_server=(effective_url is not None))
     except Exception as exc:
         if json_output:
             _echo_json({"ok": False, "error": str(exc), "exit_code": exit_codes.GENERAL_ERROR})
