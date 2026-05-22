@@ -347,6 +347,26 @@ def stop(
         if not _pid_running(pid):
             break
         time.sleep(0.2)
+
+    # Force-terminate the daemon if it is still alive after the graceful window.
+    # This can happen when driver.quit() hangs (e.g. because a prior webview_switch
+    # left Appium holding a broken ChromeDriver process).  Without this kill the
+    # orphaned daemon keeps running and races with any subsequent session start,
+    # which can crash the host Appium server.
+    if pid and _pid_running(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        kill_deadline = time.time() + 3
+        while _pid_running(pid) and time.time() < kill_deadline:
+            time.sleep(0.1)
+        if _pid_running(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
     _unlink_safe(session_socket_path())
     _unlink_safe(session_pid_path())
     clear_current_session()

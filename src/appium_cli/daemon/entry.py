@@ -199,6 +199,16 @@ def main() -> None:
         serve(handler=_handler)
     finally:
         if driver is not None:
+            # Switch back to native context before quitting.  When a WebView
+            # context was active (e.g. Chrome), this gives Appium an explicit
+            # signal to shut down ChromeDriver cleanly before the session is
+            # deleted.  Without it, a WebView that failed mid-switch (ADB
+            # timeout) can leave ChromeDriver in a zombie state, causing the
+            # subsequent DELETE /session to crash the host Appium process.
+            try:
+                driver.switch_to.context("NATIVE_APP")
+            except Exception:
+                pass
             try:
                 driver.quit()
             except (InvalidSessionIdException, WebDriverException):
