@@ -2,11 +2,64 @@
 
 Use WebView snapshots and refs first, then CSS selectors/locators when refs are not enough. Legacy native locator tools are not the normal WebView workflow.
 
+## Quick reference — page-level commands in WebView context
+
+Once `webview_switch` or `goto` succeeds, prefer these WebDriver/WebView commands for page-level work until `native_switch`:
+
+```bash
+# Observe
+appium-cli web_snapshot                     # primary observation
+appium-cli webview_url                      # current URL (fast, no snapshot)
+appium-cli webview_title                    # page title (fast, no snapshot)
+appium-cli snapshot_refs latest             # refs from the latest web_snapshot
+appium-cli snapshot_search "Search"         # search the latest web_snapshot artifact
+appium-cli web_query "input,button,a" --attrs=name,type,placeholder,aria-label
+
+# Act on refs
+appium-cli click web_<ref>
+appium-cli fill web_<ref> "text"
+appium-cli select web_<ref> "value"
+appium-cli press_key Enter
+
+# Navigate (WebDriver native — always prefer over DOM manipulation)
+appium-cli goto "https://..."
+appium-cli go_back
+appium-cli go_forward
+appium-cli reload
+
+# Tabs
+appium-cli tabs list
+appium-cli tabs switch --index 1
+appium-cli tabs new --url "https://example.com"
+appium-cli tabs close --index 1
+
+# Dialogs
+appium-cli dialog_accept
+appium-cli dialog_dismiss
+
+# Debug
+appium-cli console_messages
+appium-cli web_eval "document.title"
+```
+
+## Open a URL (Chrome / WebView)
+
+`goto` is the standard WebDriver navigation command. It calls `driver.get(url)` and **auto-switches to WebView context** if the current context is native:
+
+```bash
+appium-cli activate_app com.android.chrome
+appium-cli goto "https://www.yahoo.co.jp"   # auto-switches to WebView + driver.get()
+appium-cli web_snapshot
+```
+
+Do **not** use `web_eval window.location.href`, try to tap the address bar, or use `tabs new --url` as a workaround when you simply want to navigate the current tab to a URL. Always use `goto` for that. Use `tabs new --url` when the task actually requires opening a new tab.
+
 ## Context workflow
 
 ```bash
 appium-cli list_contexts
 appium-cli webview_switch
+appium-cli goto "https://example.com"
 appium-cli web_snapshot
 appium-cli snapshot_refs latest --role=textbox
 appium-cli click web_btn_login
@@ -75,17 +128,19 @@ appium-cli --raw generate_locator web_btn_submit
 
 ## WebView actions
 
+Preferred page-level actions:
+
 ```bash
 appium-cli click web_btn_login
-appium-cli tap web_btn_login
 appium-cli fill web_search "query"
-appium-cli type_text web_search "query" --submit
 appium-cli select web_country "JP" --by=value
 appium-cli select_option web_state "NCR"
 appium-cli set_date web_dateofbirthinput "15 May 1990"
 appium-cli scroll_down
 appium-cli press_key Enter
 ```
+
+Compatibility actions such as `tap web_<ref>` or `type_text web_<ref> ...` may work with web refs, but prefer `click` and `fill` for DOM interactions because they use Selenium/WebDriver semantics.
 
 WebView actions use Selenium methods and JavaScript scrolling. Native touch-only gestures are not supported in WebView context and fail with exit code 8.
 

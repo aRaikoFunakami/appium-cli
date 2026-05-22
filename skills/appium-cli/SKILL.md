@@ -42,11 +42,34 @@ Default `snapshot` and `web_snapshot` output is compact metadata plus artifact l
 
 ## Core workflow
 
-1. Observe: `appium-cli snapshot` or `appium-cli web_snapshot`.
-2. Extract only what you need: `snapshot_search`, `snapshot_refs`, or `web_query`.
-3. Act on a current ref: `tap <ref>`, `type_text <ref> <text>`, `scroll_down [ref]`.
-4. Read the post-action snapshot metadata printed by the action.
+The command set you use depends on the current context. Always match commands to context.
+
+### Native context (default)
+
+1. Observe: `appium-cli snapshot`.
+2. Extract: `snapshot_search`, `snapshot_refs`, or `snapshot_show --ref`.
+3. Act: `tap <ref>`, `type_text <ref> <text>`, `scroll_down [ref]`.
+4. Read the post-action snapshot metadata.
 5. Use refs from the newest snapshot only.
+
+### WebView context (after `webview_switch` or `goto`)
+
+Once in a WebView context, **prefer WebDriver/WebView commands** over native touch workflows. Use native commands again only after `native_switch`, or for device-level actions that intentionally leave the page context.
+
+| Task | Command to use |
+|------|----------------|
+| Navigate to URL | `appium-cli goto "https://..."` |
+| Observe page | `appium-cli web_snapshot` |
+| Find elements | `appium-cli snapshot_refs latest ...`, `snapshot_search ...`, or `web_query "input,button,a" --attrs=...` |
+| Click element | `appium-cli click web_<ref>` |
+| Fill input | `appium-cli fill web_<ref> "text"` |
+| Check current URL | `appium-cli webview_url` |
+| Check page title | `appium-cli webview_title` |
+| Back / Forward | `appium-cli go_back` / `appium-cli go_forward` |
+| Reload | `appium-cli reload` |
+| Return to native | `appium-cli native_switch` |
+
+> **Rule**: After `webview_switch` succeeds, treat page-level work as web automation until `native_switch` is called. Refer to [WebView and Chrome](references/webview.md) for the full reference.
 
 Do not read whole snapshot artifacts by default. Treat `.compact.yml` as a file artifact that preserves UI hierarchy outside the prompt. Pull relevant fragments with `snapshot_search`, `snapshot_refs`, `web_query`, `snapshot_show --ref`, or local grep/rg-style extraction when available.
 
@@ -131,10 +154,26 @@ Ref-first targeting is the default. Directional aliases accept an optional ref; 
 
 ## WebView / Chrome
 
+To open a URL in Chrome or any WebView, use `goto`. It uses WebDriver's `driver.get()` and **auto-switches to WebView context** — no manual `webview_switch` needed:
+
+```bash
+appium-cli activate_app com.android.chrome
+appium-cli goto "https://www.yahoo.co.jp"   # auto-switches to WebView + driver.get()
+appium-cli web_snapshot
+```
+
+Do **not** try to find and interact with the address bar DOM element, use `web_eval window.location.href`, or use `tabs new --url` as a workaround when you simply want to navigate the current tab to a URL. Always use `goto` for that. Use tab commands when the task actually requires multiple tabs.
+
+Full WebView workflow:
+
 ```bash
 appium-cli list_contexts
 appium-cli webview_switch
 appium-cli web_snapshot
+appium-cli goto "https://example.com"       # navigate; auto-switches to WebView
+appium-cli go_back
+appium-cli go_forward
+appium-cli reload
 appium-cli web_query "input,button,a" --attrs=name,type,placeholder,aria-label,data-testid,autocomplete
 appium-cli web_eval "el.getAttribute('data-testid')" web_btn_submit
 appium-cli click web_btn_submit
@@ -142,7 +181,7 @@ appium-cli fill web_search "query"
 appium-cli native_switch
 appium-cli tabs list                        # list WebView tabs
 appium-cli tabs switch --index 1            # switch to tab
-appium-cli tabs new --url "https://example.com"  # open new tab
+appium-cli tabs new --url "https://example.com"  # open new tab (embedded WebView only)
 ```
 
 React Select / autocomplete inputs require special handling. Use `--slowly` to type one character at a time, then click the suggestion:
@@ -214,6 +253,18 @@ If the package id is unknown, use `appium-cli list_apps` to discover it (require
 - Do not call `adb`, `appium`, `npm`, or installer commands directly unless the user explicitly asks.
 - Prefer canonical snake_case tool names: `get_device_info`, `type_text`, `press_keycode`.
 - Do not edit installed skill copies under `.agents/` or `~/.copilot/`; edit `skills/appium-cli/` and run `appium-cli install --skills`.
+
+### WebView context rules (enforced after `webview_switch` or `goto`)
+
+- **Use `goto` to navigate the current tab to a URL** — never tap the address bar, use `web_eval window.location.href`, or use `tabs new --url` as a workaround just to load a URL in the current tab.
+- **Use `web_snapshot`** to observe the page — not `snapshot`.
+- **Use `snapshot_refs` / `snapshot_search` for refs from the latest `web_snapshot`; use `web_query` for CSS/attribute discovery.**
+- **Use `fill`** to enter text in inputs — not `type_text` with a native ref.
+- **Prefer `click web_<ref>`** to click links and buttons; avoid native touch/tap workflows unless intentionally interacting outside the DOM.
+- **Use `webview_url` / `webview_title`** for quick URL/title checks before a full `web_snapshot`.
+- **Use `go_back`, `go_forward`, `reload`** for browser navigation — not `press_key back`.
+- **Use `tabs list`, `tabs switch`, `tabs new`, `tabs close`** for multi-tab workflows.
+- After any navigation (`goto`, `go_back`, `go_forward`, `reload`), take a new `web_snapshot`; old refs are stale.
 
 ## References
 
