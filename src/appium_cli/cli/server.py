@@ -16,8 +16,16 @@ from urllib.parse import urlparse
 
 import typer
 
+from appium_cli.daemon.client import request as _daemon_request
 from appium_cli.utils import exit_codes
-from appium_cli.utils.paths import ensure_app_dir, server_log_path, server_state_path
+from appium_cli.utils.paths import (
+    clear_current_session,
+    ensure_app_dir,
+    server_log_path,
+    server_state_path,
+    session_pid_path,
+    session_socket_path,
+)
 
 
 DEFAULT_PORT = 4723
@@ -316,16 +324,80 @@ def start(
     typer.echo(f"Started Appium server at {state.url} (pid={state.pid})")
 
 
+def _unlink_safe(path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _stop_daemon_if_running() -> bool:
+    """Gracefully stop the session daemon if it is running.
+
+    Returns True if a daemon was found and stopped (or killed), False if
+    no daemon was running.
+    """
+    sock = session_socket_path()
+    try:
+        alive = sock.exists()
+    except OSError:
+        alive = False
+    if not alive:
+        return False
+
+    try:
+        response = _daemon_request("ping")
+        if not response.get("ok"):
+            return False
+    except (FileNotFoundError, ConnectionError, OSError, RuntimeError, json.JSONDecodeError):
+        return False
+
+    try:
+        _daemon_request("shutdown")
+    except (FileNotFoundError, ConnectionError, OSError, RuntimeError, json.JSONDecodeError):
+        pass
+
+    pid: int | None = None
+    try:
+        pid = int(session_pid_path().read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, OSError, ValueError):
+        pass
+
+    deadline = time.time() + 15
+    while pid and time.time() < deadline:
+        if not _pid_running(pid):
+            break
+        time.sleep(0.2)
+
+    if pid and _pid_running(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+    _unlink_safe(sock)
+    _unlink_safe(session_pid_path())
+    clear_current_session()
+    return True
+
+
 @app.command("stop")
 def stop(
     json_output: Annotated[bool, typer.Option("--json", help="Print structured JSON output.")] = False,
 ) -> None:
-    """Stop only the Appium server started by appium-cli."""
+    """Stop the session daemon (if running) then the Appium server started by appium-cli."""
+
+    daemon_stopped = _stop_daemon_if_running()
+    if daemon_stopped:
+        if json_output:
+            pass  # report daemon_stopped in final payload below
+        else:
+            typer.echo("Stopped session daemon.")
 
     saved = _read_state()
     if saved.get("ownership") != "self":
         if json_output:
-            _echo_json({"ok": True, "stopped": False, "ownership": saved.get("ownership", "none"), "message": "No self-owned Appium server to stop."})
+            _echo_json({"ok": True, "stopped": False, "daemon_stopped": daemon_stopped, "ownership": saved.get("ownership", "none"), "message": "No self-owned Appium server to stop."})
             return
         typer.echo("No self-owned Appium server to stop.")
         return
@@ -334,7 +406,7 @@ def stop(
     if not isinstance(pid, int) or not _pid_running(pid):
         server_state_path().unlink(missing_ok=True)
         if json_output:
-            _echo_json({"ok": True, "stopped": True, "already_stopped": True, "pid": pid})
+            _echo_json({"ok": True, "stopped": True, "already_stopped": True, "daemon_stopped": daemon_stopped, "pid": pid})
             return
         typer.echo("Self-owned Appium server is already stopped.")
         return
@@ -345,7 +417,7 @@ def stop(
         if not _pid_running(pid):
             server_state_path().unlink(missing_ok=True)
             if json_output:
-                _echo_json({"ok": True, "stopped": True, "pid": pid})
+                _echo_json({"ok": True, "stopped": True, "daemon_stopped": daemon_stopped, "pid": pid})
                 return
             typer.echo("Stopped self-owned Appium server.")
             return
@@ -353,7 +425,7 @@ def stop(
 
     message = f"Appium process {pid} did not stop after SIGTERM"
     if json_output:
-        _echo_json({"ok": False, "error": message, "pid": pid, "exit_code": exit_codes.GENERAL_ERROR})
+        _echo_json({"ok": False, "error": message, "daemon_stopped": daemon_stopped, "pid": pid, "exit_code": exit_codes.GENERAL_ERROR})
     else:
         typer.echo(f"ERROR: {message}", err=True)
     raise typer.Exit(exit_codes.GENERAL_ERROR)
