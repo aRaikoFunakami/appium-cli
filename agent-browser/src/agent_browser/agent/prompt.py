@@ -52,6 +52,7 @@ def build_input_items(
     compacted_history: str = "",
     loop_warning: str | None = None,
     reflection: str | None = None,
+    blocked_tools: set[str] | None = None,
 ) -> list[dict[str, object]]:
     """Build a fresh Responses API input list for the next model call."""
 
@@ -80,6 +81,14 @@ def build_input_items(
         parts.extend(["", "<recent_steps>", recent_steps, "</recent_steps>"])
     if state.last_step:
         parts.extend(["", "<last_step>", clamp_text(state.last_step, 300), "</last_step>"])
+    if blocked_tools:
+        parts.extend([
+            "",
+            "<blocked_tools>",
+            f"The following tools have reached max_retries={cfg.max_retries} and will NOT execute: {', '.join(sorted(blocked_tools))}.",
+            "Do NOT call them again. Use a different approach or finish with is_done=true and success=false.",
+            "</blocked_tools>",
+        ])
     if loop_warning:
         parts.extend(["", "<loop_warning>", clamp_text(loop_warning, 300), "</loop_warning>"])
     if reflection:

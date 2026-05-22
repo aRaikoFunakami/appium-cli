@@ -8,7 +8,9 @@ import time
 from typing import Any
 
 from agent_browser.agent.brain import parse_agent_brain
-from agent_browser.agent.history import HistoryItem, LoopDetector, OperationHistory
+from agent_browser.agent.history import (
+    HistoryItem, INFO_ONLY_TOOLS, LoopDetector, OperationHistory,
+)
 from agent_browser.agent.llm import ResponsesClient
 from agent_browser.agent.prompt import SYSTEM_PROMPT, build_input_items
 from agent_browser.agent.registry import get_response_tool_schemas
@@ -16,6 +18,7 @@ from agent_browser.agent.state import BrowserOperationState, clamp_text
 from agent_browser.agent.verifier import CompletionVerifier, LLMJudge, StructuralGuard
 from agent_browser.appium_tools import _SNAPSHOT_TOOLS
 from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult, execute_appium_tool
+from agent_browser.appium_tools import _summarize_args as _args_summary
 from agent_browser.config import AgentBrowserConfig
 from agent_browser.schemas import BillingInfo, MemoryEvent, TaskResult
 from agent_browser.token_counter import CallUsage, OpenAIPricingCalculator
@@ -221,6 +224,7 @@ async def run_react_loop(
     start_time = time.monotonic()
     last_progress_step = 0
     prev_observation_hash: int | None = None
+    blocked_tools: set[str] = set()
 
     for step in range(1, cfg.max_turns + 1):
         # --- Wall-time safeguard ---
@@ -274,6 +278,7 @@ async def run_react_loop(
             compacted_history=history.compacted_history,
             loop_warning=loop_warning,
             reflection=state.consume_reflection(),
+            blocked_tools=blocked_tools or None,
         )
 
         response = await client.create(
@@ -291,7 +296,28 @@ async def run_react_loop(
             for call in calls:
                 name = str(call.get("name") or "")
                 args = _parse_args(call.get("arguments"))
-                result = await execute_appium_tool(name, args, context)
+
+                # Block tools that have exceeded max_retries (skip observation tools).
+                if name in blocked_tools:
+                    result = ToolExecutionResult(
+                        name, _args_summary(args),
+                        f"BLOCKED: '{name}' reached retry limit ({cfg.max_retries}). Use a different tool.",
+                        False, 0.0,
+                    )
+                else:
+                    result = await execute_appium_tool(name, args, context)
+                    # Check if this tool just hit the retry limit.
+                    if (
+                        not result.ok
+                        and name not in INFO_ONLY_TOOLS
+                        and context.memory.retry_counts.get(name, 0) >= cfg.max_retries
+                    ):
+                        blocked_tools.add(name)
+                        logger.info(
+                            "[loop] tool '%s' blocked after %d retries (max_retries=%d)",
+                            name, context.memory.retry_counts[name], cfg.max_retries,
+                        )
+
                 tool_results.append(result)
                 output_items.append(_tool_output_item(call, result, cfg))
 
@@ -347,10 +373,14 @@ async def run_react_loop(
             state.last_step = item.to_prompt_line()
             loop_detector.record(primary_result.name, primary_result.args_summary, state.latest_observation)
 
-            # Track progress: observation hash changed or tool succeeded
+            # Track progress: only successful tool calls count as progress.
+            # Failed tools must not reset the no-progress counter even if
+            # their error text changes the observation hash.
             obs_hash = hash(state.latest_observation)
-            if primary_result.ok or obs_hash != prev_observation_hash:
+            if primary_result.ok:
                 last_progress_step = step
+                prev_observation_hash = obs_hash
+            elif obs_hash != prev_observation_hash:
                 prev_observation_hash = obs_hash
         else:
             item = HistoryItem(
