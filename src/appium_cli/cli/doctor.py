@@ -7,8 +7,11 @@ import os
 import platform
 import shutil
 import subprocess
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
 import typer
 
@@ -104,7 +107,49 @@ def _xcrun_check() -> Check:
     return _binary_check("xcrun", "xcrun", ["--version"])
 
 
+def _resolve_external_url() -> str | None:
+    """Return a normalized external Appium URL from APPIUM_SERVER_URL, if set."""
+    raw = os.environ.get("APPIUM_SERVER_URL", "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return None
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    return raw.rstrip("/")
+
+
+def _external_appium_check(url: str) -> Check:
+    status_url = url.rstrip("/") + "/status"
+    try:
+        with urllib.request.urlopen(status_url, timeout=3.0) as resp:
+            reachable = 200 <= resp.status < 500
+    except (OSError, urllib.error.URLError):
+        reachable = False
+    if reachable:
+        return Check("Appium (external)", "PASS", f"External Appium server reachable at {url}")
+    return Check(
+        "Appium (external)",
+        "FAIL",
+        f"External Appium server at {url} is not reachable",
+        "Start Appium on the host with: appium --allow-insecure uiautomator2:adb_shell",
+    )
+
+
 def _checks() -> list[Check]:
+    external_url = _resolve_external_url()
+    if external_url is not None:
+        # Host/external Appium mode: Appium, Android SDK, and Java live on the
+        # host machine, not in this container.  Only verify reachability.
+        return [
+            _binary_check("Node.js", "node", ["--version"]),
+            _binary_check("npm", "npm", ["--version"]),
+            _external_appium_check(external_url),
+            _binary_check("adb", "adb", ["version"]),
+            _xcrun_check(),
+        ]
     return [
         _binary_check("Node.js", "node", ["--version"]),
         _binary_check("npm", "npm", ["--version"]),
