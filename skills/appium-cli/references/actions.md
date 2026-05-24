@@ -102,6 +102,8 @@ appium-cli press_key Enter
 
 Web actions use Selenium/DOM behavior. Touch gestures (`long_press`, `drag`, `pinch_*`, `fling_*`, native `swipe_*`) are not available in WebView context; switch to native if you need real touch gestures.
 
+For `fill --slowly`, check and stabilize transient UI before chaining another interaction. See `references/patterns.md#slow-typing-and-transient-ui`.
+
 ## CSS selector fallback
 
 When snapshot refs are insufficient, use `css:` prefix to target elements by CSS selector:

@@ -87,18 +87,64 @@ appium-cli web_query "input,textarea,select" --attrs=name,type,placeholder,aria-
 appium-cli fill web_search "query"
 ```
 
-## React Select / Autocomplete
+## Slow typing and transient UI
 
-For inputs that trigger autocomplete or dropdown suggestions (React Select, Combobox, etc.), use `--slowly` to type one character at a time:
+Use `--slowly` when a site needs real key-by-key input events (autocomplete, comboboxes, validation, search-as-you-type, React-controlled inputs, etc.):
 
 ```bash
 appium-cli web_snapshot
+appium-cli fill web_search "query" --slowly
+```
+
+After slow typing, the site may show suggestions, dropdowns, validation UI, or nothing at all. Before moving to another field or button, observe and stabilize the UI when needed. Do not use `web_eval` to set values directly on controlled inputs.
+
+### If suggestions/options appear
+
+Click the matching option ref to confirm the value and close the transient UI before continuing:
+
+```bash
+appium-cli fill web_first_input "first value" --slowly
+appium-cli web_snapshot
+appium-cli click web_<matching_first_option_ref>
+
+appium-cli fill web_second_input "second value" --slowly
+appium-cli web_snapshot
+appium-cli click web_<matching_second_option_ref>
+```
+
+### If no option must be selected but UI remains open
+
+Dismiss the dropdown/overlay before moving on:
+
+```bash
+appium-cli fill web_first_input "first value" --slowly
+appium-cli web_snapshot
+appium-cli press_key Escape
+
+appium-cli fill web_second_input "second value" --slowly
+appium-cli web_snapshot
+appium-cli press_key Escape
+```
+
+### If no transient UI is visible
+
+Continue normally:
+
+```bash
+appium-cli fill web_first_input "first value" --slowly
+appium-cli web_snapshot
+appium-cli fill web_second_input "second value" --slowly
+```
+
+Do not start interacting with another element while a previous dropdown or overlay is still open. If the next element is not clickable after slow typing, inspect with `web_snapshot` and resolve the overlay before retrying.
+
+For React Select / autocomplete inputs, this commonly looks like:
+
+```bash
 appium-cli fill web_subjects "Comp" --slowly
 appium-cli web_snapshot
 appium-cli click web_option_computer_science
 ```
-
-After typing with `--slowly`, take a snapshot to see the suggestion list, then click the desired option. Do not use `web_eval` to set values directly on React-controlled inputs.
 
 ## Chrome / Web browser automation
 
