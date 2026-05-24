@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from appium_cli.core.ref_resolver import ElementNotFoundError, parse_ref
+from appium_cli.core.ref_resolver import ElementNotFoundError, parse_ref, _CoordinateElement
 from appium_cli.core.native_snapshot import NativeSnapshot
 from appium_cli.core.native_snapshot_generator import NativeSnapshotGenerator
 from appium_cli.core.snapshot import compress_xml
@@ -1082,6 +1082,488 @@ def web_query(
                 if formatted:
                     fields.append(formatted)
         lines.append(f"{index}. " + " ".join(field for field in fields if field))
+    return "\n".join(lines)
+
+
+_WEB_FORM_URL_DEFAULT_MAX_FIELDS = 50
+_WEB_FORM_URL_MAX_FIELDS_CAP = 500
+_WEB_FORM_URL_DEFAULT_MAX_VALUE_LENGTH = 200
+_WEB_FORM_URL_REDACTED = "[REDACTED]"
+
+_WEB_FORM_URL_BYPASS_WARNING = (
+    "Do not use this as frontend E2E validation; no form interaction occurred."
+)
+_WEB_FORM_URL_GET_PRIVACY_WARNING = (
+    "GET submit URLs may expose data in browser history, logs, and referrers."
+)
+
+_WEB_FORM_URL_SENSITIVE_NAME_PATTERNS = (
+    "password", "passwd", "pwd",
+    "token", "csrf", "xsrf", "nonce",
+    "secret", "auth", "session", "cookie",
+    "credential", "api_key", "apikey", "access_key", "private",
+    "otp", "mfa", "2fa", "verification_code", "verificationcode",
+)
+_WEB_FORM_URL_PIN_CODE_NAME_PATTERNS = ("pin", "code")
+_WEB_FORM_URL_AUTOCOMPLETE_SENSITIVE = frozenset({
+    "current-password", "new-password",
+    "one-time-code",
+    "cc-number", "cc-csc",
+})
+
+WEB_FORM_URL_SCRIPT = r"""
+return (function(targetArg, maxFields) {
+    var target = null;
+    if (targetArg && typeof targetArg === 'object' && targetArg.nodeType === 1) {
+        target = targetArg;
+    } else if (typeof targetArg === 'string' && targetArg.length > 0) {
+        try {
+            target = document.querySelector(targetArg);
+        } catch (selectorErr) {
+            return {error: 'invalid_selector', message: String(selectorErr)};
+        }
+    } else {
+        return {error: 'no_target', message: 'target argument is required'};
+    }
+    if (!target) {
+        return {error: 'not_found', message: 'target element not found'};
+    }
+    var form = (target.tagName && target.tagName.toLowerCase() === 'form')
+        ? target
+        : (target.closest ? target.closest('form') : null);
+    if (!form) {
+        return {error: 'no_form', message: 'target has no enclosing <form>'};
+    }
+    var rawAction = form.getAttribute('action');
+    if (rawAction === null || rawAction === undefined) rawAction = '';
+    var resolvedAction;
+    try {
+        resolvedAction = new URL(rawAction || '', document.location.href).href;
+    } catch (urlErr) {
+        resolvedAction = rawAction || document.location.href;
+    }
+    var fields = [];
+    var truncated = false;
+    var elements = form.elements ? Array.prototype.slice.call(form.elements) : [];
+    var SKIP_TYPES = {'submit': 1, 'button': 1, 'reset': 1, 'image': 1, 'file': 1};
+
+    function labelText(el) {
+        var text = '';
+        try {
+            if (el.labels && el.labels.length) {
+                for (var i = 0; i < el.labels.length; i++) {
+                    text += ' ' + (el.labels[i].textContent || '');
+                }
+            }
+            if (!text && el.id) {
+                var lbl = document.querySelector('label[for="' + el.id.replace(/"/g, '\\"') + '"]');
+                if (lbl) text = lbl.textContent || '';
+            }
+            if (!text) {
+                var parent = el.parentElement;
+                while (parent) {
+                    if (parent.tagName && parent.tagName.toLowerCase() === 'label') {
+                        text = parent.textContent || '';
+                        break;
+                    }
+                    parent = parent.parentElement;
+                }
+            }
+        } catch (lblErr) {
+            text = '';
+        }
+        return String(text).replace(/\s+/g, ' ').trim();
+    }
+
+    function pushField(el, value) {
+        if (fields.length >= maxFields) {
+            truncated = true;
+            return;
+        }
+        fields.push({
+            name: el.name,
+            value: String(value == null ? '' : value),
+            tag: el.tagName ? el.tagName.toLowerCase() : '',
+            type: (el.type || '').toLowerCase(),
+            hidden: ((el.type || '').toLowerCase() === 'hidden'),
+            autocomplete: (el.getAttribute('autocomplete') || '').toLowerCase(),
+            inputmode: (el.getAttribute('inputmode') || '').toLowerCase(),
+            placeholder: el.getAttribute ? (el.getAttribute('placeholder') || '') : '',
+            aria_label: el.getAttribute ? (el.getAttribute('aria-label') || '') : '',
+            id: el.id || '',
+            label: labelText(el)
+        });
+    }
+
+    var omitted = 0;
+    for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        if (!el || !el.name) { continue; }
+        if (el.disabled) { continue; }
+        var tag = el.tagName ? el.tagName.toLowerCase() : '';
+        var type = (el.type || '').toLowerCase();
+        if (tag === 'button') { continue; }
+        if (tag === 'input' && SKIP_TYPES[type]) { continue; }
+        if (tag === 'select') {
+            var options = el.options ? Array.prototype.slice.call(el.options) : [];
+            var anySelected = false;
+            for (var oi = 0; oi < options.length; oi++) {
+                if (options[oi].selected) {
+                    anySelected = true;
+                    pushField(el, options[oi].value);
+                }
+            }
+            if (!anySelected && options.length && !el.multiple) {
+                pushField(el, options[0].value);
+            }
+            continue;
+        }
+        if (tag === 'input' && (type === 'checkbox' || type === 'radio')) {
+            if (!el.checked) { continue; }
+            pushField(el, el.value == null || el.value === '' ? 'on' : el.value);
+            continue;
+        }
+        pushField(el, el.value);
+    }
+    if (fields.length >= maxFields) {
+        // count remaining without enumerating values
+        for (var k = i; k < elements.length; k++) {
+            var rem = elements[k];
+            if (rem && rem.name && !rem.disabled) {
+                var rtag = rem.tagName ? rem.tagName.toLowerCase() : '';
+                var rtype = (rem.type || '').toLowerCase();
+                if (rtag === 'button') continue;
+                if (rtag === 'input' && SKIP_TYPES[rtype]) continue;
+                omitted++;
+            }
+        }
+    }
+
+    var origin = '';
+    try { origin = document.location.origin || ''; } catch (e) { origin = ''; }
+
+    return {
+        found: true,
+        method: ((form.getAttribute('method') || 'GET').toUpperCase()),
+        enctype: (form.getAttribute('enctype') || 'application/x-www-form-urlencoded'),
+        action_raw: rawAction,
+        action_resolved: resolvedAction,
+        page_url: document.location.href,
+        page_origin: origin,
+        form_selector_hint: (form.id ? '#' + form.id : (form.name ? 'form[name="' + form.name + '"]' : 'form')),
+        fields: fields,
+        omitted_fields_count: omitted,
+        fields_truncated: truncated
+    };
+})(arguments[0], arguments[1]);
+"""
+
+
+def _wfu_name_matches(value: str, patterns: tuple[str, ...]) -> bool:
+    value = (value or "").lower()
+    if not value:
+        return False
+    return any(p in value for p in patterns)
+
+
+def _wfu_classify_sensitivity(field: dict[str, Any]) -> str | None:
+    """Return a reason string when the field is sensitive, else None."""
+    if field.get("hidden"):
+        return "hidden"
+    ftype = (field.get("type") or "").lower()
+    if ftype == "password":
+        return "type_password"
+    autocomplete = (field.get("autocomplete") or "").lower()
+    if autocomplete:
+        tokens = {tok.strip() for tok in autocomplete.replace(",", " ").split()}
+        if tokens & _WEB_FORM_URL_AUTOCOMPLETE_SENSITIVE:
+            return "autocomplete"
+    name = field.get("name") or ""
+    fid = field.get("id") or ""
+    if _wfu_name_matches(name, _WEB_FORM_URL_SENSITIVE_NAME_PATTERNS) or _wfu_name_matches(
+        fid, _WEB_FORM_URL_SENSITIVE_NAME_PATTERNS
+    ):
+        return "name_pattern"
+    label = field.get("label") or ""
+    if _wfu_name_matches(label, _WEB_FORM_URL_SENSITIVE_NAME_PATTERNS):
+        return "label_pattern"
+    aria = field.get("aria_label") or ""
+    if _wfu_name_matches(aria, _WEB_FORM_URL_SENSITIVE_NAME_PATTERNS):
+        return "aria_label_pattern"
+    placeholder = field.get("placeholder") or ""
+    if _wfu_name_matches(placeholder, _WEB_FORM_URL_SENSITIVE_NAME_PATTERNS):
+        return "placeholder_pattern"
+    inputmode = (field.get("inputmode") or "").lower()
+    if inputmode == "numeric" and _wfu_name_matches(name, _WEB_FORM_URL_PIN_CODE_NAME_PATTERNS):
+        return "name_pattern"
+    return None
+
+
+def _wfu_truncate(value: str, max_len: int) -> tuple[str, bool]:
+    if max_len <= 0 or value is None:
+        return value, False
+    if len(value) <= max_len:
+        return value, False
+    return value[:max_len], True
+
+
+def _wfu_build_url(action: str, fields: list[dict[str, Any]]) -> str:
+    """Build URL by appending fields as query params."""
+    from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
+
+    pairs: list[tuple[str, str]] = []
+    for f in fields:
+        pairs.append((str(f["name"]), str(f["display_value"])))
+    encoded = urlencode(pairs, doseq=True)
+    parsed = urlparse(action)
+    existing = parsed.query
+    if existing:
+        existing_pairs = parse_qsl(existing, keep_blank_values=True)
+        merged_pairs = existing_pairs + pairs
+        new_query = urlencode(merged_pairs, doseq=True)
+    else:
+        new_query = encoded
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def web_form_url(
+    target: str,
+    max_fields: int = _WEB_FORM_URL_DEFAULT_MAX_FIELDS,
+    max_value_length: int = _WEB_FORM_URL_DEFAULT_MAX_VALUE_LENGTH,
+    names_only: bool = False,
+    raw: bool = False,
+) -> str:
+    """Inspect an HTML form and report its submit target without interacting with the page.
+
+    This is a read-only diagnostic. No navigation, click, submit, or DOM mutation occurs.
+    Use ``goto`` or ``fill``/``click`` when you actually need to drive the frontend.
+    """
+    from urllib.parse import urlparse
+
+    driver = _require_driver()
+    context = current_context(driver)
+    if not is_web_context(context):
+        raise AppiumCliError(
+            "web_form_url requires a WebView/Chrome context. "
+            "Use webview_switch or snapshot --context=webview first.",
+            exit_code=FEATURE_NOT_ENABLED,
+        )
+
+    if not isinstance(target, str) or not target.strip():
+        raise AppiumCliError("web_form_url requires a CSS selector or web_* ref as target.")
+    target = target.strip()
+
+    try:
+        capped_max_fields = max(1, min(int(max_fields), _WEB_FORM_URL_MAX_FIELDS_CAP))
+    except (TypeError, ValueError):
+        capped_max_fields = _WEB_FORM_URL_DEFAULT_MAX_FIELDS
+    try:
+        capped_max_value_length = max(0, int(max_value_length))
+    except (TypeError, ValueError):
+        capped_max_value_length = _WEB_FORM_URL_DEFAULT_MAX_VALUE_LENGTH
+
+    # Resolve a snapshot ref to an element when applicable; otherwise pass the
+    # selector string directly to the JS snippet so it can call querySelector.
+    js_target: Any = target
+    if state.ref_resolver.get_entry(target.strip("[]").removeprefix("ref:")) is not None:
+        try:
+            from appium_cli.tools.actions import _resolve_element  # local import to avoid cycle
+            element = _resolve_element(target)
+            if isinstance(element, _CoordinateElement):
+                raise AppiumCliError("web_form_url ref must resolve to a real element, not coordinates.")
+            js_target = element
+        except ElementNotFoundError as exc:
+            raise AppiumCliError(str(exc)) from exc
+
+    try:
+        result = driver.execute_script(WEB_FORM_URL_SCRIPT, js_target, capped_max_fields)
+    except Exception as exc:  # noqa: BLE001 - convert to CLI error at boundary
+        raise AppiumCliError(f"web_form_url failed to evaluate form: {exc}") from exc
+
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except json.JSONDecodeError as exc:
+            raise AppiumCliError(f"web_form_url returned non-JSON: {exc}") from exc
+    if not isinstance(result, dict):
+        raise AppiumCliError("web_form_url returned unexpected payload.")
+
+    if result.get("error"):
+        err = result.get("error")
+        message = result.get("message") or err
+        if err in {"not_found", "no_target"}:
+            raise AppiumCliError(
+                f"web_form_url: target '{target}' not found in the current DOM. {message}"
+            )
+        if err == "no_form":
+            raise AppiumCliError(
+                f"web_form_url: target '{target}' has no enclosing <form>. "
+                "Provide a selector that matches a form or an element inside one."
+            )
+        if err == "invalid_selector":
+            raise AppiumCliError(f"web_form_url: invalid selector '{target}'. {message}")
+        raise AppiumCliError(f"web_form_url: {message}")
+
+    method = str(result.get("method") or "GET").upper()
+    action_raw = str(result.get("action_raw") or "")
+    action_resolved = str(result.get("action_resolved") or "")
+    enctype = str(result.get("enctype") or "application/x-www-form-urlencoded")
+    page_origin = str(result.get("page_origin") or "")
+    raw_fields = result.get("fields") or []
+    omitted_count = int(result.get("omitted_fields_count") or 0)
+
+    warnings: list[str] = [_WEB_FORM_URL_BYPASS_WARNING]
+
+    # Classify the action scheme
+    action_scheme = ""
+    try:
+        action_scheme = (urlparse(action_resolved).scheme or "").lower()
+    except Exception:  # noqa: BLE001
+        action_scheme = ""
+
+    is_http = action_scheme in {"http", "https"}
+    non_http_action = bool(action_raw) and not is_http and action_scheme in {
+        "javascript", "mailto", "data", "tel", "sms", "file", "blob",
+    }
+
+    # Cross-origin detection
+    cross_origin = False
+    if is_http and page_origin:
+        try:
+            action_parsed = urlparse(action_resolved)
+            action_origin = f"{action_parsed.scheme}://{action_parsed.netloc}"
+            if action_origin and action_origin != page_origin:
+                cross_origin = True
+        except Exception:  # noqa: BLE001
+            cross_origin = False
+
+    # Build redacted field list
+    fields_out: list[dict[str, Any]] = []
+    for raw_field in raw_fields:
+        if not isinstance(raw_field, dict):
+            continue
+        name = str(raw_field.get("name") or "")
+        if not name:
+            continue
+        value = str(raw_field.get("value") or "")
+        reason = _wfu_classify_sensitivity(raw_field)
+        redacted = bool(reason) or names_only
+        if names_only and not reason:
+            reason = "names_only"
+        if redacted:
+            display_value = _WEB_FORM_URL_REDACTED
+            truncated = False
+        else:
+            display_value, truncated = _wfu_truncate(value, capped_max_value_length)
+        item: dict[str, Any] = {
+            "name": name,
+            "type": raw_field.get("type") or "",
+            "tag": raw_field.get("tag") or "",
+            "source": raw_field.get("tag") or "input",
+            "included": True,
+            "redacted": redacted,
+            "value": display_value,
+            "display_value": display_value,
+        }
+        if truncated:
+            item["truncated"] = True
+        if reason:
+            item["reason"] = reason
+        fields_out.append(item)
+
+    # Decide whether to emit a URL
+    emit_url = is_http and method == "GET" and not names_only
+
+    url_value = ""
+    payload_summary: list[dict[str, Any]] = []
+    if emit_url:
+        url_value = _wfu_build_url(action_resolved, fields_out)
+    else:
+        for f in fields_out:
+            payload_summary.append({
+                "name": f["name"],
+                "redacted": f["redacted"],
+                "reason": f.get("reason"),
+            })
+
+    if method != "GET":
+        warnings.append("post_no_replay_url: POST form; no submit URL is produced.")
+    elif non_http_action:
+        warnings.append("non_http_action: form action scheme is not http(s); no URL produced.")
+    elif names_only:
+        warnings.append("names_only: values and URL omitted by request.")
+    elif emit_url:
+        warnings.append(_WEB_FORM_URL_GET_PRIVACY_WARNING)
+        if cross_origin:
+            warnings.append("cross_origin_action: form action targets a different origin.")
+    if result.get("fields_truncated") or omitted_count:
+        warnings.append(
+            f"max_fields_truncated: {omitted_count} additional field(s) were omitted; "
+            "increase --max-fields to see them."
+        )
+    if not fields_out:
+        warnings.append("empty_form: no submittable named fields found.")
+
+    redacted_names = [f["name"] for f in fields_out if f["redacted"]]
+    if redacted_names and not names_only:
+        warnings.append("redacted_fields: sensitive field values were not included.")
+
+    payload: dict[str, Any] = {
+        "inspection_only": True,
+        "frontend_interaction_skipped": True,
+        "selector": target,
+        "method": method,
+        "action": action_resolved,
+        "action_raw": action_raw,
+        "enctype": enctype,
+        "page_origin": page_origin,
+        "cross_origin_action": cross_origin,
+        "non_http_action": non_http_action,
+        "fields": fields_out,
+        "omitted_fields_count": omitted_count,
+        "warnings": warnings,
+    }
+    if emit_url:
+        payload["url"] = url_value
+    else:
+        payload["payload_summary"] = payload_summary
+
+    if raw:
+        # Do not expose internal display_value alias key in raw output.
+        for f in payload["fields"]:
+            f.pop("display_value", None)
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+
+    # Compact human/LLM-readable text output
+    lines: list[str] = []
+    lines.append("Inspection only: no frontend interaction was performed.")
+    lines.append("frontend_interaction_skipped: true")
+    lines.append(f"method: {method}")
+    lines.append(f"action: {action_resolved}")
+    if emit_url:
+        lines.append(f"url: {url_value}")
+    elif method != "GET":
+        lines.append("url: (none; POST form, payload summary below)")
+    elif non_http_action:
+        lines.append("url: (none; non-http action)")
+    elif names_only:
+        lines.append("url: (omitted; --names-only)")
+    included = [f["name"] for f in fields_out if not f["redacted"]]
+    if included:
+        lines.append("included_fields: " + ", ".join(included))
+    if redacted_names:
+        lines.append("redacted_fields: " + ", ".join(redacted_names))
+    if not emit_url and payload_summary:
+        lines.append("payload_summary:")
+        for f in payload_summary:
+            tag = "[REDACTED]" if f["redacted"] else "[included]"
+            reason = f" ({f['reason']})" if f.get("reason") else ""
+            lines.append(f"  - {f['name']}: {tag}{reason}")
+    if omitted_count:
+        lines.append(f"omitted_fields_count: {omitted_count}")
+    lines.append("warnings:")
+    for w in warnings:
+        lines.append(f"  - {w}")
     return "\n".join(lines)
 
 

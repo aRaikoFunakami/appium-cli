@@ -166,7 +166,7 @@ class TestExpectedToolsCoverage:
 
     EXPECTED_DAEMON_TOOLS = {
         "snapshot", "describe", "find_by_text", "screenshot", "get_page_source",
-        "snapshot_show", "snapshot_search", "snapshot_refs", "generate_locator", "web_query",
+        "snapshot_show", "snapshot_search", "snapshot_refs", "generate_locator", "web_query", "web_form_url",
         "list_contexts", "get_context", "switch_context", "native_switch",
         "webview_switch", "webview_status", "web_snapshot", "webview_url", "webview_title",
         "goto", "go_back", "go_forward", "reload",

@@ -185,6 +185,7 @@ def test_all_top_level_commands_expose_json_option() -> None:
         "snapshot_refs",
         "generate_locator",
         "web_query",
+        "web_form_url",
         "describe",
         "find_by_text",
         "screenshot",

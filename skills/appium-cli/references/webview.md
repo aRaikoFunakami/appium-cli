@@ -54,6 +54,35 @@ appium-cli web_snapshot
 
 Do **not** use `web_eval window.location.href`, try to tap the address bar, or use `tabs new --url` as a workaround when you simply want to navigate the current tab to a URL. Always use `goto` for that. Use `tabs new --url` when the task actually requires opening a new tab.
 
+> Runtime guard: `web_eval` emits a non-fatal `[warning]` on stderr if the script string looks like `window.location =`, `location.href =`, or `history.pushState/replaceState`. Use `goto` instead, or pass `--no-lint` if you are only *reading* `window.location.href`.
+
+## Inspecting a form's submit URL safely
+
+When you only need to know *where a form would submit* (typical for task-completion shortcuts and debugging), use `web_form_url` instead of building a payload from `web_eval`:
+
+```bash
+appium-cli web_form_url "form[name=search]"
+# or, with a ref from web_snapshot:
+appium-cli web_form_url web_form_search
+appium-cli web_form_url "form[name=search]" --names-only        # field names only, no values, no URL
+appium-cli web_form_url "form[name=search]" --max-fields=200    # large forms
+appium-cli --raw web_form_url "form[name=search]"               # full structured JSON
+```
+
+Properties:
+
+- **Read-only.** No submit, no click, no DOM mutation, no navigation.
+- **Redacts secrets by default.** Hidden inputs, `type=password`, fields whose name/id/label/placeholder/aria-label match `password`, `token`, `csrf`, `xsrf`, `nonce`, `secret`, `auth`, `session`, `cookie`, `credential`, `api_key`, `apikey`, `access_key`, `private`, `otp`, `mfa`, `2fa`, `verification_code`, and `autocomplete=current-password|new-password|one-time-code|cc-number|cc-csc` are emitted as `[REDACTED]`. There is no `--unredact` / `--show-secrets` option.
+- **GET forms:** produces a navigable URL with non-sensitive values URL-encoded.
+- **POST / `javascript:` / `mailto:` / non-http actions:** produces a payload summary only; never a URL.
+- **Cross-origin actions:** still produces a URL, with a `cross_origin_action` warning.
+- **Always** includes `frontend_interaction_skipped: true` and a bypass warning. When you use the result in your final reply, state plainly that the form was not actually exercised.
+
+Decision rule:
+
+- ✅ "Get the result", "look up X", "search and report": OK as a shortcut, especially after `fill`/`click` failed twice on the same form.
+- ❌ "Test the form", "verify validation", "check submit handler", "check autocomplete": do NOT use `web_form_url`; drive the form with `fill`/`click`/`select_option`/`wait_for`.
+
 ## Context workflow
 
 ```bash
@@ -152,6 +181,8 @@ appium-cli press_key Enter
 ```
 
 Compatibility actions such as `tap web_<ref>` or `type_text web_<ref> ...` may work with web refs, but prefer `click` and `fill` for DOM interactions because they use Selenium/WebDriver semantics.
+
+`fill --slowly` sends text character by character for inputs that depend on key events. It does not guarantee that the input value is committed or that suggestion/dropdown UI is closed. Use `web_snapshot` after slow typing when the next action depends on page state, then click a relevant option or dismiss unneeded transient UI with `press_key Escape`.
 
 WebView actions use Selenium methods and JavaScript scrolling. Native touch-only gestures are not supported in WebView context and fail with exit code 8.
 

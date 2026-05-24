@@ -27,6 +27,11 @@ def _daemon_request(tool: str, json_output: bool, args: dict | None = None) -> N
         typer.echo(json.dumps(response, indent=2))
     elif response.get("ok"):
         typer.echo(response.get("text", ""), nl=not str(response.get("text", "")).endswith("\n"))
+        data = response.get("data") or {}
+        warnings = data.get("warnings") if isinstance(data, dict) else None
+        if isinstance(warnings, list):
+            for warn in warnings:
+                typer.echo(f"[warning] {warn}", err=True)
     else:
         typer.echo(f"ERROR: {response.get('error', 'tool failed')}", err=True)
 
@@ -123,6 +128,26 @@ def generate_locator(
     """Generate the best stored durable locator for a ref."""
 
     _daemon_request("generate_locator", json_output, {"ref": ref})
+
+
+def web_form_url(
+    target: Annotated[str, typer.Argument(help="CSS selector or web_* ref pointing to a form or an element inside one.")],
+    max_fields: Annotated[int, typer.Option("--max-fields", help="Maximum number of form fields to inspect.")] = 50,
+    max_value_length: Annotated[int, typer.Option("--max-value-length", help="Truncate each field value to this many characters.")] = 200,
+    names_only: Annotated[bool, typer.Option("--names-only", help="Emit field names only; omit values and URL.")] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """Inspect a form's submit target without interacting with the page (read-only, redacts secrets)."""
+    _daemon_request(
+        "web_form_url",
+        json_output,
+        {
+            "target": target,
+            "max_fields": max_fields,
+            "max_value_length": max_value_length,
+            "names_only": names_only,
+        },
+    )
 
 
 def web_query(
@@ -574,10 +599,11 @@ def reload_page(
 def web_eval(
     script: Annotated[str, typer.Argument(help="JavaScript code to execute.")],
     ref: Annotated[str, typer.Option("--ref", help="Optional ref to pass as argument.")] = "",
+    no_lint: Annotated[bool, typer.Option("--no-lint", help="Disable runtime warnings about navigation/value-injection patterns.")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
     """Evaluate JavaScript in WebView context."""
-    _daemon_request("web_eval", json_output, {"script": script, "ref": ref})
+    _daemon_request("web_eval", json_output, {"script": script, "ref": ref, "no_lint": no_lint})
 
 
 # ============================================================

@@ -184,7 +184,7 @@ appium-cli tabs switch --index 1            # switch to tab
 appium-cli tabs new --url "https://example.com"  # open new tab (embedded WebView only)
 ```
 
-React Select / autocomplete inputs require special handling. Use `--slowly` to type one character at a time, then click the suggestion:
+Inputs that depend on key-by-key events may need `--slowly`. Slow typing only enters text; it may or may not open transient UI such as suggestions, combobox menus, validation popovers, or overlays:
 
 ```bash
 appium-cli fill web_subjects "Comp" --slowly
@@ -192,7 +192,7 @@ appium-cli web_snapshot
 appium-cli click web_option_computer_science
 ```
 
-Do not use `web_eval` to set `.value` directly on React-controlled inputs — React ignores DOM-level value changes.
+After `fill --slowly`, stabilize the UI before interacting with another field or button: run `web_snapshot` if the page may have changed, click a relevant suggestion/option if one is visible, or dismiss an unneeded dropdown/overlay with `press_key Escape`. If nothing transient is visible, continue normally. Do not use `web_eval` to set `.value` directly on controlled inputs — React and similar frameworks may ignore DOM-level value changes.
 
 Targeting layers:
 
@@ -265,6 +265,28 @@ If the package id is unknown, use `appium-cli list_apps` to discover it (require
 - **Use `go_back`, `go_forward`, `reload`** for browser navigation — not `press_key back`.
 - **Use `tabs list`, `tabs switch`, `tabs new`, `tabs close`** for multi-tab workflows.
 - After any navigation (`goto`, `go_back`, `go_forward`, `reload`), take a new `web_snapshot`; old refs are stale.
+- After `fill --slowly`, check and stabilize transient UI before the next interaction when needed. If a later element is not clickable, suspect an open dropdown/overlay before trying other recovery. Do not bypass form input by assigning values with `web_eval`.
+
+### Inspection-only shortcut: `web_form_url`
+
+`appium-cli web_form_url "form[name=search]"` (or `web_form_url web_form_<ref>`) reports the form's submit URL/payload **without interacting with the page**. The CLI redacts hidden, password, token/csrf/otp-like, and `autocomplete=current-password|new-password|one-time-code|cc-number|cc-csc` fields; POST forms emit a payload summary instead of a URL.
+
+When to use:
+
+- ✅ Task says "get the result", "find the answer", "look up", "search and report": use after a normal `fill`/`click` attempt failed twice, or as a faster path for pure information retrieval.
+- ✅ Debugging why a form submission did not produce the expected URL.
+- ❌ Task says "test the form", "verify validation", or any frontend-behavior assertion: do **not** use; drive the form with `fill`/`click`/`select_option`/`wait_for` instead.
+
+Every successful output includes `frontend_interaction_skipped: true`. Surface this in your final reply when the URL came from `web_form_url` rather than real interaction — never claim you tested the form.
+
+### `web_eval` runtime warnings
+
+`web_eval` now emits non-fatal `[warning]` lines on stderr when the script looks like:
+
+- a navigation assignment (`window.location = ...`, `location.href = ...`, `history.pushState`) — use `appium-cli goto` instead.
+- a direct DOM value injection (`.value = ...`, synthetic `input`/`change` event dispatch) — use `appium-cli fill` (or `fill --slowly`) so framework listeners fire.
+
+Pass `--no-lint` only when you know the warning does not apply (e.g., reading `window.location.href`, not assigning to it).
 
 ## References
 

@@ -145,6 +145,16 @@ _add("web_query", "Query the current WebView/Chrome DOM by CSS selector.",
          "limit": _int_param("Maximum number of matches to return.", default=20),
      }, required=["selector"]))
 
+_add("web_form_url",
+     "Inspect an HTML form and report its submit URL/payload without interacting (read-only; redacts secrets). "
+     "Use for information retrieval/debugging; not a substitute for real frontend interaction.",
+     parameters=_schema({
+         "target": _str_param("CSS selector or web_* ref pointing to a form or element inside one."),
+         "max_fields": _int_param("Maximum number of form fields to inspect.", default=50),
+         "max_value_length": _int_param("Truncate each field value to this many characters.", default=200),
+         "names_only": _bool_param("Emit field names only; omit values and URL.", default=False),
+     }, required=["target"]))
+
 _add("describe", "Describe an element ref from the latest snapshot.",
      parameters=_schema({"ref": _str_param("Element ref to describe.")}, required=["ref"]))
 
@@ -340,10 +350,11 @@ _add("pinch_close", "Pinch close gesture on an element.",
          "speed": _int_param("Pinch speed."),
      }, required=["ref"]))
 
-_add("web_eval", "Evaluate JavaScript in WebView context.",
+_add("web_eval", "Evaluate JavaScript in WebView context. Returns the result as a string; runtime warnings flag misuse like navigation or value-injection patterns.",
      parameters=_schema({
          "script": _str_param("JavaScript code to execute."),
          "ref": _str_param("Optional ref to pass as argument."),
+         "no_lint": _bool_param("Disable runtime warnings about navigation/value-injection patterns.", default=False),
      }, required=["script"]))
 
 # ============================================================

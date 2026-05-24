@@ -32,6 +32,7 @@ from appium_cli.tools.observation import (
     snapshot_search,
     snapshot_show,
     web_query,
+    web_form_url,
     webview_title,
     webview_url,
     console_messages,
@@ -105,6 +106,15 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return {"text": generate_locator(**args, raw=bool(request.get("raw"))), "data": {}}
     if tool == "web_query":
         return {"text": web_query(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "web_form_url":
+        return {"text": web_form_url(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "web_eval":
+        no_lint = bool(args.pop("no_lint", False))
+        script = args.get("script", "")
+        warnings = [] if no_lint else actions.lint_web_eval(script)
+        text = actions.web_eval(**args)
+        data = {"warnings": warnings} if warnings else {}
+        return {"text": text, "data": data}
     if tool == "describe":
         return {"text": describe(**args), "data": {}}
     if tool == "find_by_text":

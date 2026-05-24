@@ -676,6 +676,38 @@ def _pinch(script: str, ref: str, percent: float, speed: int | None) -> str:
         raise AppiumCliError(str(exc)) from exc
 
 
+_WEB_EVAL_NAVIGATION_PATTERNS = (
+    (re.compile(r"window\s*\.\s*location\s*(?:\.\s*(?:href|assign|replace))?\s*(?:=|\()"),
+     "Looks like a navigation via window.location. Prefer `appium-cli goto <url>`."),
+    (re.compile(r"\blocation\s*\.\s*href\s*="),
+     "Looks like a navigation via location.href. Prefer `appium-cli goto <url>`."),
+    (re.compile(r"\bhistory\s*\.\s*(?:push|replace)State\b"),
+     "Looks like a history.pushState/replaceState navigation. Prefer `appium-cli goto`."),
+)
+_WEB_EVAL_VALUE_INJECTION_PATTERNS = (
+    (re.compile(r"\.\s*value\s*=\s*"),
+     "Looks like a direct .value assignment. Prefer `appium-cli fill` (or `fill --slowly`) so React/Vue listeners fire."),
+    (re.compile(r"dispatchEvent\s*\(\s*new\s+(?:Input|Keyboard)?Event\s*\(\s*['\"](?:input|change|keydown|keyup|keypress)['\"]"),
+     "Looks like a synthetic input/change event dispatch. Prefer `appium-cli fill` for form fields."),
+)
+
+
+def lint_web_eval(script: str) -> list[str]:
+    """Return non-fatal warnings for common web_eval misuse patterns."""
+    warnings: list[str] = []
+    if not isinstance(script, str) or not script:
+        return warnings
+    for pattern, message in _WEB_EVAL_NAVIGATION_PATTERNS:
+        if pattern.search(script):
+            warnings.append(message)
+            break
+    for pattern, message in _WEB_EVAL_VALUE_INJECTION_PATTERNS:
+        if pattern.search(script):
+            warnings.append(message)
+            break
+    return warnings
+
+
 def web_eval(script: str, ref: str = "") -> str:
     """Evaluate JavaScript in WebView context."""
     driver = _require_driver()
