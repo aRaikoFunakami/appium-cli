@@ -26,6 +26,9 @@ User responsibility:
 
 ## Setup
 
+The latest source is available at
+<https://github.com/aRaikoFunakami/appium-cli.git>.
+
 Editable install is recommended during development:
 
 ```bash
@@ -336,6 +339,16 @@ appium-cli install --skills --target=project --force
 ```
 
 The default target is the current project's `.agents/skills/appium-cli` directory. The skill allows only `Bash(appium-cli:*)`; it does not allow agents to run `adb`, `appium`, `npm`, or install commands directly.
+
+## Python API
+
+`appium_cli.openai_tools` provides a Python integration layer for building LLM
+agents that use appium-cli tools programmatically instead of invoking each tool
+through the shell.
+
+See [docs/openai-tools-integration.md](docs/openai-tools-integration.md) for a
+full integration guide, code examples, prompt templates, result handling rules,
+and the tool catalog.
 
 ## Tests
 
