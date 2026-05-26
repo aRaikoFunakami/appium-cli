@@ -11,6 +11,11 @@ from appium_cli.openai_tools import call_tool, get_openai_tool, get_openai_tools
 from appium_cli.utils import exit_codes
 
 
+@pytest.fixture(autouse=True)
+def _reset_prompt_mode() -> None:
+    openai_tools._reset_tool_skill_prompt_mode_for_tests()
+
+
 class TestGetOpenAITools:
     def test_returns_list_of_tool_definitions(self) -> None:
         tools = get_openai_tools()
@@ -64,11 +69,11 @@ class TestGetToolSkillPrompt:
 
         assert "appium-cli tool skill" in prompt
         assert "goto" in prompt
-        assert "web_snapshot" in prompt
         assert "activate_app" in prompt
         assert "snapshot_search" in prompt
         assert "wait_for" in prompt
-        assert "web_query" in prompt
+        assert "Current appium-cli context guidance: NATIVE_APP" in prompt
+        assert "Current appium-cli context guidance: WebView / Chrome" not in prompt
 
     def test_includes_latest_skill_guidance(self) -> None:
         prompt = get_tool_skill_prompt()
@@ -80,11 +85,9 @@ class TestGetToolSkillPrompt:
             "within_container",
             "assert_visible",
             "find_by_text",
-            "file_upload",
             "console_messages",
             "network_requests",
             "get_device_info",
-            "frontend_interaction_skipped",
             "wait_short_loading",
         ):
             assert expected in prompt
@@ -96,6 +99,106 @@ class TestGetToolSkillPrompt:
         assert "get_system_prompt" not in prompt
         assert "depth=8" not in prompt
         assert "full-page observations should preserve all visible targets" in prompt
+
+    def test_includes_ordered_webview_workflow_examples(self) -> None:
+        self._mock_successful_call("goto", {"url": "https://example.com"})
+        prompt = get_tool_skill_prompt()
+
+        assert "Current appium-cli context guidance: WebView / Chrome" in prompt
+        assert "Open a URL and inspect the page" in prompt
+        assert '1. goto({"url": "https://example.com"})' in prompt
+        assert "2. web_snapshot({})" in prompt
+        assert 'snapshot_search({"text": "target text"})' in prompt
+        assert 'web_query({"selector": "a", "attrs": "href,textContent,aria-label", "limit": 50})' in prompt
+
+    def test_includes_portal_category_workflow_example(self) -> None:
+        self._mock_successful_call("goto", {"url": "https://example.com"})
+        prompt = get_tool_skill_prompt()
+
+        assert "Find a category or news page from a portal" in prompt
+        assert 'goto({"url": "https://www.yahoo.co.jp/"})' in prompt
+        assert 'snapshot_search({"text": "スポーツ"})' in prompt
+        assert "a[href*='sports']" in prompt
+        assert "a[href*='/articles/']" in prompt
+        assert "Do not conclude that a link/category is absent from one broad query" in prompt
+
+    def test_includes_native_and_form_workflow_examples(self) -> None:
+        prompt = get_tool_skill_prompt()
+
+        assert "Native UI: observe, find refs, act" in prompt
+        assert 'snapshot_refs({"snapshot_id": "latest", "role": "button"})' in prompt
+        assert 'tap({"ref": "<button ref>"})' in prompt
+        assert "Search or submit a simple form" not in prompt
+
+        self._mock_successful_call("webview_switch", {})
+        prompt = get_tool_skill_prompt()
+        assert "Search or submit a simple form" in prompt
+        assert 'fill({"ref": "web_<search input ref>", "text": "query", "submit": true})' in prompt
+        assert "file_upload" in prompt
+
+    def test_prompt_mode_switches_to_webview_after_goto(self, monkeypatch) -> None:
+        def fake_request(tool, args=None, **kwargs):
+            return {"ok": True, "text": "Navigated to https://example.com", "data": {}}
+
+        monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
+
+        assert "Current appium-cli context guidance: NATIVE_APP" in get_tool_skill_prompt()
+        call_tool("goto", {"url": "https://example.com"})
+        prompt = get_tool_skill_prompt()
+        assert "Current appium-cli context guidance: WebView / Chrome" in prompt
+        assert "Native UI: observe, find refs, act" not in prompt
+
+    def test_prompt_mode_switches_back_to_native_after_native_switch(self, monkeypatch) -> None:
+        def fake_request(tool, args=None, **kwargs):
+            return {"ok": True, "text": "OK", "data": {}}
+
+        monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
+
+        call_tool("webview_switch", {})
+        assert "Current appium-cli context guidance: WebView / Chrome" in get_tool_skill_prompt()
+        call_tool("native_switch", {})
+        assert "Current appium-cli context guidance: NATIVE_APP" in get_tool_skill_prompt()
+
+    def test_web_snapshot_does_not_switch_prompt_mode(self, monkeypatch) -> None:
+        def fake_request(tool, args=None, **kwargs):
+            return {"ok": True, "text": "snapshot_id: web-test\nsource: web\n", "data": {}}
+
+        monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
+
+        call_tool("web_snapshot", {})
+        assert "Current appium-cli context guidance: NATIVE_APP" in get_tool_skill_prompt()
+
+    def test_failed_goto_does_not_switch_prompt_mode(self, monkeypatch) -> None:
+        def fake_request(tool, args=None, **kwargs):
+            return {"ok": False, "error": "No WebView context", "data": {}}
+
+        monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
+
+        call_tool("goto", {"url": "https://example.com"})
+        assert "Current appium-cli context guidance: NATIVE_APP" in get_tool_skill_prompt()
+
+    def test_switch_context_updates_prompt_mode_for_obvious_targets(self, monkeypatch) -> None:
+        def fake_request(tool, args=None, **kwargs):
+            return {"ok": True, "text": f"Switched to {args.get('context')}", "data": {}}
+
+        monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
+
+        call_tool("switch_context", {"context": "CHROMIUM"})
+        assert "Current appium-cli context guidance: WebView / Chrome" in get_tool_skill_prompt()
+        call_tool("switch_context", {"context": "NATIVE_APP"})
+        assert "Current appium-cli context guidance: NATIVE_APP" in get_tool_skill_prompt()
+
+    @staticmethod
+    def _mock_successful_call(tool_name: str, args: dict[str, object]) -> None:
+        def fake_request(tool, args=None, **kwargs):
+            return {"ok": True, "text": "OK", "data": {}}
+
+        original = openai_tools.request
+        try:
+            openai_tools.request = fake_request
+            call_tool(tool_name, args)
+        finally:
+            openai_tools.request = original
 
     def test_does_not_expose_system_prompt_api(self) -> None:
         assert not hasattr(openai_tools, "get_system_prompt")

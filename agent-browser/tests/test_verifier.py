@@ -132,6 +132,24 @@ class TestStructuralGuard:
         assert not vr.passed
         assert "observation" in vr.reason.lower()
 
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            "web_query",
+            "snapshot_search",
+            "snapshot_refs",
+            "snapshot_show",
+            "webview_url",
+            "webview_title",
+        ],
+    )
+    def test_targeted_discovery_counts_as_observation(self, tool_name: str) -> None:
+        guard = StructuralGuard(min_result_chars=5)
+        brain = _brain(result="Here are the complete results from the observed page.")
+        mem = _memory(tool_calls=[_tool_call(tool_name)])
+        vr = guard.check("goal", brain, mem)
+        assert vr.passed
+
     def test_all_recent_failures_with_success_fails(self) -> None:
         guard = StructuralGuard(min_result_chars=5)
         brain = _brain(success=True, result="Everything worked fine, task complete.")

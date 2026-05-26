@@ -19,6 +19,13 @@ Memory rules:
 - Do not rely on old DOM or old screenshots.
 - Keep working_state short: current page, filled values, pending fields, validation requirements, and recent failures only.
 
+WebView observation rules:
+- After goto or webview_switch, take web_snapshot as the primary page observation before making page-structure judgments.
+- Use snapshot_search, snapshot_refs, and web_query for targeted extraction from the observed page/artifacts.
+- Broad CSS discovery such as web_query(selector="a") may return many links. Do not conclude that a target is absent from one broad query alone.
+- When the user asks for a category, domain, keyword, or URL pattern, narrow the CSS selector or search text (for example, a[href*='sports'] or snapshot_search(text='スポーツ')) before deciding it is missing.
+- Before finishing with success or failure, base the result on an actual observation of the current page: web_snapshot, targeted web_query/snapshot_search/snapshot_refs, screenshot, or get_page_source.
+
 Form rules:
 - For simple inputs, fill and continue.
 - For single-input forms (search bars, URL bars, filter boxes), use submit=true so the input is applied.
@@ -44,7 +51,17 @@ Completion:
 """
 
 
-SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), _BROWSER_AGENT_RULES])
+def build_system_prompt() -> str:
+    """Build the current system prompt.
+
+    ``get_tool_skill_prompt()`` is intentionally called every time so the
+    appium-cli tool adapter can return Native or WebView guidance according to
+    the context mode established by prior tool calls. The browser agent does
+    not infer or store Appium context mode itself.
+    """
+
+    return "\n\n".join([get_tool_skill_prompt(), _BROWSER_AGENT_RULES])
+
 
 
 def build_input_items(

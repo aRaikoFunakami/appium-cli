@@ -21,23 +21,7 @@ from agent_browser.schemas import MemoryEvent, ObservationSummary, SafetyCategor
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_RESULT_CHARS = 12000
-MAX_SNAPSHOT_SHOW_TREE_CHARS = 1500
 _FAILED_PREFIX = "FAILED"
-
-# Snapshot tools return full output without truncation (Playwright alignment).
-_SNAPSHOT_TOOLS = frozenset({"snapshot", "web_snapshot"})
-
-_ACTION_TOOLS = frozenset({
-    "tap", "click", "fill", "type_text", "scroll", "scroll_up",
-    "scroll_down", "scroll_left", "scroll_right", "swipe", "swipe_up",
-    "swipe_down", "swipe_left", "swipe_right", "long_press", "double_tap",
-    "drag", "fling", "fling_up", "fling_down", "fling_left", "fling_right",
-    "pinch_open", "pinch_close", "press_key", "press_keycode", "select",
-    "send_keys", "scroll_element", "scroll_to_element", "click_element",
-    "activate_app", "set_orientation", "clear", "reload", "go_back",
-    "go_forward",
-})
 
 _OBSERVATION_PRODUCING = frozenset({
     "snapshot",
@@ -52,10 +36,6 @@ _OBSERVATION_PRODUCING = frozenset({
     "snapshot_search",
     "snapshot_refs",
     "web_query",
-})
-
-_METADATA_KEEP = frozenset({
-    "snapshot_id", "source", "screen_id", "context", "can_scroll_more",
 })
 
 
@@ -109,13 +89,6 @@ def _summarize_args(args: dict[str, Any] | None, *, limit: int = 240) -> str:
     return rendered if len(rendered) <= limit else rendered[:limit] + "..."
 
 
-def _truncate(value: str, limit: int = MAX_TOOL_RESULT_CHARS) -> str:
-    if len(value) <= limit:
-        return value
-    head = value[: limit - 200]
-    return head + f"\n\n... [truncated {len(value) - len(head)} chars]"
-
-
 def _save_screenshot_artifact(text: str, artifacts_dir: Path) -> str | None:
     try:
         payload = json.loads(text)
@@ -153,30 +126,6 @@ def _extract_observation(tool_name: str, text: str) -> ObservationSummary | None
         return ObservationSummary(source="other", summary=f"<page_source: {len(text)} chars>")
     return None
 
-
-def _compact_action_metadata(text: str) -> str:
-    lines = text.split("\n")
-    prefix_lines: list[str] = []
-    meta_lines: list[str] = []
-    in_meta = False
-    for line in lines:
-        stripped = line.strip()
-        if not in_meta:
-            if stripped.startswith("snapshot_id:"):
-                in_meta = True
-                meta_lines.append(stripped)
-            else:
-                prefix_lines.append(line)
-        else:
-            key = stripped.split(":", 1)[0] if ":" in stripped else ""
-            if key in _METADATA_KEEP:
-                meta_lines.append(stripped)
-    result = "\n".join(prefix_lines).rstrip()
-    if meta_lines:
-        result += "\n" + "\n".join(meta_lines)
-    return result if result.strip() else "OK"
-
-
 def _record_artifacts_from_data(data: dict[str, Any] | None, memory: WorkingMemory | None) -> None:
     if not data or memory is None:
         return
@@ -200,18 +149,7 @@ def _serialize_response(name: str, response: dict[str, Any]) -> str:
     if not text:
         return "OK"
     text = str(text)
-    if name in _ACTION_TOOLS:
-        return _compact_action_metadata(text)
-    if name == "snapshot_show" and len(text) > MAX_SNAPSHOT_SHOW_TREE_CHARS:
-        head = text[: MAX_SNAPSHOT_SHOW_TREE_CHARS - 100]
-        return (
-            head
-            + f"\n\n... [truncated {len(text) - len(head)} chars. "
-            f"Use snapshot_search(text=...) or snapshot_refs(role=...) for targeted extraction.]"
-        )
-    if name in _SNAPSHOT_TOOLS:
-        return text
-    return _truncate(text)
+    return text
 
 
 async def execute_appium_tool(

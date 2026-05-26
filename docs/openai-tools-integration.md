@@ -173,10 +173,11 @@ Returns a single tool schema or `None` if the name is unknown.
 def get_tool_skill_prompt() -> str
 ```
 
-Returns a reusable `appium-cli` tool usage prompt fragment for tool-calling
-agents. This fragment contains the shared appium-cli operating rules: session
-lifecycle, native vs WebView command selection, artifact-first observation,
-ref targeting, form handling, diagnostics, and verification guidance.
+Returns the current reusable `appium-cli` tool usage prompt fragment for
+tool-calling agents. The fragment is dynamic: `call_tool()` updates the prompt
+mode after persistent Appium context changes such as `webview_switch`, `goto`,
+and `native_switch`, so callers should fetch it for every model call rather
+than cache it once.
 
 It is **not** a complete system prompt. Compose it with your own agent-specific
 role, memory, safety, output-format, and completion instructions:
@@ -192,7 +193,8 @@ After tool results, update working_state and either continue or return the
 requested final answer.
 """
 
-SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
+def build_system_prompt() -> str:
+    return "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
 ```
 
 ### `call_tool(name, arguments)`
@@ -287,7 +289,8 @@ async def stop_session() -> None:
 The CLI integration uses `skills/appium-cli/SKILL.md` to teach shell-based
 agents how to operate `appium-cli`. A Python agent should use
 `get_tool_skill_prompt()` for the same shared tool guidance, then append its
-own agent-specific instructions.
+own agent-specific instructions. Fetch the fragment on every model call so the
+Native/WebView section follows the current appium-cli context mode.
 
 Recommended composition:
 
@@ -315,7 +318,9 @@ Completion rules:
   what is missing.
 """
 
-SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
+def build_system_prompt() -> str:
+    # Fetch every turn so Native/WebView guidance follows appium-cli context.
+    return "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
 ```
 
 For Responses API agents, `agent-browser` also uses a structured per-turn user
@@ -381,18 +386,20 @@ Keep working_state short and verify the requested outcome before final answer.
 When the goal is satisfied, answer with the requested result.
 """
 
-SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
+def build_system_prompt() -> str:
+    return "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
 
 
 def run_task(goal: str, model: str = "gpt-4o") -> str:
     client = OpenAI()
     tools = get_openai_tools()
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt()},
         {"role": "user", "content": goal},
     ]
 
     for _ in range(30):
+        messages[0] = {"role": "system", "content": build_system_prompt()}
         response = client.chat.completions.create(
             model=model,
             messages=messages,
@@ -469,7 +476,8 @@ Keep working_state short and verify the requested outcome before final answer.
 When the goal is satisfied, answer with the requested result.
 """
 
-SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
+def build_system_prompt() -> str:
+    return "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
 
 
 def response_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -504,7 +512,7 @@ async def run_responses_task(goal: str, model: str = "gpt-4o") -> str:
     for _ in range(30):
         response = await client.responses.create(
             model=model,
-            instructions=SYSTEM_PROMPT,
+            instructions=build_system_prompt(),
             input=input_items,
             tools=tools,
             tool_choice="auto",
@@ -884,7 +892,7 @@ LLM agents, `parallel_tool_calls=False` is recommended.
 - Chat-to-Responses tool schema conversion
 - one tool call per action
 - safety classification and approval blocking
-- output truncation by tool type
+- full successful tool output forwarding to the next model turn
 - screenshot artifact extraction
 - observation extraction into current screen state
 - retry counters and tool blocking after repeated failures
@@ -905,12 +913,12 @@ uses `appium_cli.openai_tools`:
 | File | What to copy or study |
 |---|---|
 | `agent-browser/src/agent_browser/session.py` | task-scoped session lifecycle around `appium-cli session ...` |
-| `agent-browser/src/agent_browser/appium_tools.py` | `call_tool()` dispatch, safety checks, truncation, screenshot handling, observation extraction |
+| `agent-browser/src/agent_browser/appium_tools.py` | `call_tool()` dispatch, safety checks, screenshot artifact handling, observation extraction |
 | `agent-browser/src/agent_browser/agent/registry.py` | Chat Completions schema to Responses API schema conversion |
 | `agent-browser/src/agent_browser/agent/prompt.py` | `get_tool_skill_prompt()` plus browser-specific rules, and per-turn context format |
 | `agent-browser/src/agent_browser/agent/loop.py` | ReAct loop, function call output handling, verification loop |
 | `agent-browser/src/agent_browser/memory.py` | working memory and episodic memory patterns |
 
 For shell-based agents, use `skills/appium-cli/SKILL.md`. For Python API
-agents, call `get_tool_skill_prompt()` and combine it with agent-specific
-runtime context as shown in this guide.
+agents, call `get_tool_skill_prompt()` on every model turn and combine it with
+agent-specific runtime context as shown in this guide.

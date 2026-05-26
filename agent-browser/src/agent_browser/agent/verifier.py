@@ -53,6 +53,9 @@ class StructuralGuard:
     # Tool names that count as "observations" for the observation-taken check.
     OBSERVATION_TOOLS: frozenset[str] = frozenset({
         "snapshot", "web_snapshot", "screenshot", "get_page_source",
+        "snapshot_show", "snapshot_search", "snapshot_refs",
+        "web_query", "webview_url", "webview_title",
+        "describe", "find_by_text", "get_text",
     })
 
     def __init__(self, *, min_result_chars: int = 50) -> None:

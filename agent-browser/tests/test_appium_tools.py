@@ -13,7 +13,6 @@ import pytest
 
 from agent_browser.appium_tools import (
     BrowserAgentContext,
-    MAX_TOOL_RESULT_CHARS,
     execute_appium_tool,
 )
 from agent_browser.config import AgentBrowserConfig
@@ -127,8 +126,8 @@ class TestArtifactFirst:
         assert any("web_btn" in f for f in ctx.memory.failures)
 
     @pytest.mark.asyncio
-    async def test_action_compact_metadata(self, tmp_path) -> None:
-        """Action tools keep snapshot_id/screen_id but drop artifacts paths and tree body."""
+    async def test_action_output_matches_daemon_text(self, tmp_path) -> None:
+        """Action tools return daemon text as-is, matching direct appium-cli usage."""
         ctx = _ctx(tmp_path)
         metadata_block = (
             "snapshot_id: web-2026-05-07T07-05-18-853Z-728218\n"
@@ -153,15 +152,14 @@ class TestArtifactFirst:
         assert "screen_id: 728218" in result.output
         assert "source: web" in result.output
         assert "context: WEBVIEW_chrome" in result.output
-        # artifact paths and title/url are removed
-        assert "/path/to/" not in result.output
-        assert "artifacts:" not in result.output
-        assert "title:" not in result.output
-        assert "url:" not in result.output
+        assert "/path/to/" in result.output
+        assert "artifacts:" in result.output
+        assert "title: Yahoo! JAPAN" in result.output
+        assert "url: https://www.yahoo.co.jp/" in result.output
 
     @pytest.mark.asyncio
     async def test_action_can_scroll_more(self, tmp_path) -> None:
-        """Scroll result preserves can_scroll_more alongside compact metadata."""
+        """Scroll result preserves the full daemon text."""
         ctx = _ctx(tmp_path)
         metadata_block = (
             "snapshot_id: native-abc\n"
@@ -178,7 +176,7 @@ class TestArtifactFirst:
         assert "can_scroll_more: True" in result.output
         assert "snapshot_id: native-abc" in result.output
         assert "screen_id: abc" in result.output
-        assert "/path/" not in result.output
+        assert "/path/snapshot.compact.yml" in result.output
 
     @pytest.mark.asyncio
     async def test_snapshot_metadata_passthrough(self, tmp_path) -> None:
@@ -238,13 +236,13 @@ class TestArtifactFirst:
         assert result.output == search_result
 
     @pytest.mark.asyncio
-    async def test_web_eval_result_respects_token_budget(self, tmp_path) -> None:
+    async def test_web_eval_result_not_truncated(self, tmp_path) -> None:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "x" * 30000, "data": {}}
             result = await execute_appium_tool("web_eval", {"script": "return []"}, ctx)
-        assert len(result.output) <= MAX_TOOL_RESULT_CHARS
-        assert "... [truncated " in result.output
+        assert len(result.output) == 30000
+        assert "truncated" not in result.output
 
 
 class TestObservationProducing:
@@ -264,7 +262,7 @@ class TestSnapshotNoTruncation:
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": large_tree, "data": {}}
             result = await execute_appium_tool("snapshot", {}, ctx)
-        assert len(result.output) > MAX_TOOL_RESULT_CHARS
+        assert len(result.output) > 12000
         assert "truncated" not in result.output
 
     @pytest.mark.asyncio
@@ -275,14 +273,15 @@ class TestSnapshotNoTruncation:
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": large_tree, "data": {}}
             result = await execute_appium_tool("web_snapshot", {}, ctx)
-        assert len(result.output) > MAX_TOOL_RESULT_CHARS
+        assert len(result.output) > 12000
         assert "truncated" not in result.output
 
     @pytest.mark.asyncio
-    async def test_non_snapshot_observation_still_truncated(self, tmp_path) -> None:
-        """Non-snapshot observation tools still respect truncation."""
+    async def test_non_snapshot_output_not_truncated(self, tmp_path) -> None:
+        """Non-snapshot tools also return full output."""
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "x" * 30000, "data": {}}
             result = await execute_appium_tool("web_eval", {"script": "return []"}, ctx)
-        assert len(result.output) <= MAX_TOOL_RESULT_CHARS
+        assert len(result.output) == 30000
+        assert "truncated" not in result.output

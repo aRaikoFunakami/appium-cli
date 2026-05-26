@@ -12,11 +12,10 @@ from agent_browser.agent.history import (
     HistoryItem, INFO_ONLY_TOOLS, LoopDetector, OperationHistory,
 )
 from agent_browser.agent.llm import ResponsesClient
-from agent_browser.agent.prompt import SYSTEM_PROMPT, build_input_items
+from agent_browser.agent.prompt import build_input_items, build_system_prompt
 from agent_browser.agent.registry import get_response_tool_schemas
-from agent_browser.agent.state import BrowserOperationState, clamp_text
+from agent_browser.agent.state import BrowserOperationState
 from agent_browser.agent.verifier import CompletionVerifier, LLMJudge, StructuralGuard
-from agent_browser.appium_tools import _SNAPSHOT_TOOLS
 from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult, execute_appium_tool
 from agent_browser.appium_tools import _summarize_args as _args_summary
 from agent_browser.config import AgentBrowserConfig
@@ -122,20 +121,19 @@ def _parse_args(raw: str | None) -> dict[str, Any]:
 
 
 def _tool_output_item(call: dict[str, Any], result: ToolExecutionResult, cfg: AgentBrowserConfig) -> dict[str, Any]:
+    output = result.output if result.ok else result.short_output(
+        max_error_chars=cfg.max_error_chars,
+        max_result_chars=len(result.output),
+    )
     return {
         "type": "function_call_output",
         "call_id": call.get("call_id"),
-        "output": result.short_output(
-            max_error_chars=cfg.max_error_chars,
-            max_result_chars=cfg.max_action_result_chars,
-        ),
+        "output": output,
     }
 
 
 def _latest_observation_from_result(result: ToolExecutionResult, cfg: AgentBrowserConfig) -> str:
-    if result.name in _SNAPSHOT_TOOLS:
-        return result.output
-    return clamp_text(result.output, cfg.max_observation_chars)
+    return result.output
 
 
 def _build_billing_info(call_usages: list[CallUsage], model: str) -> BillingInfo:
@@ -283,7 +281,7 @@ async def run_react_loop(
 
         response = await client.create(
             input_items=input_items,
-            instructions=SYSTEM_PROMPT,
+            instructions=build_system_prompt(),
             tools=tools,
             call_type="action",
         )
@@ -324,7 +322,7 @@ async def run_react_loop(
             continuation_input = input_items + _items_to_input(getattr(response, "output", []) or []) + output_items
             response = await client.create(
                 input_items=continuation_input,
-                instructions=SYSTEM_PROMPT,
+                instructions=build_system_prompt(),
                 tools=None,
                 call_type="brain",
             )

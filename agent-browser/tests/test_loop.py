@@ -10,8 +10,12 @@ import pytest
 from agent_browser.agent.loop import (
     _build_billing_info,
     _extract_text_with_diagnostics,
+    _latest_observation_from_result,
     _items_to_input,
+    _tool_output_item,
 )
+from agent_browser.appium_tools import ToolExecutionResult
+from agent_browser.config import AgentBrowserConfig
 from agent_browser.token_counter import CallUsage
 
 
@@ -138,6 +142,50 @@ def test_extract_text_returns_empty_when_no_text() -> None:
     )
     result = _extract_text_with_diagnostics(response, _test_logger)
     assert result == ""
+
+
+def test_tool_output_item_does_not_truncate_successful_output() -> None:
+    cfg = AgentBrowserConfig(max_action_result_chars=10)
+    result = ToolExecutionResult(
+        name="web_query",
+        args_summary='{"selector":"a"}',
+        output="x" * 1000,
+        ok=True,
+        duration_ms=1.0,
+    )
+
+    item = _tool_output_item({"call_id": "call_1"}, result, cfg)
+
+    assert item["output"] == "x" * 1000
+
+
+def test_tool_output_item_still_truncates_errors() -> None:
+    cfg = AgentBrowserConfig(max_error_chars=40)
+    result = ToolExecutionResult(
+        name="click",
+        args_summary='{"ref":"missing"}',
+        output="ERROR: " + "x" * 1000,
+        ok=False,
+        duration_ms=1.0,
+    )
+
+    item = _tool_output_item({"call_id": "call_1"}, result, cfg)
+
+    assert len(str(item["output"])) <= 40
+    assert "..." in str(item["output"])
+
+
+def test_latest_observation_from_result_does_not_truncate() -> None:
+    cfg = AgentBrowserConfig(max_observation_chars=10)
+    result = ToolExecutionResult(
+        name="web_query",
+        args_summary='{"selector":"a"}',
+        output="y" * 1000,
+        ok=True,
+        duration_ms=1.0,
+    )
+
+    assert _latest_observation_from_result(result, cfg) == "y" * 1000
 
 
 def test_build_billing_info_includes_per_call_breakdown() -> None:
