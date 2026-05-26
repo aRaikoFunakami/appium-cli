@@ -39,45 +39,60 @@ from appium_cli.utils import exit_codes
 
 TOOL_SKILL_PROMPT = """appium-cli tool skill:
 
-Use appium-cli tools as a snapshot/ref-based mobile automation surface. Observe the current UI, choose refs from the latest observation or saved snapshot artifacts, act on those refs, then observe or inspect the post-action state before choosing the next target.
+Use appium-cli tools as an artifact-first, snapshot/ref-based mobile automation surface. Observe the current UI, inspect targeted refs or artifacts, act on refs/selectors, then use the post-action snapshot artifacts or a fresh observation before choosing the next target.
 
-Context rules:
-- Native context: use snapshot for observation, tap for clicks/taps, type_text for native text entry, and scroll_down/scroll_up/swipe_* for native gestures.
-- WebView/Chrome context: use web_snapshot for observation, click for links/buttons, fill for inputs, select/select_option/set_date for form controls, and webview_url/webview_title for quick URL/title checks.
-- After goto or webview_switch succeeds, treat page-level work as WebView automation until native_switch is called.
-- Do not use native tap/type_text workflows for normal DOM interaction when web_* refs or CSS selectors are available.
+Lifecycle and responsibility boundary:
+- Tool calls require an active appium-cli session. When the caller owns lifecycle, use one fresh session per user task and stop it at task end; stale sessions can cause InvalidSessionIdException.
+- If refs/session state appear stale or the daemon loses WebDriver state, recover with session status, session stop, session start, then snapshot.
+- Diagnostics such as doctor, devices, get_device_info, webview_status, console_messages, and network_requests observe state; they do not install or fix prerequisites.
+- Do not call adb, appium, npm, or installer commands directly from an appium-cli tool-calling agent unless the user explicitly asked for prerequisite management outside appium-cli.
+
+Context selection:
+- Native context: use snapshot for observation, tap for clicks/taps, type_text for native text entry, and scoped scroll_down/scroll_up/swipe_* only when needed.
+- WebView/Chrome context: use web_snapshot for observation, click for links/buttons, fill for inputs, select/select_option/set_date for form controls, file_upload for file inputs, and webview_url/webview_title for quick URL/title checks.
+- After goto or webview_switch succeeds, treat page-level work as WebView automation until native_switch is called. Use go_back, go_forward, and reload for browser navigation instead of native back-key workflows.
+- Web refs can switch to their stored WebView context automatically. Prefer click/fill/select for web_* refs; do not use native tap/type_text workflows for normal DOM interaction.
 
 Navigation and app launch:
-- Use goto(url) to navigate the current WebView/Chrome tab. goto auto-switches to WebView when needed.
+- Use goto(url) to navigate the current WebView/Chrome tab. goto auto-switches to WebView when needed; no manual webview_switch is required before goto.
 - Do not use web_eval to assign window.location/location.href/history state, and do not search for or tap a browser address bar just to load a URL.
 - Use tabs tools only when the task actually requires multiple tabs.
-- If the target app package is known, use activate_app(package). Do not loop on launcher snapshots looking for app icons; launcher labels are often text-only and not actionable.
+- If the target app package is known, use activate_app(package), then observe with snapshot or web_snapshot as appropriate. Do not loop on launcher snapshots looking for app icons; launcher labels are often text-only and not actionable.
+- If the package id is unknown, use list_apps when shell capability is available, then activate_app. Use terminate_app or restart_app only when a clean app state is required, then observe again.
 
-Observation strategy:
-- Primary observation is snapshot in native context and web_snapshot in WebView context.
-- Prefer targeted artifact inspection before broad output: snapshot_search for text, snapshot_refs for ref lists, and snapshot_show with a ref for one element/subtree.
-- Use web_query to discover WebView elements, CSS selectors, attributes, and matching refs without reading a whole DOM tree.
-- Use screenshot only when visual pixels are necessary. Use get_page_source only as a diagnostic escape hatch after snapshot/web_snapshot, snapshot_search, snapshot_refs, snapshot_show, and web_query are insufficient.
-- Prefer web_snapshot depth=8 unless there is a clear reason to use a shallower depth.
+Observation and artifacts:
+- Primary observation is snapshot in native context and web_snapshot in WebView context. Normal snapshot output is metadata plus persisted artifacts; normal action output can append post-action snapshot artifacts that should be the next observation point.
+- Prefer targeted artifact inspection before broad output: snapshot_search for text, snapshot_refs for ref lists, snapshot_show(ref=...) for one element/subtree, and web_query for compact WebView selector/attribute discovery.
+- snapshot_search, snapshot_refs, and snapshot_show inspect persisted artifacts and do not refresh device state. Use them to avoid unnecessary snapshots and large tree reads.
+- For large screens or deep containers, use element-scoped snapshots with a ref and optional depth/max-nodes instead of dumping the full tree. Do not cap depth for normal full-page observations unless there is a clear reason; full-page observations should preserve all visible targets.
+- Use screenshot only when visual pixels are necessary. Use get_page_source only as a token-heavy diagnostic escape hatch after snapshot/web_snapshot, snapshot_search, snapshot_refs, snapshot_show, and web_query are insufficient.
 
-Ref and targeting rules:
+Refs and targeting:
 - Use refs only from the latest current observation or latest snapshot artifacts. Old refs can become stale after snapshot/web_snapshot, navigation, reload, scrolling, dialogs, or major screen changes.
-- If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control.
-- If duplicates are present, inspect candidates with snapshot_refs or snapshot_show before acting.
-- Snapshot refs are valid function-call arguments. CSS selectors discovered by web_query are not refs unless passed through supported CSS selector syntax such as css:#submit, css:.class, or css:[name='q'].
-- Use generate_locator(ref) when a durable locator or CSS selector is needed.
+- If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control; find_by_text can help locate text and suggested action targets.
+- If duplicate labels/refs appear in different regions, inspect candidates with snapshot_refs, snapshot_show, list_containers, or within_container before acting.
+- Use scrollable container refs when scrolling lists. Directional aliases such as scroll_down(ref), swipe_left(ref), and fling_down(ref) scope to the ref; omit the ref only for intentional full-screen gestures.
+- Snapshot refs are valid function-call arguments. CSS selectors discovered by web_query are not refs unless passed through supported CSS selector syntax such as css:#submit, css:.class, or css:[name='q']. Prefer explicit css: selectors for scripts.
+- Use generate_locator(ref) when a durable locator or CSS selector is needed. Legacy locator tools are expert-only recovery after refs, artifacts, web_query, and generated locators fail; after a legacy success, return immediately to the artifact-first loop with snapshot/web_snapshot and snapshot_refs.
 
-Async UI and forms:
-- Use wait_for for asynchronous conditions: text appears, text disappears, or a ref becomes visible.
+Actions and verification:
+- Use simple ref actions first. Gestures such as long_press, double_tap, drag, fling_*, pinch_*, and native swipe_* are fallbacks when simpler actions are insufficient.
+- Native touch gestures are not supported in WebView context; use WebView actions, JavaScript diagnostics, or intentionally switch to native for real touch gestures.
+- Use wait_for for asynchronous conditions: text appears, text disappears, or a ref becomes visible. Avoid wait_short_loading in normal workflows; prefer explicit wait_for, wait, assert_visible, or a fresh snapshot.
+- Use assert_visible before or after actions when a visible element/text assertion is needed.
+
+Forms and transient UI:
 - For simple inputs, fill/type_text and continue. For single-input forms such as search bars, URL bars, and filters, submit the input when the task requires applying it.
 - Never submit intermediate fields in a multi-field form unless the user asked for submission.
 - For autocomplete, combobox, React-Select, validation popovers, or search-as-you-type fields, use slow typing when needed, then observe with web_snapshot and either click the matching option or dismiss unneeded transient UI before interacting with another element.
-- Do not use web_eval to set input values; use fill so browser/framework input events fire.
+- Do not use web_eval to set input values; use fill so browser/framework input events fire. web_eval is appropriate for diagnostic reads, especially reading attributes or values from a resolved ref via el.
+- web_form_url is read-only and skips frontend interaction. Use it only for information retrieval or debugging, not for frontend behavior testing; if its result is used, disclose frontend_interaction_skipped and never claim the form was actually exercised.
 
-WebView fallbacks and limitations:
-- Targeting order in WebView is refs first, CSS selectors/web_query/generated locators second, legacy locator tools last.
-- Native touch-only gestures such as long_press, drag, fling_*, pinch_*, and native swipe_* are not available in WebView context; use WebView actions or switch to native intentionally.
-- web_form_url is read-only and skips frontend interaction. Use it only for information retrieval or debugging, not to claim that a form was tested or submitted through the UI.
+WebView diagnostics:
+- Use webview_status when WebView/Chrome commands fail due to context, debugging, or Chromedriver prerequisites.
+- Use console_messages to inspect browser console logs; returned entries may be consumed by the call.
+- Use network_requests only when the session was started with network logging enabled; static resources are excluded by default unless requested.
+- Use dialog_text, dialog_accept, and dialog_dismiss for WebView alert/confirm/prompt dialogs.
 """
 
 

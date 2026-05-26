@@ -70,6 +70,33 @@ class TestGetToolSkillPrompt:
         assert "wait_for" in prompt
         assert "web_query" in prompt
 
+    def test_includes_latest_skill_guidance(self) -> None:
+        prompt = get_tool_skill_prompt()
+
+        for expected in (
+            "webview_status",
+            "list_apps",
+            "list_containers",
+            "within_container",
+            "assert_visible",
+            "find_by_text",
+            "file_upload",
+            "console_messages",
+            "network_requests",
+            "get_device_info",
+            "frontend_interaction_skipped",
+            "wait_short_loading",
+        ):
+            assert expected in prompt
+
+    def test_uses_function_call_oriented_guidance(self) -> None:
+        prompt = get_tool_skill_prompt()
+
+        assert "appium-cli snapshot" not in prompt
+        assert "get_system_prompt" not in prompt
+        assert "depth=8" not in prompt
+        assert "full-page observations should preserve all visible targets" in prompt
+
     def test_does_not_expose_system_prompt_api(self) -> None:
         assert not hasattr(openai_tools, "get_system_prompt")
 

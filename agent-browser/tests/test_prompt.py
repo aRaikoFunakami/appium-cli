@@ -42,7 +42,8 @@ def test_system_prompt_mentions_single_input_submit_rule() -> None:
 
 
 def test_system_prompt_mentions_snapshot_depth_guidance() -> None:
-    assert "depth=8" in SYSTEM_PROMPT
+    assert "Do not cap depth for normal full-page observations" in SYSTEM_PROMPT
+    assert "depth=8" not in SYSTEM_PROMPT
 
 
 def test_system_prompt_composes_appium_tool_skill_prompt() -> None:
@@ -50,6 +51,8 @@ def test_system_prompt_composes_appium_tool_skill_prompt() -> None:
     assert "goto" in SYSTEM_PROMPT
     assert "activate_app" in SYSTEM_PROMPT
     assert "web_query" in SYSTEM_PROMPT
+    assert "webview_status" in SYSTEM_PROMPT
+    assert "assert_visible" in SYSTEM_PROMPT
 
 
 def test_system_prompt_mentions_result_must_contain_actual_data() -> None:
