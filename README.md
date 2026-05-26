@@ -344,7 +344,9 @@ The default target is the current project's `.agents/skills/appium-cli` director
 
 `appium_cli.openai_tools` provides a Python integration layer for building LLM
 agents that use appium-cli tools programmatically instead of invoking each tool
-through the shell.
+through the shell. It exposes OpenAI-compatible tool schemas, a reusable
+`get_tool_skill_prompt()` prompt fragment, and `call_tool()` dispatch through
+the session daemon.
 
 See [docs/openai-tools-integration.md](docs/openai-tools-integration.md) for a
 full integration guide, code examples, prompt templates, result handling rules,

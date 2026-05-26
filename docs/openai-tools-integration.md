@@ -6,8 +6,9 @@ for every tool call.
 
 `appium_cli.openai_tools` is a small adapter layer. It does **not** import the
 OpenAI SDK and it does **not** run an LLM. Your agent owns the model loop,
-prompts, memory, safety policy, and result handling. The adapter only provides
-tool schemas and dispatches tool calls to the `appium-cli` session daemon.
+memory, safety policy, and result handling. The adapter provides tool schemas,
+a reusable tool-usage prompt fragment, and dispatches tool calls to the
+`appium-cli` session daemon.
 
 ## 1. Architecture
 
@@ -16,13 +17,14 @@ There are two integration styles:
 | Integration style | Typical caller | How tools run |
 |---|---|---|
 | CLI | GitHub Copilot CLI, Claude Code, shell agents | `appium-cli snapshot`, `appium-cli tap btn_login`, pipes, `grep`, `jq`, files |
-| Python API | Custom Python LLM agents | `get_openai_tools()` + `call_tool(name, args)` |
+| Python API | Custom Python LLM agents | `get_tool_skill_prompt()` + `get_openai_tools()` + `call_tool(name, args)` |
 
 The Python API path looks like this:
 
 ```text
 Your agent
   |-- OpenAI SDK or another LLM client
+  |-- get_tool_skill_prompt() -> appium-cli tool usage guidance in your prompt
   |-- get_openai_tools() -> tool schemas sent to the model
   |-- model returns a function/tool call
   `-- call_tool(name, arguments)
@@ -70,7 +72,7 @@ uv add openai
 Your agent can then import the Python API:
 
 ```python
-from appium_cli.openai_tools import call_tool, get_openai_tools
+from appium_cli.openai_tools import call_tool, get_openai_tools, get_tool_skill_prompt
 ```
 
 If you are not using `uv`, use the equivalent editable install in your virtual
@@ -123,7 +125,12 @@ export OPENAI_API_KEY=...
 Import the adapter:
 
 ```python
-from appium_cli.openai_tools import get_openai_tool, get_openai_tools, call_tool
+from appium_cli.openai_tools import (
+    call_tool,
+    get_openai_tool,
+    get_openai_tools,
+    get_tool_skill_prompt,
+)
 ```
 
 ### `get_openai_tools()`
@@ -159,6 +166,34 @@ def get_openai_tool(name: str) -> dict[str, object] | None
 ```
 
 Returns a single tool schema or `None` if the name is unknown.
+
+### `get_tool_skill_prompt()`
+
+```python
+def get_tool_skill_prompt() -> str
+```
+
+Returns a reusable `appium-cli` tool usage prompt fragment for tool-calling
+agents. This fragment contains the shared appium-cli operating rules: session
+lifecycle, native vs WebView command selection, artifact-first observation,
+ref targeting, form handling, diagnostics, and verification guidance.
+
+It is **not** a complete system prompt. Compose it with your own agent-specific
+role, memory, safety, output-format, and completion instructions:
+
+```python
+from appium_cli.openai_tools import get_tool_skill_prompt
+
+
+AGENT_RULES = """
+You are a mobile task agent.
+Use exactly one appium-cli tool call when an action or observation is needed.
+After tool results, update working_state and either continue or return the
+requested final answer.
+"""
+
+SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
+```
 
 ### `call_tool(name, arguments)`
 
@@ -250,52 +285,37 @@ async def stop_session() -> None:
 ## 5. LLM prompting guide
 
 The CLI integration uses `skills/appium-cli/SKILL.md` to teach shell-based
-agents how to operate `appium-cli`. A Python agent does not automatically get
-that skill. Put the equivalent rules in your system/developer prompt.
+agents how to operate `appium-cli`. A Python agent should use
+`get_tool_skill_prompt()` for the same shared tool guidance, then append its
+own agent-specific instructions.
 
-A minimal system prompt should include:
+Recommended composition:
 
-```text
+```python
+from appium_cli.openai_tools import get_tool_skill_prompt
+
+
+AGENT_RULES = """
 You are a mobile automation agent using appium-cli tools through Python
 function calls.
 
 Use exactly one appium-cli tool call when an action or observation is needed.
-Use refs only if they appear in the latest snapshot or web_snapshot.
-Old refs are stale after a new snapshot or web_snapshot.
-Do not rely on old DOM, old screenshots, or old refs.
-
-Native workflow:
-- Observe with snapshot.
-- Find actionable refs with snapshot_refs, snapshot_search, or snapshot_show.
-- Act with tap, type_text, scroll_down, scroll_up, press_key, or gestures.
-- Prefer snapshot before acting if there is no current_screen.
-
-WebView workflow:
-- Prefer goto, web_snapshot, web_query, click, fill, select, and webview_url.
-- CSS selectors from web_query are for discovery; they are not refs.
-- Use refs from the latest web_snapshot with click/fill/select.
-- Prefer fill for WebView text input; prefer type_text for native text input.
-
-Large-output rules:
-- Prefer targeted extraction tools over full source/page dumps.
-- Use snapshot_search, snapshot_refs, snapshot_show, and web_query before
-  get_page_source.
-- Use screenshot only when visual pixels are required.
+Keep working_state short: current page, filled values, pending fields,
+validation requirements, and recent failures only.
 
 Safety rules:
-- Do not call terminate_app, restart_app, set_orientation, or web_eval unless
-  the task explicitly requires that specific action.
 - Do not type passwords, payment data, personal data, or submit final purchase,
   booking, login, or account-change forms unless your application has its own
   approval mechanism.
 - Never log credentials or screenshot base64.
 
-State rules:
-- Keep working_state short: current page, filled values, pending fields,
-  validation requirements, and recent failures only.
+Completion rules:
 - Set success=true only after the requested outcome is verified.
 - If the requested data cannot be obtained, return success=false and explain
   what is missing.
+"""
+
+SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
 ```
 
 For Responses API agents, `agent-browser` also uses a structured per-turn user
@@ -351,18 +371,17 @@ ran successfully.
 import json
 from openai import OpenAI
 
-from appium_cli.openai_tools import call_tool, get_openai_tools
+from appium_cli.openai_tools import call_tool, get_openai_tools, get_tool_skill_prompt
 
 
-SYSTEM_PROMPT = """
+AGENT_RULES = """
 You are a mobile automation agent using appium-cli tools.
 Use exactly one tool call when an action or observation is needed.
-Use refs only from the latest snapshot/web_snapshot.
-Old refs are stale after a new snapshot/web_snapshot.
-Prefer snapshot_search, snapshot_refs, snapshot_show, and web_query for
-targeted extraction.
+Keep working_state short and verify the requested outcome before final answer.
 When the goal is satisfied, answer with the requested result.
 """
+
+SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
 
 
 def run_task(goal: str, model: str = "gpt-4o") -> str:
@@ -440,18 +459,17 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from appium_cli.openai_tools import call_tool, get_openai_tools
+from appium_cli.openai_tools import call_tool, get_openai_tools, get_tool_skill_prompt
 
 
-SYSTEM_PROMPT = """
+AGENT_RULES = """
 You are a mobile automation agent using appium-cli tools.
 Use exactly one tool call when an action or observation is needed.
-Use refs only from the latest snapshot/web_snapshot.
-Old refs are stale after a new snapshot/web_snapshot.
-Prefer snapshot_search, snapshot_refs, snapshot_show, and web_query for
-targeted extraction.
+Keep working_state short and verify the requested outcome before final answer.
 When the goal is satisfied, answer with the requested result.
 """
+
+SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), AGENT_RULES])
 
 
 def response_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -861,7 +879,8 @@ LLM agents, `parallel_tool_calls=False` is recommended.
 
 - fresh session lifecycle per task
 - typed config loaded from environment
-- system prompt and per-turn compact context
+- shared tool guidance from `get_tool_skill_prompt()`
+- agent-specific system prompt rules and per-turn compact context
 - Chat-to-Responses tool schema conversion
 - one tool call per action
 - safety classification and approval blocking
@@ -888,10 +907,10 @@ uses `appium_cli.openai_tools`:
 | `agent-browser/src/agent_browser/session.py` | task-scoped session lifecycle around `appium-cli session ...` |
 | `agent-browser/src/agent_browser/appium_tools.py` | `call_tool()` dispatch, safety checks, truncation, screenshot handling, observation extraction |
 | `agent-browser/src/agent_browser/agent/registry.py` | Chat Completions schema to Responses API schema conversion |
-| `agent-browser/src/agent_browser/agent/prompt.py` | system prompt and per-turn context format |
+| `agent-browser/src/agent_browser/agent/prompt.py` | `get_tool_skill_prompt()` plus browser-specific rules, and per-turn context format |
 | `agent-browser/src/agent_browser/agent/loop.py` | ReAct loop, function call output handling, verification loop |
 | `agent-browser/src/agent_browser/memory.py` | working memory and episodic memory patterns |
 
 For shell-based agents, use `skills/appium-cli/SKILL.md`. For Python API
-agents, translate the same workflow rules into prompts and runtime context as
-shown in this guide.
+agents, call `get_tool_skill_prompt()` and combine it with agent-specific
+runtime context as shown in this guide.
