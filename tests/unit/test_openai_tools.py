@@ -6,7 +6,8 @@ import json
 
 import pytest
 
-from appium_cli.openai_tools import call_tool, get_openai_tool, get_openai_tools
+import appium_cli.openai_tools as openai_tools
+from appium_cli.openai_tools import call_tool, get_openai_tool, get_openai_tools, get_tool_skill_prompt
 from appium_cli.utils import exit_codes
 
 
@@ -55,6 +56,22 @@ class TestGetOpenAITool:
 
     def test_returns_none_for_unknown(self) -> None:
         assert get_openai_tool("nonexistent") is None
+
+
+class TestGetToolSkillPrompt:
+    def test_returns_reusable_tool_usage_prompt_fragment(self) -> None:
+        prompt = get_tool_skill_prompt()
+
+        assert "appium-cli tool skill" in prompt
+        assert "goto" in prompt
+        assert "web_snapshot" in prompt
+        assert "activate_app" in prompt
+        assert "snapshot_search" in prompt
+        assert "wait_for" in prompt
+        assert "web_query" in prompt
+
+    def test_does_not_expose_system_prompt_api(self) -> None:
+        assert not hasattr(openai_tools, "get_system_prompt")
 
 
 class TestCallTool:

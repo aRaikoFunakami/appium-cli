@@ -45,6 +45,13 @@ def test_system_prompt_mentions_snapshot_depth_guidance() -> None:
     assert "depth=8" in SYSTEM_PROMPT
 
 
+def test_system_prompt_composes_appium_tool_skill_prompt() -> None:
+    assert "appium-cli tool skill" in SYSTEM_PROMPT
+    assert "goto" in SYSTEM_PROMPT
+    assert "activate_app" in SYSTEM_PROMPT
+    assert "web_query" in SYSTEM_PROMPT
+
+
 def test_system_prompt_mentions_result_must_contain_actual_data() -> None:
     assert "MUST contain the actual data" in SYSTEM_PROMPT
 

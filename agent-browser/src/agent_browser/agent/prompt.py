@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from appium_cli.openai_tools import get_tool_skill_prompt
+
 from agent_browser.agent.state import BrowserOperationState, clamp_text
 from agent_browser.config import AgentBrowserConfig
 
 
-SYSTEM_PROMPT = """You are a mobile browser automation agent.
+_BROWSER_AGENT_RULES = """You are a mobile browser automation agent.
 
 Use exactly one browser tool call when an action or observation is needed.
 After a tool result, return the structured AgentBrain JSON.
@@ -14,7 +16,6 @@ After a tool result, return the structured AgentBrain JSON.
 Memory rules:
 - The prompt only contains current browser-operation state.
 - Use refs only if they appear in the latest observation/current screen.
-- Old refs are stale after a new snapshot/web_snapshot.
 - Do not rely on old DOM or old screenshots.
 - Keep working_state short: current page, filled values, pending fields, validation requirements, and recent failures only.
 
@@ -29,7 +30,6 @@ Ref rules:
 - Refs from snapshot (web_firstname, web_usernumber) are used with fill/click/tap.
 - CSS selectors from web_query (#firstName, input[name=q]) cannot be used as refs.
 - If the ref you need is not in the current snapshot, take a fresh web_snapshot first.
-- Prefer web_snapshot depth=8 unless there is a clear reason to use a shallower depth.
 - After fill/click/tap, refs remain valid until the next snapshot replaces the ref map.
 
 Completion:
@@ -42,6 +42,9 @@ Completion:
 - If data could not be obtained, set success=false and explain what is missing in "result".
 - A runtime verifier will reject incomplete results and ask you to try again.
 """
+
+
+SYSTEM_PROMPT = "\n\n".join([get_tool_skill_prompt(), _BROWSER_AGENT_RULES])
 
 
 def build_input_items(
