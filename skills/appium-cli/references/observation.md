@@ -27,6 +27,7 @@ Use artifact navigation commands to inspect without refreshing device state. Pre
 ```bash
 appium-cli snapshot_search "Storage" --role=row
 appium-cli snapshot_refs latest --role=button
+appium-cli snapshot_refs latest --role=button --offset=50
 appium-cli snapshot_show latest --ref=btn_ok
 appium-cli snapshot_show latest --artifact=meta
 appium-cli snapshot_show latest              # fallback; can be large
@@ -34,7 +35,9 @@ appium-cli snapshot_show latest --artifact=full  # debugging only
 appium-cli generate_locator btn_ok
 ```
 
-`compact.yml` intentionally remains a tree artifact so UI hierarchy is available on disk. Do not paste/read the whole artifact by default. Search it with `snapshot_search`, inspect ref indexes with `snapshot_refs`, inspect one element with `snapshot_show --ref`, or use local grep/rg-style file extraction when available.
+`compact.yml` intentionally remains a tree artifact so UI hierarchy is available on disk. Do not paste/read the whole artifact by default. Search it with `snapshot_search`, inspect paginated ref indexes with `snapshot_refs`, inspect one element with `snapshot_show --ref`, or use local grep/rg-style file extraction when available.
+
+`snapshot_refs` returns 50 refs by default. If output says `has_more=true` or prints `next_offset=...`, narrow the role/search if possible or request the next page with `--offset=<next_offset>`.
 
 ## Raw tree output
 

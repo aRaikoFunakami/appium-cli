@@ -901,6 +901,8 @@ def snapshot_refs(
     snapshot_id: str = "latest",
     ref: str = "",
     role: str = "",
+    limit: int = 50,
+    offset: int = 0,
     raw: bool = False,
 ) -> str:
     """List refs or show one ref from a persisted snapshot artifact."""
@@ -919,15 +921,43 @@ def snapshot_refs(
         payload = {"ref": normalized_ref, **merged}
         return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) if raw else _ref_detail(normalized_ref, merged)
 
+    if limit <= 0:
+        return "ERROR: limit must be greater than 0."
+    if offset < 0:
+        return "ERROR: offset must be greater than or equal to 0."
+
     items = _filter_ref_items(refs, role=role, index_items=index_items)
+    total = len(items)
+    page = items[offset : offset + limit]
+    next_offset = offset + limit if offset + limit < total else None
+    has_more = next_offset is not None
     if raw:
-        payload = [{"ref": ref_name, **item} for ref_name, item in items]
+        payload = {
+            "snapshot_id": snapshot_id,
+            "role": role,
+            "offset": offset,
+            "limit": limit,
+            "total": total,
+            "returned": len(page),
+            "has_more": has_more,
+            "next_offset": next_offset,
+            "refs": [{"ref": ref_name, **item} for ref_name, item in page],
+        }
         return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
-    if not items:
+    if not page:
         suffix = f" with role '{role}'" if role else ""
+        if total and offset >= total:
+            return (
+                f"No refs found in snapshot '{snapshot_id}'{suffix} at offset {offset}. "
+                f"total={total}."
+            )
         return f"No refs found in snapshot '{snapshot_id}'{suffix}."
-    lines = [f"Snapshot refs for '{snapshot_id}' (total={len(items)}):"]
-    lines.extend(_compact_ref_line(ref_name, item, rich=True) for ref_name, item in items)
+    lines = [
+        f"Snapshot refs for '{snapshot_id}' (total={total}, returned={len(page)}, offset={offset}, limit={limit}):"
+    ]
+    lines.extend(_compact_ref_line(ref_name, item, rich=True) for ref_name, item in page)
+    if has_more:
+        lines.append(f"More refs available: next_offset={next_offset}.")
     return "\n".join(lines)
 
 

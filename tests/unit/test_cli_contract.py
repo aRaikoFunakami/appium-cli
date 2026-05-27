@@ -134,7 +134,7 @@ def test_snapshot_artifact_navigation_commands_route_to_daemon(monkeypatch) -> N
     assert calls == [
         ("snapshot_show", {"snapshot_id": "latest", "artifact": "refs", "ref": "ok"}, False),
         ("snapshot_search", {"text": "Storage", "snapshot_id": "latest", "role": "row"}, False),
-        ("snapshot_refs", {"snapshot_id": "latest", "ref": "ok", "role": ""}, True),
+        ("snapshot_refs", {"snapshot_id": "latest", "ref": "ok", "role": "", "limit": 50, "offset": 0}, True),
     ]
 
 

@@ -123,7 +123,8 @@ _add("snapshot_search",
      }, required=["text"]))
 
 _add("snapshot_refs",
-     "List actionable refs from the latest snapshot. Fast, compact output. "
+     "List actionable refs from the latest snapshot with pagination. Fast, compact output. "
+     "Defaults to limit=50; use next_offset when has_more=true. "
      "Use this to discover available refs instead of reading the full tree. "
      "Not the right tool for launching apps: launcher app icons are often text-only "
      "and will not appear here. To start a known app, use activate_app <package> instead.",
@@ -131,6 +132,8 @@ _add("snapshot_refs",
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
          "ref": _str_param("Optional ref to show in detail."),
          "role": _str_param("Optional role filter for listing refs."),
+         "limit": _int_param("Maximum refs to list per page.", default=50),
+         "offset": _int_param("Zero-based offset for paginated listings.", default=0),
       }))
 
 _add("generate_locator", "Generate the best stored durable locator for a ref.",

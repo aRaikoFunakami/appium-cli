@@ -82,6 +82,12 @@ def test_system_prompt_warns_against_broad_query_absence_judgment() -> None:
     assert "a[href*='sports']" in prompt
 
 
+def test_system_prompt_mentions_snapshot_refs_pagination() -> None:
+    prompt = build_system_prompt()
+    assert "snapshot_refs is paginated" in prompt
+    assert "offset=next_offset" in prompt
+
+
 def test_system_prompt_is_built_dynamically(monkeypatch) -> None:
     import agent_browser.agent.prompt as prompt_module
 

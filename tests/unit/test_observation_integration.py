@@ -280,12 +280,46 @@ def test_snapshot_refs_lists_filters_and_returns_raw_json(monkeypatch, request):
     assert "storage_row" not in listed
 
     raw = observation.snapshot_refs("latest", raw=True)
-    refs = json.loads(raw)
+    payload = json.loads(raw)
+    assert payload["offset"] == 0
+    assert payload["limit"] == 50
+    assert payload["returned"] == payload["total"]
+    refs = payload["refs"]
     assert {item["ref"] for item in refs} >= {"ok", "recycler", "storage_row"}
     ok = next(item for item in refs if item["ref"] == "ok")
     assert ok["actionable"] is True
     assert ok["editable"] is False
     assert ok["primary_strategy"] == {"by": "id", "value": "com.x:id/ok"}
+
+
+def test_snapshot_refs_paginates_list_output(monkeypatch, request):
+    _install_snapshot_artifacts(monkeypatch, request)
+
+    first = observation.snapshot_refs("latest", limit=2)
+
+    assert "total=3" in first
+    assert "returned=2" in first
+    assert "offset=0" in first
+    assert "limit=2" in first
+    assert "More refs available: next_offset=2." in first
+
+    second = observation.snapshot_refs("latest", limit=2, offset=2)
+
+    assert "returned=1" in second
+    assert "offset=2" in second
+    assert "More refs available" not in second
+
+
+def test_snapshot_refs_paginates_raw_json(monkeypatch, request):
+    _install_snapshot_artifacts(monkeypatch, request)
+
+    payload = json.loads(observation.snapshot_refs("latest", limit=2, raw=True))
+
+    assert payload["total"] == 3
+    assert payload["returned"] == 2
+    assert payload["has_more"] is True
+    assert payload["next_offset"] == 2
+    assert len(payload["refs"]) == 2
 
 
 def test_snapshot_refs_can_show_single_ref_as_raw_json(monkeypatch, request):

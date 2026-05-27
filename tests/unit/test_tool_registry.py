@@ -134,6 +134,8 @@ class TestSchemaStructure:
         ]
         assert "text" in search.parameters["required"]
         assert refs.parameters["properties"]["role"]["type"] == "string"
+        assert refs.parameters["properties"]["limit"]["default"] == 50
+        assert refs.parameters["properties"]["offset"]["default"] == 0
 
     def test_locator_query_schemas(self) -> None:
         locator = get_tool("generate_locator")

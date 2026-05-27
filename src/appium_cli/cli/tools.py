@@ -110,6 +110,8 @@ def snapshot_refs(
     snapshot_id: Annotated[str, typer.Argument(help="Snapshot id or 'latest'.")] = "latest",
     ref: Annotated[str, typer.Argument(help="Optional ref to show in detail.")] = "",
     role: Annotated[str, typer.Option("--role", help="Filter listed refs by role.")] = "",
+    limit: Annotated[int, typer.Option("--limit", help="Maximum refs to list per page.")] = 50,
+    offset: Annotated[int, typer.Option("--offset", help="Zero-based offset for paginated ref listings.")] = 0,
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
     """List refs or show a single ref from a persisted snapshot artifact."""
@@ -117,7 +119,7 @@ def snapshot_refs(
     _daemon_request(
         "snapshot_refs",
         json_output,
-        {"snapshot_id": snapshot_id, "ref": ref, "role": role},
+        {"snapshot_id": snapshot_id, "ref": ref, "role": role, "limit": limit, "offset": offset},
     )
 
 

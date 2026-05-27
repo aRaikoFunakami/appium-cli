@@ -22,6 +22,7 @@ Memory rules:
 WebView observation rules:
 - After goto or webview_switch, take web_snapshot as the primary page observation before making page-structure judgments.
 - Use snapshot_search, snapshot_refs, and web_query for targeted extraction from the observed page/artifacts.
+- snapshot_refs is paginated. If has_more=true and the target is absent, refine the search/role or request the next page with offset=next_offset.
 - Broad CSS discovery such as web_query(selector="a") may return many links. Do not conclude that a target is absent from one broad query alone.
 - When the user asks for a category, domain, keyword, or URL pattern, narrow the CSS selector or search text (for example, a[href*='sports'] or snapshot_search(text='スポーツ')) before deciding it is missing.
 - Before finishing with success or failure, base the result on an actual observation of the current page: web_snapshot, targeted web_query/snapshot_search/snapshot_refs, screenshot, or get_page_source.

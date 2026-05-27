@@ -101,7 +101,8 @@ appium-cli --raw snapshot > screen.yml      # full tree for piping/diffing
 appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 
 appium-cli snapshot_search "Storage" --role=row      # search saved artifact/index
-appium-cli snapshot_refs latest --role=button        # list actionable refs
+appium-cli snapshot_refs latest --role=button        # list refs, paginated by default
+appium-cli snapshot_refs latest --role=button --offset=50  # next page when has_more=true
 appium-cli snapshot_show latest --ref=btn_login      # targeted ref detail
 appium-cli snapshot_show latest                      # targeted fallback; can be large
 appium-cli snapshot_show latest --artifact=full      # debugging only
@@ -113,7 +114,7 @@ appium-cli screenshot                       # rarely needed
 appium-cli get_page_source                  # token-heavy diagnostic escape hatch
 ```
 
-`snapshot` is primary. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
+`snapshot` is primary. `snapshot_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
 
 ```bash
 appium-cli console_messages                 # browser console logs

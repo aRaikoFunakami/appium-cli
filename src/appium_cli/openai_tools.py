@@ -57,6 +57,7 @@ Core loop:
 
 Targeting rules:
 - Snapshot refs are valid function-call arguments.
+- snapshot_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call snapshot_refs(offset=next_offset).
 - If duplicate labels/refs appear, inspect with snapshot_refs(), snapshot_show({"ref": "..."}), list_containers(), or within_container() before acting.
 - If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control; find_by_text can help locate it.
 

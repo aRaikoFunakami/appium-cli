@@ -11,7 +11,8 @@ Once `webview_switch` or `goto` succeeds, prefer these WebDriver/WebView command
 appium-cli web_snapshot                     # primary observation
 appium-cli webview_url                      # current URL (fast, no snapshot)
 appium-cli webview_title                    # page title (fast, no snapshot)
-appium-cli snapshot_refs latest             # refs from the latest web_snapshot
+appium-cli snapshot_refs latest             # refs from the latest web_snapshot, first page
+appium-cli snapshot_refs latest --offset=50 # next page when has_more=true
 appium-cli snapshot_search "Search"         # search the latest web_snapshot artifact
 appium-cli web_query "input,button,a" --attrs=name,type,placeholder,aria-label
 
