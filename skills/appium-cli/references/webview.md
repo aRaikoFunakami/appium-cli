@@ -116,7 +116,7 @@ Use scoped snapshots for large pages; avoid `--depth` unless you intentionally w
 
 ```bash
 appium-cli web_snapshot web_results
-appium-cli --raw web_snapshot web_form > form.yml
+appium-cli web_snapshot web_form --filename=form.yml
 appium-cli web_snapshot web_dialog --filename=dialog.yml
 ```
 

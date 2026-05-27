@@ -221,7 +221,27 @@ class TestCallTool:
         assert result["ok"] is True
         assert captured["tool"] == "tap"
         assert captured["args"] == {"ref": "login_btn"}
-        assert captured["raw"] is True
+        assert captured["raw"] is False
+
+    def test_snapshot_uses_metadata_output_by_default(self, monkeypatch) -> None:
+        captured = {}
+
+        def fake_request(tool, args=None, **kwargs):
+            captured["tool"] = tool
+            captured["args"] = args
+            captured["raw"] = kwargs.get("raw", False)
+            return {
+                "ok": True,
+                "text": "snapshot_id: web-test\nartifacts:\n  compact: /tmp/test.compact.yml\n",
+                "data": {"snapshot_id": "web-test"},
+            }
+
+        monkeypatch.setattr("appium_cli.openai_tools.request", fake_request)
+
+        result = call_tool("web_snapshot", {})
+        assert result["ok"] is True
+        assert captured["tool"] == "web_snapshot"
+        assert captured["raw"] is False
 
     def test_json_string_arguments(self, monkeypatch) -> None:
         captured = {}

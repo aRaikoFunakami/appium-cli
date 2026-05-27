@@ -24,7 +24,7 @@ Containers on screen (1 total):
    children: 5 visible/total
 ```
 
-Scroll containers by ref and use the post-action snapshot metadata:
+Scroll containers by ref, then observe/search again:
 
 ```bash
 appium-cli scroll_down recycler

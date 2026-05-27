@@ -82,7 +82,7 @@ def _add(name: str, description: str, daemon_tool: str | None = None,
 # Observation
 # ============================================================
 
-_add("snapshot", "Get an accessibility snapshot with stable element refs.",
+_add("snapshot", "Get an accessibility snapshot with stable element refs. Returns metadata and artifact paths, not the full tree; use snapshot_search, snapshot_refs, or snapshot_show(ref=...) to inspect it.",
      parameters=_schema({
          "scope": _str_param("Snapshot scope filter.", default="full"),
          "context": _str_param("Context: native, webview, auto, current, or exact name.", default="native",
@@ -92,7 +92,7 @@ _add("snapshot", "Get an accessibility snapshot with stable element refs.",
          "filename": _str_param("Save snapshot to file."),
      }))
 
-_add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview).",
+_add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview). Returns metadata and artifact paths, not the full tree; use snapshot_search, snapshot_refs, web_query, or snapshot_show(ref=...) to inspect it.",
      parameters=_schema({
          "scope": _str_param("Snapshot scope filter.", default="full"),
          "depth": _int_param("Limit the depth of the snapshot tree."),

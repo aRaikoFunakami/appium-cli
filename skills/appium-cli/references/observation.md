@@ -50,7 +50,7 @@ appium-cli --raw snapshot > after.yml
 diff before.yml after.yml
 ```
 
-Raw snapshot output is the rendered tree. Normal snapshot output remains metadata plus artifact links. Raw action commands suppress post-action artifact links and return nothing/minimal success.
+Raw snapshot output is the rendered tree. Normal snapshot output remains metadata plus artifact links. Tool-calling agents should keep normal non-raw snapshot output in context and use targeted artifact commands instead of full raw trees.
 
 ## Element-scoped snapshots
 
@@ -61,7 +61,7 @@ appium-cli snapshot main_list
 appium-cli snapshot row_settings
 appium-cli web_snapshot web_form
 appium-cli snapshot dialog_root --filename=dialog.yml
-appium-cli --raw web_snapshot web_results > results.yml
+appium-cli web_snapshot web_results --filename=results.yml
 ```
 
 `--filename` saves the rendered tree to a file while normal stdout still prints metadata. Do not use `--depth` for normal observations; full artifacts keep targets searchable, and token control should use `snapshot_search`, `snapshot_show --ref`, and paginated `snapshot_refs`. `--depth` is only a scoped/debug escape hatch when you intentionally want a smaller subtree. `--max-nodes` and `--boxes` are available for larger/debug sessions.

@@ -1,6 +1,6 @@
 # App Management
 
-App management commands operate through the active Appium session. Observe with `snapshot` after changing app state; normal action/app outputs that change UI may provide post-action snapshot artifacts where supported.
+App management commands operate through the active Appium session. Observe with `snapshot` after changing app state; do not assume action/app outputs include a fresh snapshot.
 
 ```bash
 appium-cli get_current_app

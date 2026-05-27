@@ -1,8 +1,8 @@
 # Common Patterns
 
-Default loop: observe with artifact-first snapshot, inspect artifacts, act on refs, then use the post-action snapshot artifact.
+Default loop: observe with artifact-first snapshot, inspect artifacts, act on refs, then observe again after actions that may change the UI.
 
-## Observe, act, inspect post-action snapshot
+## Observe, act, observe again
 
 ```bash
 appium-cli snapshot
@@ -11,7 +11,7 @@ appium-cli tap btn_login
 appium-cli snapshot_search "Welcome"
 ```
 
-Normal actions append the new snapshot metadata. Do not reuse refs from before navigation, scrolling, dialogs, or screen changes.
+Do not reuse refs from before navigation, scrolling, dialogs, or screen changes. Take a fresh non-raw snapshot and inspect it with targeted commands.
 
 ## Before/after diff
 

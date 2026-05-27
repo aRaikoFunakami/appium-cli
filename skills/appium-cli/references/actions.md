@@ -1,28 +1,26 @@
 # Actions
 
-Actions use refs from the latest snapshot artifacts. Run `snapshot` or `web_snapshot`, choose a ref, act, then read the post-action snapshot metadata that normal action output appends.
+Actions use refs from the latest snapshot artifacts. Run `snapshot` or `web_snapshot`, choose a ref, act, then observe again if the UI may have changed.
 
 ```bash
 appium-cli snapshot
 appium-cli tap btn_login
-# OK
-# snapshot_id: native-after-...
-# artifacts:
-#   compact: .appium-cli/snapshots/...
+appium-cli snapshot_search "Welcome"
 ```
 
-The post-action artifact link is the next observation point. Use `snapshot_search`, `snapshot_refs`, or targeted `snapshot_show latest --ref=<ref>` to inspect it without taking another device snapshot.
+Use the newest snapshot as the next observation point. Inspect it with `snapshot_search`, paginated `snapshot_refs`, or targeted `snapshot_show latest --ref=<ref>` instead of reading a full tree.
 
-## Raw action mode
+## Raw mode
 
-Global `--raw` goes before the command:
+Global `--raw` goes before the command, but agent workflows should normally leave it off. It mostly matters for snapshot/extraction commands that can otherwise return large raw payloads.
 
 ```bash
-appium-cli --raw tap btn_login
-appium-cli --raw type_text input_search "hello"
+appium-cli snapshot
+appium-cli tap btn_login
+appium-cli snapshot_search "Welcome"
 ```
 
-Raw actions return only bare success/failure output and suppress post-action snapshot artifact metadata. Use raw mode for scripts; use normal mode for agent workflows.
+Raw mode is for scripts and full-tree piping/diffing. In agent workflows, keep snapshot calls non-raw so context contains metadata/artifact paths rather than full trees.
 
 ## Ref-first action commands
 
@@ -43,7 +41,7 @@ Target decision tree:
 1. Use a visible ref from the latest snapshot or refs artifact.
 2. If the label is text-only, tap the actionable parent row/button/container.
 3. If there are duplicates, inspect `snapshot_show latest --ref=<ref>` or `snapshot_refs latest --role=<role>`.
-4. After any action, use the new post-action snapshot artifacts before acting again.
+4. After any action that may change the UI, observe again before acting again.
 
 ## Scrolling and swiping
 

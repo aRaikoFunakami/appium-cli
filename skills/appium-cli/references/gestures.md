@@ -27,7 +27,7 @@ Compatibility forms such as `fling down --ref=recycler_view` still work, but pre
 
 ## Raw mode and diffs
 
-Raw gestures suppress post-action snapshot metadata:
+Use raw mode only when a script needs bare command output:
 
 ```bash
 appium-cli --raw swipe_left carousel

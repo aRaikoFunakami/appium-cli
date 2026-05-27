@@ -38,7 +38,7 @@ appium-cli session start
 appium-cli session stop
 ```
 
-Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. Action commands automatically append a post-action snapshot artifact link in normal output.
+Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. For agent workflows, keep normal non-raw snapshot output in context and inspect saved artifacts with `snapshot_search`, paginated `snapshot_refs`, or `snapshot_show --ref`.
 
 ## Core workflow
 
@@ -49,7 +49,7 @@ The command set you use depends on the current context. Always match commands to
 1. Observe: `appium-cli snapshot`.
 2. Extract: `snapshot_search`, `snapshot_refs`, or `snapshot_show --ref`.
 3. Act: `tap <ref>`, `type_text <ref> <text>`, `scroll_down [ref]`.
-4. Read the post-action snapshot metadata.
+4. Observe again after actions that may change the screen.
 5. Use refs from the newest snapshot only.
 
 ### WebView context (after `webview_switch` or `goto`)
@@ -82,7 +82,7 @@ appium-cli --raw snapshot > after.yml
 diff before.yml after.yml
 ```
 
-Raw snapshot output is the tree content. Raw actions return only a bare success/failure result and suppress post-action snapshot links.
+Raw snapshot output is the tree content. Avoid raw snapshot output in agent context unless the user explicitly needs a full tree for piping/diffing.
 
 For before/after verification, filter diffs to relevant lines instead of pasting whole files:
 

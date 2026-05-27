@@ -57,6 +57,7 @@ Core loop:
 
 Targeting rules:
 - Snapshot refs are valid function-call arguments.
+- Normal snapshot outputs are metadata plus artifact paths, not full trees. Do not use raw/full snapshot output in agent loops; inspect saved artifacts with snapshot_search(), snapshot_show({"ref": "..."}), and paginated snapshot_refs().
 - snapshot_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call snapshot_refs(offset=next_offset).
 - If duplicate labels/refs appear, inspect with snapshot_refs(), snapshot_show({"ref": "..."}), list_containers(), or within_container() before acting.
 - If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control; find_by_text can help locate it.
@@ -321,11 +322,11 @@ def call_tool(name: str, arguments: dict[str, Any] | str | None = None) -> dict[
             "exit_code": exit_codes.GENERAL_ERROR,
         }
 
-    # Call the daemon with raw=True so snapshot tools return the full tree
-    # content instead of just artifact file paths (metadata-only mode is for
-    # human CLI usage; programmatic callers need the tree text).
+    # Keep normal daemon output by default. Snapshot tools return metadata plus
+    # artifact paths; callers should use targeted artifact tools instead of
+    # pushing full trees into the model context.
     try:
-        response = request(daemon_tool, args=merged_args if merged_args else None, raw=True)
+        response = request(daemon_tool, args=merged_args if merged_args else None, raw=False)
     except (FileNotFoundError, ConnectionError, OSError) as exc:
         return {
             "ok": False,
