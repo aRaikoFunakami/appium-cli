@@ -138,6 +138,44 @@ def test_snapshot_artifact_navigation_commands_route_to_daemon(monkeypatch) -> N
     ]
 
 
+def test_snapshot_search_or_text_routes_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+    runner = CliRunner()
+
+    assert runner.invoke(
+        app, ["snapshot_search", "ログイン", "--or-text", "Login", "--or-text", "Sign in"]
+    ).exit_code == 0
+
+    assert calls == [
+        ("snapshot_search", {"text": "ログイン", "snapshot_id": "latest", "role": "", "any_text": ["Login", "Sign in"]}, False),
+    ]
+
+
+def test_find_by_text_or_text_routes_to_daemon(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, bool]] = []
+
+    def fake_request(tool: str, args: dict | None = None, raw: bool = False):
+        calls.append((tool, args, raw))
+        return {"ok": True, "text": "OK", "data": {}}
+
+    monkeypatch.setattr(tools_module, "request", fake_request)
+    runner = CliRunner()
+
+    assert runner.invoke(
+        app, ["find_by_text", "検索", "--or-text", "Search"]
+    ).exit_code == 0
+
+    assert calls == [
+        ("find_by_text", {"text": "検索", "scope": "full", "any_text": ["Search"]}, False),
+    ]
+
+
 def test_locator_query_commands_route_to_daemon(monkeypatch) -> None:
     calls: list[tuple[str, dict | None, bool]] = []
 

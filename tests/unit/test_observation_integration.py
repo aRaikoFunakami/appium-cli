@@ -269,6 +269,81 @@ def test_snapshot_search_role_filter(monkeypatch, request):
     assert "No snapshot refs matching 'storage' found." in out
 
 
+def test_snapshot_search_or_matches_alternate_term(monkeypatch, request):
+    _install_snapshot_artifacts(monkeypatch, request)
+
+    # "nonexistent" won't match, but "storage" (via any_text) will
+    out = observation.snapshot_search("nonexistent", any_text=["storage"])
+
+    assert "Snapshot search results for" in out
+    assert '[ref:storage_row]' in out
+
+
+def test_snapshot_search_or_deduplicates(monkeypatch, request):
+    _install_snapshot_artifacts(monkeypatch, request)
+
+    # Both "storage" and "Storage" normalize to the same needle — ref appears once in ref results
+    out = observation.snapshot_search("storage", any_text=["Storage"])
+
+    # The ref match itself should appear exactly once (compact line fallback may also match)
+    ref_matches = [line for line in out.splitlines() if line.strip().startswith(("1.", "2.", "3.")) and "[ref:storage_row]" in line]
+    assert len(ref_matches) == 1
+
+
+def test_snapshot_search_or_label_in_header(monkeypatch, request):
+    _install_snapshot_artifacts(monkeypatch, request)
+
+    out = observation.snapshot_search("storage", any_text=["Login"])
+
+    assert '"storage" OR "Login"' in out
+
+
+def test_snapshot_search_or_raw_includes_matched_text(monkeypatch, request):
+    _install_snapshot_artifacts(monkeypatch, request)
+
+    raw = observation.snapshot_search("nonexistent", any_text=["storage"], raw=True)
+    data = json.loads(raw)
+
+    assert len(data) > 0
+    assert data[0]["matched_text"] == "storage"
+
+
+def test_find_by_text_or_matches_alternate_term():
+    state.current_snapshot = _build_native_snapshot()
+
+    out = observation.find_by_text("nonexistent", any_text=["OK"])
+
+    assert "Search results for" in out
+    assert "[ref:ok]" in out
+
+
+def test_find_by_text_or_deduplicates_keeps_best_score():
+    state.current_snapshot = _build_native_snapshot()
+
+    # "OK" matches exactly (score=100), "ok" also matches — should appear once with score=100
+    out = observation.find_by_text("OK", any_text=["ok"])
+
+    assert out.count("[ref:ok]") == 1
+    assert "score=100" in out
+
+
+def test_find_by_text_or_with_scope_inputs():
+    state.current_snapshot = _build_native_snapshot()
+
+    out = observation.find_by_text("OK", scope="inputs", any_text=["Storage"])
+
+    # No textbox in our tree
+    assert "No elements" in out
+
+
+def test_find_by_text_or_label_in_header():
+    state.current_snapshot = _build_native_snapshot()
+
+    out = observation.find_by_text("OK", any_text=["Storage"])
+
+    assert '"OK" OR "Storage"' in out
+
+
 def test_snapshot_refs_lists_filters_and_returns_raw_json(monkeypatch, request):
     _install_snapshot_artifacts(monkeypatch, request)
 

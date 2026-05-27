@@ -39,6 +39,38 @@ from appium_cli.utils.paths import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_search_terms(text: str, any_text: list[str] | tuple[str, ...] | None = None) -> list[str]:
+    """Build a deduplicated list of lowered search needles from *text* + *any_text*."""
+    seen: set[str] = set()
+    terms: list[str] = []
+    for raw in [text, *(any_text or [])]:
+        low = raw.strip().lower()
+        if low and low not in seen:
+            seen.add(low)
+            terms.append(low)
+    return terms
+
+
+def _format_or_query(text: str, any_text: list[str] | tuple[str, ...] | None = None) -> str:
+    """Format a human-readable query label, adding OR when multiple terms exist."""
+    parts = [text]
+    for t in (any_text or []):
+        stripped = t.strip()
+        if stripped and stripped.lower() != text.strip().lower():
+            parts.append(stripped)
+    if len(parts) == 1:
+        return parts[0]
+    return " OR ".join(f'"{p}"' for p in parts)
+
+
+def _any_needle_in(needles: list[str], haystack: str) -> str | None:
+    """Return the first needle found in *haystack*, or None."""
+    for n in needles:
+        if n in haystack:
+            return n
+    return None
 _FIND_BY_TEXT_MAX_RESULTS = 100
 
 # Singleton web snapshot generator (stateless, safe to share)
@@ -407,12 +439,15 @@ def _find_compact_line_for_ref(compact_text: str, ref: str) -> str:
     return ""
 
 
-def _matching_compact_lines(compact_text: str, needle: str, limit: int = 20) -> list[tuple[int, str]]:
-    if not needle:
+def _matching_compact_lines(compact_text: str, needle: str | list[str], limit: int = 20) -> list[tuple[int, str]]:
+    needles = needle if isinstance(needle, list) else [needle]
+    needles = [n for n in needles if n]
+    if not needles:
         return []
     matches: list[tuple[int, str]] = []
     for line_number, line in enumerate(compact_text.splitlines(), start=1):
-        if needle in line.lower():
+        low = line.lower()
+        if any(n in low for n in needles):
             matches.append((line_number, line.strip()))
             if len(matches) >= limit:
                 break
@@ -803,10 +838,13 @@ def snapshot_search(
     text: str,
     snapshot_id: str = "latest",
     role: str = "",
+    any_text: list[str] | tuple[str, ...] | None = None,
     raw: bool = False,
 ) -> str:
     """Search persisted snapshot index/ref artifacts without refreshing device state."""
-    needle = text.lower()
+    needles = _normalize_search_terms(text, any_text)
+    multi_term = len(needles) > 1
+    query_label = _format_or_query(text, any_text)
     try:
         index = _load_index(snapshot_id)
         refs_by_id = _load_refs(snapshot_id)
@@ -843,7 +881,9 @@ def snapshot_search(
                     haystack_parts.extend(
                         str(strategy.get(key, "")) for key in ("by", "value")
                     )
-        if needle not in " ".join(haystack_parts).lower():
+        haystack = " ".join(haystack_parts).lower()
+        matched_needle = _any_needle_in(needles, haystack)
+        if matched_needle is None:
             continue
         merged = _merge_ref_item(ref, ref_detail if isinstance(ref_detail, dict) else {}, {ref: item})
         compact_line = _find_compact_line_for_ref(compact_text, ref)
@@ -857,6 +897,8 @@ def snapshot_search(
             "locator": _locator_hint(merged),
             "snippet": compact_line or _search_snippet(merged),
         }
+        if multi_term:
+            match["matched_text"] = matched_needle
         for key in ("value", "action_target_ref"):
             if key in merged:
                 match[key] = merged[key]
@@ -864,7 +906,7 @@ def snapshot_search(
         seen_refs.add(ref)
 
     if not role:
-        for line_number, line in _matching_compact_lines(compact_text, needle):
+        for line_number, line in _matching_compact_lines(compact_text, needles):
             if any(f"[ref:{ref}]" in line for ref in seen_refs):
                 continue
             matches.append(
@@ -877,8 +919,8 @@ def snapshot_search(
     if raw:
         return json.dumps(matches, ensure_ascii=False, indent=2, sort_keys=True)
     if not matches:
-        return f"No snapshot refs matching '{text}' found."
-    lines = [f"Snapshot search results for '{text}' (total={len(matches)}):"]
+        return f"No snapshot refs matching '{query_label}' found."
+    lines = [f"Snapshot search results for '{query_label}' (total={len(matches)}):"]
     for rank, match in enumerate(matches, start=1):
         prefix = f"{rank}. "
         ref = match.get("ref")
@@ -1642,17 +1684,29 @@ def describe(ref: str) -> str:
     return state.current_snapshot.describe_ref(parsed.ref)
 
 
-def find_by_text(text: str, scope: str = "full") -> str:
+def find_by_text(text: str, scope: str = "full", any_text: list[str] | tuple[str, ...] | None = None) -> str:
     if state.current_snapshot is None:
         return "ERROR: No snapshot available. Run snapshot() first."
     snapshot_obj = state.current_snapshot
     inputs_only = scope == "inputs"
-    matches = snapshot_obj.find_text(text, inputs_only=inputs_only)
+    query_label = _format_or_query(text, any_text)
+    terms = _normalize_search_terms(text, any_text)
+
+    # Collect matches across all terms, dedup by node identity keeping best score.
+    best_by_node: dict[int, Any] = {}  # id(node) -> match object
+    for term in terms:
+        for match in snapshot_obj.find_text(term, inputs_only=inputs_only):
+            node_id = id(match.node)
+            existing = best_by_node.get(node_id)
+            if existing is None or match.score > existing.score:
+                best_by_node[node_id] = match
+    matches = sorted(best_by_node.values(), key=lambda m: (-m.score, m.node.name))
+
     if not matches:
-        return f"No elements matching '{text}' found."
+        return f"No elements matching '{query_label}' found."
     shown_matches = matches[:_FIND_BY_TEXT_MAX_RESULTS]
     lines = [
-        f"Search results for '{text}' (total={len(matches)}, shown={len(shown_matches)}):"
+        f"Search results for '{query_label}' (total={len(matches)}, shown={len(shown_matches)}):"
     ]
     for match in shown_matches:
         target_ref = match.target.ref if match.target and match.target.ref else ""

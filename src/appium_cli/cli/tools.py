@@ -95,15 +95,15 @@ def snapshot_search(
     text: Annotated[str, typer.Argument(help="Text to search in the latest snapshot artifacts.")],
     snapshot_id: Annotated[str, typer.Option("--snapshot", help="Snapshot id or 'latest'.")] = "latest",
     role: Annotated[str, typer.Option("--role", help="Filter results by role.")] = "",
+    or_text: Annotated[list[str] | None, typer.Option("--or-text", help="Additional text variants to match (OR). Repeatable.")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
     """Search persisted snapshot index/ref artifacts without refreshing device state."""
 
-    _daemon_request(
-        "snapshot_search",
-        json_output,
-        {"text": text, "snapshot_id": snapshot_id, "role": role},
-    )
+    args: dict[str, Any] = {"text": text, "snapshot_id": snapshot_id, "role": role}
+    if or_text:
+        args["any_text"] = or_text
+    _daemon_request("snapshot_search", json_output, args)
 
 
 def snapshot_refs(
@@ -175,11 +175,15 @@ def describe(
 def find_by_text(
     text: Annotated[str, typer.Argument(help="Text to search for.")],
     scope: Annotated[str, typer.Option("--scope", help="Search scope.")] = "full",
+    or_text: Annotated[list[str] | None, typer.Option("--or-text", help="Additional text variants to match (OR). Repeatable.")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
     """Find elements by visible text."""
 
-    _daemon_request("find_by_text", json_output, {"text": text, "scope": scope})
+    args: dict[str, Any] = {"text": text, "scope": scope}
+    if or_text:
+        args["any_text"] = or_text
+    _daemon_request("find_by_text", json_output, args)
 
 
 def screenshot(

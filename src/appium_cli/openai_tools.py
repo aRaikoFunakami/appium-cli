@@ -61,6 +61,7 @@ Targeting rules:
 - snapshot_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call snapshot_refs(offset=next_offset).
 - If duplicate labels/refs appear, inspect with snapshot_refs(), snapshot_show({"ref": "..."}), list_containers(), or within_container() before acting.
 - If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control; find_by_text can help locate it.
+- Use any_text for synonym/translation/variant labels (e.g. snapshot_search({"text": "ログイン", "any_text": ["Login", "Sign in"]})). Keep to 2-4 variants. Do not invent regex or AND syntax.
 
 Diagnostics and fallback order:
 1. If context/prerequisite behavior is unclear, call get_context({}), list_contexts({}), webview_status({}), or get_driver_status({}).
@@ -95,6 +96,7 @@ Native UI: observe, find refs, act:
 3. tap({"ref": "<button ref>"})
 4. snapshot({})
 5. snapshot_search({"text": "expected text"}) or assert_visible({"text": "expected text"})
+6. For multilingual/variant labels: snapshot_search({"text": "ログイン", "any_text": ["Login", "Sign in"]})
 
 Native UI: enter text:
 1. snapshot({})
@@ -142,6 +144,7 @@ Important portal-search rule:
 - Do not conclude that a link/category is absent from one broad query such as web_query({"selector": "a"}).
 - Broad link lists may be long. If the task names a category, domain, keyword, path, or URL pattern, narrow the selector/search text and try again.
 - Examples: web_query({"selector": "a[href*='login']"}), web_query({"selector": "a[href*='sports']"}), snapshot_search({"text": "ニュース"}).
+- For text variants across languages: snapshot_search({"text": "Search", "any_text": ["検索"]}).
 
 Click and read using refs:
 1. goto({"url": "https://example.com"})

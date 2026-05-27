@@ -131,6 +131,12 @@ class TestGetToolSkillPrompt:
         assert 'tap({"ref": "<button ref>"})' in prompt
         assert "Search or submit a simple form" not in prompt
 
+    def test_includes_any_text_or_guidance(self) -> None:
+        prompt = get_tool_skill_prompt()
+
+        assert "any_text" in prompt
+        assert "Do not invent regex or AND syntax" in prompt
+
         self._mock_successful_call("webview_switch", {})
         prompt = get_tool_skill_prompt()
         assert "Search or submit a simple form" in prompt

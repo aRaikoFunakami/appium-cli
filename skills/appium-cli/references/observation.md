@@ -26,6 +26,7 @@ Use artifact navigation commands to inspect without refreshing device state. Pre
 
 ```bash
 appium-cli snapshot_search "Storage" --role=row
+appium-cli snapshot_search "ログイン" --or-text Login --or-text "Sign in"  # OR search
 appium-cli snapshot_refs latest --role=button
 appium-cli snapshot_refs latest --role=button --offset=50
 appium-cli snapshot_show latest --ref=btn_ok

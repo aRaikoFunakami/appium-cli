@@ -51,6 +51,7 @@ diff before.yml after.yml
 ```bash
 appium-cli snapshot
 appium-cli snapshot_search "Storage"
+appium-cli snapshot_search "ログイン" --or-text Login --or-text "Sign in"  # OR search
 appium-cli snapshot_refs latest --role=row
 appium-cli snapshot_show latest --ref=storage_row
 appium-cli tap storage_row

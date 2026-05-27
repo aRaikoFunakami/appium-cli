@@ -55,6 +55,10 @@ def _bool_param(description: str, default: bool = False) -> dict[str, Any]:
     return {"type": "boolean", "description": description, "default": default}
 
 
+def _str_array_param(description: str) -> dict[str, Any]:
+    return {"type": "array", "items": {"type": "string"}, "description": description}
+
+
 def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
     s: dict[str, Any] = {"type": "object", "properties": properties}
     if required:
@@ -120,6 +124,7 @@ _add("snapshot_search",
          "text": _str_param("Text to search for."),
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
          "role": _str_param("Optional role filter."),
+         "any_text": _str_array_param("Additional text variants to match (OR). Literal, case-insensitive. No regex."),
      }, required=["text"]))
 
 _add("snapshot_refs",
@@ -165,6 +170,7 @@ _add("find_by_text", "Find elements by visible text.",
      parameters=_schema({
          "text": _str_param("Text to search for."),
          "scope": _str_param("Search scope.", default="full"),
+         "any_text": _str_array_param("Additional text variants to match (OR). Literal, case-insensitive. No regex."),
      }, required=["text"]))
 
 _add("screenshot", "Take a screenshot and return base64 JSON.",

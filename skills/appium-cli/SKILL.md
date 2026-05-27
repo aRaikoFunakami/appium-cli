@@ -101,6 +101,7 @@ appium-cli --raw snapshot > screen.yml      # full tree for piping/diffing
 appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 
 appium-cli snapshot_search "Storage" --role=row      # search saved artifact/index
+appium-cli snapshot_search "ログイン" --or-text Login --or-text "Sign in"  # OR search
 appium-cli snapshot_refs latest --role=button        # list refs, paginated by default
 appium-cli snapshot_refs latest --role=button --offset=50  # next page when has_more=true
 appium-cli snapshot_show latest --ref=btn_login      # targeted ref detail
@@ -110,11 +111,14 @@ appium-cli generate_locator btn_login
 
 appium-cli describe btn_login
 appium-cli find_by_text "Log in"
+appium-cli find_by_text "検索" --or-text Search      # OR search
 appium-cli screenshot                       # rarely needed
 appium-cli get_page_source                  # token-heavy diagnostic escape hatch
 ```
 
 `snapshot` is primary. Do not use `--depth` for normal full-page observations; snapshots are saved as artifacts, and depth can hide searchable targets. `snapshot_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
+
+`--or-text` adds literal OR matching for text variants (synonyms, translations). It is not regex and does not support AND/NOT. Keep to 2-4 variants.
 
 ```bash
 appium-cli console_messages                 # browser console logs

@@ -137,6 +137,21 @@ class TestSchemaStructure:
         assert refs.parameters["properties"]["limit"]["default"] == 50
         assert refs.parameters["properties"]["offset"]["default"] == 0
 
+    def test_or_search_schemas(self) -> None:
+        search = get_tool("snapshot_search")
+        find = get_tool("find_by_text")
+        assert search is not None
+        assert find is not None
+        # any_text should be an optional array of strings
+        search_any = search.parameters["properties"]["any_text"]
+        assert search_any["type"] == "array"
+        assert search_any["items"]["type"] == "string"
+        assert "any_text" not in search.parameters.get("required", [])
+        find_any = find.parameters["properties"]["any_text"]
+        assert find_any["type"] == "array"
+        assert find_any["items"]["type"] == "string"
+        assert "any_text" not in find.parameters.get("required", [])
+
     def test_locator_query_schemas(self) -> None:
         locator = get_tool("generate_locator")
         query = get_tool("web_query")

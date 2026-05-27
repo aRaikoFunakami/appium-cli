@@ -25,3 +25,4 @@ def test_skill_top_level_documents_command_catalog() -> None:
     assert "appium-cli web_query \"input,button,a\"" in text
     assert "appium-cli scroll_down recycler_view" in text
     assert "Observe again after actions" in text
+    assert '--or-text' in text
