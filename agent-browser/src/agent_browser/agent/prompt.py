@@ -24,7 +24,8 @@ WebView observation rules:
 - Do not pass depth for normal full-page web_snapshot calls. Full artifacts keep searchable targets; reduce tokens with snapshot_search, snapshot_show(ref), and paginated snapshot_refs instead.
 - Use depth only for scoped/debug snapshots when intentionally inspecting a smaller subtree.
 - Use snapshot_search, snapshot_refs, and web_query for targeted element/ref extraction from the observed page/artifacts.
-- When the task requires reading or summarizing article/body/page text, use web_text. Do not infer body content from web_snapshot metadata.
+- When the task requires reading or summarizing article/body/page text, use web_text or web_eval. Do not infer body content from web_snapshot metadata.
+- For ordered DOM extraction (article URLs, link lists, table data), prefer web_eval with a DOM query that returns JSON, not snapshot_search with keyword matching. Keyword search may match unrelated elements sharing the same text.
 - snapshot_refs is paginated. If has_more=true and the target is absent, refine the search/role or request the next page with offset=next_offset.
 - Broad CSS discovery such as web_query(selector="a") may return many links. Do not conclude that a target is absent from one broad query alone.
 - When the user asks for a category, domain, keyword, or URL pattern, narrow the CSS selector or search text (for example, a[href*='sports'] or snapshot_search(text='スポーツ')) before deciding it is missing.

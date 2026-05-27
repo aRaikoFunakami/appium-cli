@@ -182,6 +182,13 @@ Navigation and context rules:
 Special read-only shortcut:
 - web_form_url({"target": "form[name=search]"}) inspects a form's submit URL/payload without interacting. Use it only for information retrieval/debugging, not frontend behavior testing.
 - If you use web_form_url output, state that frontend_interaction_skipped is true; never claim the form was actually exercised.
+
+DOM extraction with web_eval (Playwright browser_evaluate equivalent):
+- Use web_eval when you need ordered, structured, or computed data from the DOM that snapshot_search/web_query cannot provide directly.
+- web_eval({"script": "return Array.from(document.querySelectorAll('a[href*=\"/articles/\"]')).map(a=>({title:a.innerText.trim(),url:a.href})).filter(x=>x.title).slice(0,5)"})
+- web_eval({"script": "return (document.querySelector('article')||document.querySelector('main')||document.body).innerText"})
+- web_eval returns JSON for arrays/objects; use it for article link lists, table data, heading structures, computed attributes, etc.
+- Do not use web_eval for navigation (window.location), form value mutation (.value=), or synthetic events.
 """
 
 

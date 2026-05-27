@@ -24,6 +24,8 @@ INFO_ONLY_TOOLS = frozenset({
     "webview_url",
     "webview_title",
     "screenshot",
+    "web_text",
+    "web_eval",
 })
 
 LOOP_REPEAT_EXEMPT = frozenset({"snapshot", "web_snapshot", "screenshot"})

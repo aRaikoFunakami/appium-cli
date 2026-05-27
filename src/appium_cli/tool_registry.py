@@ -367,7 +367,7 @@ _add("pinch_close", "Pinch close gesture on an element.",
          "speed": _int_param("Pinch speed."),
      }, required=["ref"]))
 
-_add("web_eval", "Evaluate JavaScript in WebView context. Returns the result as a string; runtime warnings flag misuse like navigation or value-injection patterns.",
+_add("web_eval", "Evaluate JavaScript in the current WebView (Playwright browser_evaluate equivalent). Use for read-only DOM extraction: collect links, article URLs, headings, structured text, or page metadata. Returns JSON when the script returns an array/object. Prefer goto/click/fill for navigation and interaction; do not mutate form values or navigate.",
      parameters=_schema({
          "script": _str_param("JavaScript code to execute."),
          "ref": _str_param("Optional ref to pass as argument."),

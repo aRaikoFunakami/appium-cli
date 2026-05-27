@@ -9,6 +9,7 @@ web (Selenium click/send_keys/JS) depending on the ref's stored context.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from typing import Any
@@ -726,6 +727,8 @@ def web_eval(script: str, ref: str = "") -> str:
             result = driver.execute_script(script)
         if result is None:
             return "null"
+        if isinstance(result, (dict, list)):
+            return json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)
         return str(result)
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc

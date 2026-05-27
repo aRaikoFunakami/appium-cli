@@ -142,6 +142,26 @@ appium-cli web_eval "el.getAttribute('aria-describedby')" web_input_email
 appium-cli web_eval "el.value" web_search
 ```
 
+## DOM extraction with web_eval (Playwright browser_evaluate equivalent)
+
+Use `web_eval` for read-only structured DOM extraction when snapshot_search/web_query cannot provide the needed data directly. Returns JSON for arrays/objects.
+
+```bash
+# Extract ordered article links as JSON array
+appium-cli web_eval "return Array.from(document.querySelectorAll('a[href*=\"/articles/\"]')).map(a=>({title:a.innerText.trim(),url:a.href})).filter(x=>x.title).slice(0,5)"
+
+# Extract page body text
+appium-cli web_eval "return (document.querySelector('article')||document.querySelector('main')||document.body).innerText"
+
+# Extract table data
+appium-cli web_eval "return Array.from(document.querySelectorAll('table tr')).map(r=>Array.from(r.cells).map(c=>c.innerText))"
+```
+
+Prefer `web_eval` over keyword-based `snapshot_search` when:
+- You need an ordered list of links/items matching a CSS pattern
+- You need computed text content from a specific container
+- Keyword matching would conflate category discovery with article selection
+
 Use `web_eval` for diagnostics and attribute reads. Prefer ref actions for normal interaction.
 
 > **Warning — do NOT use `web_eval` to set form input values.**
