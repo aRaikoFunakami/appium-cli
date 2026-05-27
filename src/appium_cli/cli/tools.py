@@ -163,6 +163,21 @@ def web_query(
     _daemon_request("web_query", json_output, {"selector": selector, "attrs": attrs, "limit": limit})
 
 
+def web_text(
+    selector: Annotated[str, typer.Option("--selector", help="Optional CSS selector; empty auto-selects article/main/body.")] = "",
+    offset: Annotated[int, typer.Option("--offset", help="Character offset for continuation.")] = 0,
+    limit: Annotated[int, typer.Option("--limit", help="Maximum characters to return.")] = 6000,
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """Extract readable page text from the current WebView/Chrome DOM."""
+
+    _daemon_request(
+        "web_text",
+        json_output,
+        {"selector": selector, "offset": offset, "limit": limit},
+    )
+
+
 def describe(
     ref: Annotated[str, typer.Argument(help="Element ref to describe.")],
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,

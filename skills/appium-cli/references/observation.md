@@ -14,6 +14,7 @@ snapshot_id: native-20250101-120000-abc123
 source: native
 screen_id: 8dd580
 context: NATIVE_APP
+stats: 8 nodes, 3 refs, 1 buttons, 1 containers
 artifacts:
   compact: .appium-cli/snapshots/native-...compact.yml
   full: .appium-cli/snapshots/native-...full.yml
@@ -34,6 +35,14 @@ appium-cli snapshot_show latest --artifact=meta
 appium-cli snapshot_show latest              # fallback; can be large
 appium-cli snapshot_show latest --artifact=full  # debugging only
 appium-cli generate_locator btn_ok
+```
+
+For WebView pages where the task requires reading or summarizing article/body/page text, use `web_text` instead of reading full snapshot trees:
+
+```bash
+appium-cli web_text                         # auto-select article/main/body text
+appium-cli web_text --selector=article      # read a known content container
+appium-cli web_text --offset=6000           # continue truncated text
 ```
 
 `compact.yml` intentionally remains a tree artifact so UI hierarchy is available on disk. Do not paste/read the whole artifact by default. Search it with `snapshot_search`, inspect paginated ref indexes with `snapshot_refs`, inspect one element with `snapshot_show --ref`, or use local grep/rg-style file extraction when available.
@@ -120,4 +129,4 @@ appium-cli --raw generate_locator btn_ok
 
 ## Screenshot and page source
 
-`snapshot` is primary. `screenshot` is rarely needed; use it only when visual pixels are necessary. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after targeted artifact extraction, `snapshot_search`, and `snapshot_refs` are insufficient.
+`snapshot` is primary for structure and refs. `web_text` is primary for WebView page/article text. `screenshot` is rarely needed; use it only when visual pixels are necessary. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after targeted artifact extraction, `web_text`, `snapshot_search`, and `snapshot_refs` are insufficient.

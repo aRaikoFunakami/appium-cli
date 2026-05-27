@@ -74,6 +74,7 @@ def test_system_prompt_requires_webview_snapshot_first() -> None:
     prompt = build_system_prompt()
     assert "After goto or webview_switch, take web_snapshot" in prompt
     assert "primary page observation" in prompt
+    assert "use web_text" in prompt
 
 
 def test_system_prompt_warns_against_broad_query_absence_judgment() -> None:

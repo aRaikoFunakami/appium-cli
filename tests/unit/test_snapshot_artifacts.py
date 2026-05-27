@@ -6,7 +6,10 @@ import json
 
 from appium_cli.core.native_snapshot import NativeSnapshot, NativeSnapshotNode
 from appium_cli.core.snapshot import LocatorStrategy
-from appium_cli.core.snapshot_artifacts import create_snapshot_bundle_payload
+from appium_cli.core.snapshot_artifacts import (
+    compute_snapshot_stats,
+    create_snapshot_bundle_payload,
+)
 from appium_cli.core.web_snapshot import WebSnapshot, WebSnapshotNode
 
 
@@ -113,3 +116,25 @@ def test_web_snapshot_bundle_includes_title_url_and_textbox_index(monkeypatch, t
     ]
     assert "title: Example" in bundle.compact_yml
     json.dumps(bundle.index_json)
+
+
+def test_compute_snapshot_stats_counts_index_roles() -> None:
+    stats = compute_snapshot_stats(
+        {
+            "node_count": 12,
+            "ref_count": 5,
+            "roles": {"link": 3, "heading": 2, "button": 1, "textbox": 4},
+            "inputs": [{"ref": "search"}, {"ref": "email"}],
+            "containers": [{"ref": "list"}],
+        }
+    )
+
+    assert stats == {
+        "nodes": 12,
+        "refs": 5,
+        "links": 3,
+        "headings": 2,
+        "buttons": 1,
+        "textboxes": 2,
+        "containers": 1,
+    }

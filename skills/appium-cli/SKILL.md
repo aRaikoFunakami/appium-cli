@@ -97,6 +97,8 @@ appium-cli snapshot                         # native metadata + artifacts
 appium-cli snapshot main_list               # element-scoped native snapshot
 appium-cli web_snapshot                     # WebView metadata + artifacts
 appium-cli web_snapshot web_form            # element-scoped DOM snapshot
+appium-cli web_text                         # readable WebView page/article text
+appium-cli web_text --selector=article      # text from a specific content container
 appium-cli --raw snapshot > screen.yml      # full tree for piping/diffing
 appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 
@@ -116,7 +118,7 @@ appium-cli screenshot                       # rarely needed
 appium-cli get_page_source                  # token-heavy diagnostic escape hatch
 ```
 
-`snapshot` is primary. Do not use `--depth` for normal full-page observations; snapshots are saved as artifacts, and depth can hide searchable targets. `snapshot_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
+`snapshot` is primary for structure and refs. Use `web_text` when the task requires reading or summarizing WebView page/article/body text. Do not use `--depth` for normal full-page observations; snapshots are saved as artifacts, and depth can hide searchable targets. `snapshot_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts and `web_text` are insufficient.
 
 `--or-text` adds literal OR matching for text variants (synonyms, translations). It is not regex and does not support AND/NOT. Keep to 2-4 variants.
 

@@ -74,6 +74,18 @@ def setup_function(_func) -> None:
     state.reset()
 
 
+class _FakeWebTextDriver:
+    current_context = "WEBVIEW_chrome"
+
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def execute_script(self, script, *args):
+        self.calls.append((script, args))
+        return self.result
+
+
 def _install_snapshot_artifacts(monkeypatch, request, snapshot_id: str = "native-fixed") -> Path:
     app_dir = Path.cwd() / ".appium-cli-test-artifact-navigation"
     shutil.rmtree(app_dir, ignore_errors=True)
@@ -84,6 +96,85 @@ def _install_snapshot_artifacts(monkeypatch, request, snapshot_id: str = "native
     )
     observation._write_snapshot_bundle(bundle)
     return app_dir
+
+
+def test_snapshot_metadata_includes_stats(monkeypatch, tmp_path):
+    monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: tmp_path)
+    bundle = create_snapshot_bundle_payload(
+        _build_native_snapshot(), snapshot_id="native-fixed"
+    )
+
+    out = observation._format_artifact_metadata(bundle)
+
+    assert "stats: 7 nodes, 3 refs, 1 buttons, 1 containers" in out
+
+
+def test_web_text_formats_selected_text_and_metadata():
+    driver = _FakeWebTextDriver(
+        {
+            "title": "Article",
+            "url": "https://example.com/a",
+            "selector": "article",
+            "explicit_selector": False,
+            "chars": 12000,
+            "offset": 0,
+            "limit": 6000,
+            "returned": 6000,
+            "truncated": True,
+            "text": "本文です",
+        }
+    )
+    state.driver = driver
+
+    out = observation.web_text()
+
+    assert "title: Article" in out
+    assert "url: https://example.com/a" in out
+    assert "selector: article" in out
+    assert "truncated: true" in out
+    assert out.endswith("本文です")
+    assert driver.calls[0][1] == ("", 0, 6000)
+
+
+def test_web_text_clamps_limit_and_supports_offset():
+    driver = _FakeWebTextDriver(
+        {
+            "selector": "body",
+            "chars": 20000,
+            "offset": 300,
+            "limit": 12000,
+            "returned": 12000,
+            "truncated": True,
+            "text": "continued",
+        }
+    )
+    state.driver = driver
+
+    observation.web_text(selector="body", offset=300, limit=999999)
+
+    assert driver.calls[0][1] == ("body", 300, 12000)
+
+
+def test_web_text_raw_returns_json():
+    driver = _FakeWebTextDriver(
+        {
+            "title": "Article",
+            "url": "https://example.com/a",
+            "selector": "main",
+            "chars": 4,
+            "offset": 0,
+            "limit": 6000,
+            "returned": 4,
+            "truncated": False,
+            "text": "text",
+        }
+    )
+    state.driver = driver
+
+    payload = json.loads(observation.web_text(raw=True))
+
+    assert payload["selector"] == "main"
+    assert payload["text"] == "text"
 
 
 def test_native_action_returns_ok_without_snapshot(monkeypatch):

@@ -50,14 +50,14 @@ tool sequences when a workflow below applies.
 
 Core loop:
 1. Observe with the context-appropriate snapshot tool.
-2. Extract targeted candidates with snapshot_search(), snapshot_refs(), snapshot_show(ref=...), or context-appropriate query tools.
+2. Extract targeted candidates with snapshot_search(), snapshot_refs(), snapshot_show(ref=...), or context-appropriate query tools. Use web_text() when the task requires reading/summarizing page text.
 3. Act with refs/selectors using the context-appropriate action tools.
 4. Observe again after navigation, reload, scroll, click, fill+submit, dialog handling, or any action that may change the page.
 5. Use only refs from the latest observation/artifacts. Old refs can become stale.
 
 Targeting rules:
 - Snapshot refs are valid function-call arguments.
-- Normal snapshot outputs are metadata plus artifact paths, not full trees. Do not use raw/full snapshot output in agent loops; inspect saved artifacts with snapshot_search(), snapshot_show({"ref": "..."}), and paginated snapshot_refs().
+- Normal snapshot outputs are metadata plus artifact paths, not full trees. Do not use raw/full snapshot output in agent loops; inspect saved artifacts with snapshot_search(), snapshot_show({"ref": "..."}), and paginated snapshot_refs(). For article/body/page text, use web_text().
 - snapshot_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call snapshot_refs(offset=next_offset).
 - If duplicate labels/refs appear, inspect with snapshot_refs(), snapshot_show({"ref": "..."}), list_containers(), or within_container() before acting.
 - If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control; find_by_text can help locate it.
@@ -65,7 +65,7 @@ Targeting rules:
 
 Diagnostics and fallback order:
 1. If context/prerequisite behavior is unclear, call get_context({}), list_contexts({}), webview_status({}), or get_driver_status({}).
-2. If snapshot artifacts are insufficient, try targeted snapshot_search(), snapshot_refs(), or snapshot_show({"ref": "..."}).
+2. If snapshot artifacts are insufficient, try targeted snapshot_search(), snapshot_refs(), web_text(), or snapshot_show({"ref": "..."}).
 3. Use console_messages() for browser console logs; returned entries may be consumed by the call.
 4. Use network_requests() only when the session was started with network logging enabled.
 5. Use screenshot() only when visual pixels are necessary.
@@ -138,7 +138,7 @@ Find a category or news page from a portal:
 5. If the target URL is clear, prefer goto({"url": "https://news.yahoo.co.jp/categories/sports"}) over clicking an ambiguous duplicate link.
 6. web_snapshot({})
 7. web_query({"selector": "a[href*='/articles/']", "attrs": "href,textContent", "limit": 10})
-8. Open each needed article with goto({"url": "<article url>"}), then web_snapshot({}) or targeted web_query()/snapshot_search() to extract details.
+8. Open each needed article with goto({"url": "<article url>"}), then web_text({}) to read article/body text for summarization. Use web_snapshot({}) only when you need refs/navigation targets.
 
 Important portal-search rule:
 - Do not conclude that a link/category is absent from one broad query such as web_query({"selector": "a"}).

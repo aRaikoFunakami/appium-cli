@@ -96,7 +96,7 @@ _add("snapshot", "Get an accessibility snapshot with stable element refs. Return
          "filename": _str_param("Save snapshot to file."),
      }))
 
-_add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview). Returns metadata and artifact paths, not the full tree; use snapshot_search, snapshot_refs, web_query, or snapshot_show(ref=...) to inspect it.",
+_add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview). Returns metadata and artifact paths, not the full tree. Use snapshot_search/snapshot_refs for navigation targets, web_text for page/article text, or snapshot_show(ref=...) for one element.",
      parameters=_schema({
          "scope": _str_param("Snapshot scope filter.", default="full"),
          "depth": _int_param("Limit the depth of the snapshot tree."),
@@ -152,6 +152,14 @@ _add("web_query", "Query the current WebView/Chrome DOM by CSS selector.",
          "attrs": _str_param("Comma-separated extra attributes to include."),
          "limit": _int_param("Maximum number of matches to return.", default=20),
      }, required=["selector"]))
+
+_add("web_text",
+     "Extract readable page text from the current WebView/Chrome DOM. Use this for article/body/page content to summarize; use web_snapshot/snapshot_refs for clickable refs.",
+     parameters=_schema({
+         "selector": _str_param("Optional CSS selector. Empty auto-selects article, main, [role=main], then body.", default=""),
+         "offset": _int_param("Character offset for continuation.", default=0),
+         "limit": _int_param("Maximum characters to return.", default=6000),
+     }))
 
 _add("web_form_url",
      "Inspect an HTML form and report its submit URL/payload without interacting (read-only; redacts secrets). "

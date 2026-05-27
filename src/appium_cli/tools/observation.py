@@ -12,7 +12,11 @@ from appium_cli.core.ref_resolver import ElementNotFoundError, parse_ref, _Coord
 from appium_cli.core.native_snapshot import NativeSnapshot
 from appium_cli.core.native_snapshot_generator import NativeSnapshotGenerator
 from appium_cli.core.snapshot import compress_xml
-from appium_cli.core.snapshot_artifacts import SnapshotBundlePayload, create_snapshot_bundle_payload
+from appium_cli.core.snapshot_artifacts import (
+    SnapshotBundlePayload,
+    compute_snapshot_stats,
+    create_snapshot_bundle_payload,
+)
 from appium_cli.core.web_snapshot import WebSnapshot
 from appium_cli.core.web_snapshot_generator import (
     DOM_EXTRACTION_SCRIPT,
@@ -79,6 +83,8 @@ _native_snapshot_generator = NativeSnapshotGenerator()
 _SNAPSHOT_SHOW_ARTIFACTS = frozenset({"compact", "full", "refs", "index", "meta"})
 _WEB_QUERY_DEFAULT_LIMIT = 20
 _WEB_QUERY_MAX_LIMIT = 200
+_WEB_TEXT_DEFAULT_LIMIT = 6000
+_WEB_TEXT_MAX_LIMIT = 12000
 
 WEB_QUERY_SCRIPT = r"""
 return (function(selector, attrs, limit) {
@@ -213,6 +219,62 @@ return (function(selector, attrs, limit) {
             attrs: extra
         };
     });
+})(arguments[0], arguments[1], arguments[2]);
+"""
+
+
+WEB_TEXT_SCRIPT = r"""
+return (function(selector, offset, limit) {
+    function clean(text) {
+        if (!text) return '';
+        return String(text).replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+    function pickElement() {
+        if (selector) {
+            return {
+                selector: selector,
+                element: document.querySelector(selector),
+                explicit: true
+            };
+        }
+        var candidates = ['article', 'main', '[role="main"]', 'body'];
+        for (var i = 0; i < candidates.length; i++) {
+            var el = document.querySelector(candidates[i]);
+            if (el && clean(el.innerText || el.textContent || '')) {
+                return {selector: candidates[i], element: el, explicit: false};
+            }
+        }
+        return {selector: 'body', element: document.body, explicit: false};
+    }
+
+    offset = Math.max(0, Number(offset) || 0);
+    limit = Math.max(0, Number(limit) || 0);
+
+    var picked;
+    try {
+        picked = pickElement();
+    } catch (err) {
+        return {error: String(err && err.message ? err.message : err)};
+    }
+    if (!picked.element) {
+        return {error: 'No element matching selector: ' + (selector || 'auto')};
+    }
+
+    var text = clean(picked.element.innerText || picked.element.textContent || '');
+    var total = text.length;
+    var slice = text.substring(offset, offset + limit);
+    return {
+        title: document.title || '',
+        url: window.location ? String(window.location.href || '') : '',
+        selector: picked.selector,
+        explicit_selector: picked.explicit,
+        chars: total,
+        offset: offset,
+        limit: limit,
+        returned: slice.length,
+        truncated: offset + slice.length < total,
+        text: slice
+    };
 })(arguments[0], arguments[1], arguments[2]);
 """
 
@@ -379,6 +441,14 @@ def _format_artifact_metadata(bundle: SnapshotBundlePayload) -> str:
     for key in ("context", "title", "url"):
         if key in metadata:
             lines.append(f"{key}: {metadata[key]}")
+    stats = compute_snapshot_stats(bundle.index_json)
+    stats_parts = [
+        f"{value} {name}"
+        for name, value in stats.items()
+        if value or name in {"nodes", "refs"}
+    ]
+    if stats_parts:
+        lines.append(f"stats: {', '.join(stats_parts)}")
     if metadata.get("truncated"):
         lines.append("truncated: true")
     lines.append("artifacts:")
@@ -1061,6 +1131,69 @@ def _format_web_query_field(key: str, value: Any) -> str:
     if any(ch.isspace() for ch in text) or any(ch in text for ch in "\"'[]=<>"):
         text = json.dumps(text, ensure_ascii=False)
     return f"{key}={text}"
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def web_text(
+    selector: str = "",
+    offset: int = 0,
+    limit: int = _WEB_TEXT_DEFAULT_LIMIT,
+    raw: bool = False,
+) -> str:
+    """Extract readable text from the current WebView/Chrome DOM."""
+    driver = _require_driver()
+    context = current_context(driver)
+    if not is_web_context(context):
+        raise AppiumCliError(
+            "web_text requires a WebView/Chrome context. Use webview_switch or snapshot --context=webview first.",
+            exit_code=FEATURE_NOT_ENABLED,
+        )
+
+    safe_offset = max(0, _safe_int(offset, 0))
+    requested_limit = _safe_int(limit, _WEB_TEXT_DEFAULT_LIMIT)
+    safe_limit = max(0, min(requested_limit, _WEB_TEXT_MAX_LIMIT))
+    result = driver.execute_script(WEB_TEXT_SCRIPT, selector or "", safe_offset, safe_limit)
+    if isinstance(result, str):
+        result = json.loads(result)
+    if isinstance(result, dict) and result.get("error"):
+        return f"ERROR: {result['error']}"
+    if not isinstance(result, dict):
+        return "{}" if raw else "No page text found."
+
+    payload = {
+        "title": str(result.get("title") or ""),
+        "url": str(result.get("url") or ""),
+        "selector": str(result.get("selector") or ""),
+        "explicit_selector": bool(result.get("explicit_selector")),
+        "chars": int(result.get("chars") or 0),
+        "offset": int(result.get("offset") or safe_offset),
+        "limit": int(result.get("limit") or safe_limit),
+        "returned": int(result.get("returned") or 0),
+        "truncated": bool(result.get("truncated")),
+        "text": str(result.get("text") or ""),
+    }
+    if raw:
+        return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+
+    lines = [
+        f"title: {payload['title']}",
+        f"url: {payload['url']}",
+        f"selector: {payload['selector']}",
+        f"chars: {payload['chars']}",
+        f"offset: {payload['offset']}",
+        f"limit: {payload['limit']}",
+        f"returned: {payload['returned']}",
+        f"truncated: {'true' if payload['truncated'] else 'false'}",
+        "text:",
+        payload["text"],
+    ]
+    return "\n".join(lines).rstrip()
 
 
 def web_query(

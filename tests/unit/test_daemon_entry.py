@@ -94,8 +94,13 @@ def test_locator_query_handlers_pass_raw(monkeypatch) -> None:
         calls.append(("query", kwargs))
         return "query"
 
+    def fake_web_text(**kwargs):
+        calls.append(("text", kwargs))
+        return "text"
+
     monkeypatch.setattr(entry, "generate_locator", fake_generate_locator)
     monkeypatch.setattr(entry, "web_query", fake_web_query)
+    monkeypatch.setattr(entry, "web_text", fake_web_text)
 
     assert entry._handler(
         {"tool": "generate_locator", "args": {"ref": "ok"}, "raw": True}
@@ -103,10 +108,14 @@ def test_locator_query_handlers_pass_raw(monkeypatch) -> None:
     assert entry._handler(
         {"tool": "web_query", "args": {"selector": "button"}, "raw": True}
     )["text"] == "query"
+    assert entry._handler(
+        {"tool": "web_text", "args": {"selector": "article"}, "raw": True}
+    )["text"] == "text"
 
     assert calls == [
         ("locator", {"ref": "ok", "raw": True}),
         ("query", {"selector": "button", "raw": True}),
+        ("text", {"selector": "article", "raw": True}),
     ]
 
 

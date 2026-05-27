@@ -155,12 +155,16 @@ class TestSchemaStructure:
     def test_locator_query_schemas(self) -> None:
         locator = get_tool("generate_locator")
         query = get_tool("web_query")
+        text = get_tool("web_text")
         assert locator is not None
         assert query is not None
+        assert text is not None
         assert locator.parameters["required"] == ["ref"]
         assert query.parameters["required"] == ["selector"]
         assert query.parameters["properties"]["attrs"]["type"] == "string"
         assert query.parameters["properties"]["limit"]["default"] == 20
+        assert text.parameters.get("required", []) == []
+        assert text.parameters["properties"]["limit"]["default"] == 6000
 
 
 class TestKnownDaemonTools:
@@ -183,7 +187,7 @@ class TestExpectedToolsCoverage:
 
     EXPECTED_DAEMON_TOOLS = {
         "snapshot", "describe", "find_by_text", "screenshot", "get_page_source",
-        "snapshot_show", "snapshot_search", "snapshot_refs", "generate_locator", "web_query", "web_form_url",
+        "snapshot_show", "snapshot_search", "snapshot_refs", "generate_locator", "web_query", "web_text", "web_form_url",
         "list_contexts", "get_context", "switch_context", "native_switch",
         "webview_switch", "webview_status", "web_snapshot", "webview_url", "webview_title",
         "goto", "go_back", "go_forward", "reload",

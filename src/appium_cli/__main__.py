@@ -92,6 +92,7 @@ from appium_cli.cli.tools import (
     web_eval,
     web_form_url,
     web_query,
+    web_text,
     web_snapshot,
     webview_status,
     webview_switch,
@@ -194,6 +195,7 @@ app.command(name="snapshot_search")(snapshot_search)
 app.command(name="snapshot_refs")(snapshot_refs)
 app.command(name="generate_locator")(generate_locator)
 app.command(name="web_query")(web_query)
+app.command(name="web_text")(web_text)
 app.command(name="web_form_url")(web_form_url)
 app.command(name="describe")(describe)
 app.command(name="find_by_text")(find_by_text)

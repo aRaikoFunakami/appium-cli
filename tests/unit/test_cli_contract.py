@@ -190,10 +190,14 @@ def test_locator_query_commands_route_to_daemon(monkeypatch) -> None:
     assert runner.invoke(
         app, ["web_query", "input[name=q]", "--attrs", "data-testid,autocomplete", "--limit", "5"]
     ).exit_code == 0
+    assert runner.invoke(
+        app, ["web_text", "--selector", "article", "--offset", "10", "--limit", "1000"]
+    ).exit_code == 0
 
     assert calls == [
         ("generate_locator", {"ref": "ok"}, True),
         ("web_query", {"selector": "input[name=q]", "attrs": "data-testid,autocomplete", "limit": 5}, False),
+        ("web_text", {"selector": "article", "offset": 10, "limit": 1000}, False),
     ]
 
 

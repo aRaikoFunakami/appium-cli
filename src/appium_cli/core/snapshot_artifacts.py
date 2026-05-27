@@ -33,6 +33,34 @@ class SnapshotBundlePayload:
         }
 
 
+def compute_snapshot_stats(index: dict[str, Any]) -> dict[str, int]:
+    """Compute compact, agent-facing counts from a snapshot index artifact."""
+    roles = index.get("roles", {})
+    if not isinstance(roles, dict):
+        roles = {}
+
+    def role_count(role: str) -> int:
+        value = roles.get(role, 0)
+        return value if isinstance(value, int) else 0
+
+    headings = 0
+    for role, count in roles.items():
+        if str(role).startswith("heading") and isinstance(count, int):
+            headings += count
+
+    containers = index.get("containers", [])
+    inputs = index.get("inputs", [])
+    return {
+        "nodes": int(index.get("node_count") or 0),
+        "refs": int(index.get("ref_count") or 0),
+        "links": role_count("link"),
+        "headings": headings,
+        "buttons": role_count("button"),
+        "textboxes": len(inputs) if isinstance(inputs, list) else 0,
+        "containers": len(containers) if isinstance(containers, list) else 0,
+    }
+
+
 def create_snapshot_bundle_payload(
     snapshot_obj: Any,
     *,

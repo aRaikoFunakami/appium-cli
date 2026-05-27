@@ -22,6 +22,7 @@ def test_skill_top_level_documents_command_catalog() -> None:
     assert "appium-cli --raw snapshot > before.yml" in text
     assert "appium-cli snapshot_show latest" in text
     assert "appium-cli snapshot_refs latest --role=button" in text
+    assert "appium-cli web_text" in text
     assert "appium-cli web_query \"input,button,a\"" in text
     assert "appium-cli scroll_down recycler_view" in text
     assert "Observe again after actions" in text

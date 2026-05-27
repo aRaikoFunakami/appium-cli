@@ -36,6 +36,7 @@ _OBSERVATION_PRODUCING = frozenset({
     "snapshot_search",
     "snapshot_refs",
     "web_query",
+    "web_text",
 })
 
 
