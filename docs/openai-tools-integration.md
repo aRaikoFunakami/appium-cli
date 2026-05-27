@@ -724,30 +724,35 @@ def compact_action_metadata(text: str) -> str:
     return result if result.strip() else "OK"
 
 
-def save_screenshot_artifact(text: str, artifacts_dir: Path) -> str | None:
+def prepare_screenshot_artifact(text: str, fallback_dir: Path) -> str | None:
     try:
         payload = json.loads(text)
     except (json.JSONDecodeError, ValueError):
         return None
     if not isinstance(payload, dict) or payload.get("type") != "screenshot":
         return None
+
+    path = payload.get("path")
+    if isinstance(path, str) and path:
+        return path
+
     image_base64 = payload.get("image_base64")
     if not isinstance(image_base64, str) or not image_base64:
         return None
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    fallback_dir.mkdir(parents=True, exist_ok=True)
     raw = base64.b64decode(image_base64, validate=False)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%f")
     region = str(payload.get("region", "full")).replace("/", "_").replace(":", "_")
-    path = artifacts_dir / f"screenshot_{timestamp}_{region}.png"
-    path.write_bytes(raw)
-    return str(path)
+    fallback_path = fallback_dir / f"screenshot_{timestamp}_{region}.png"
+    fallback_path.write_bytes(raw)
+    return str(fallback_path)
 
 
 def serialize_tool_response(
     name: str,
     response: dict[str, Any],
     *,
-    artifacts_dir: Path = Path("artifacts"),
+    fallback_artifacts_dir: Path = Path(".appium-cli/agent-browser/artifacts"),
     max_result_chars: int = 12000,
     max_snapshot_show_chars: int = 1500,
 ) -> str:
@@ -763,7 +768,7 @@ def serialize_tool_response(
         return "OK"
 
     if name == "screenshot":
-        artifact_path = save_screenshot_artifact(text, artifacts_dir)
+        artifact_path = prepare_screenshot_artifact(text, fallback_artifacts_dir)
         if artifact_path:
             region = "full"
             try:
@@ -846,17 +851,19 @@ keep only fields that help the next decision:
 
 ### Screenshots
 
-`screenshot` returns a JSON string:
+`screenshot` returns a JSON string. In a session-backed run it includes a
+canonical saved path under `.appium-cli/<session-id>/`:
 
 ```json
-{"type":"screenshot","image_base64":"...","region":"full"}
+{"type":"screenshot","image_base64":"...","region":"full","path":".appium-cli/session-.../screenshot-....png"}
 ```
 
-Do not send large base64 strings back to the model. Decode and save them as
-files, then return a compact reference:
+Do not send large base64 strings back to the model. Prefer the returned `path`
+and only decode/save `image_base64` as a compatibility fallback when no path is
+present:
 
 ```json
-{"type":"screenshot","artifact_path":"artifacts/screenshot_001.png","region":"full"}
+{"type":"screenshot","artifact_path":".appium-cli/session-.../screenshot-....png","region":"full"}
 ```
 
 ### Truncation

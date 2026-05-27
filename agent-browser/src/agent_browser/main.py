@@ -46,7 +46,6 @@ async def run_browser_task(
     """Execute a single browser task end-to-end and return a structured result."""
     cfg = config or AgentBrowserConfig.from_env()
     _configure_logging(cfg.log_level)
-    cfg.artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     episodic = EpisodicMemory(JsonlMemoryStore(cfg.memory_path))
     memory = WorkingMemory(goal=goal)

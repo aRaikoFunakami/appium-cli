@@ -118,13 +118,17 @@ def _normalize_snapshot_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _save_screenshot_artifact(text: str, artifacts_dir: Path) -> str | None:
+def _parse_screenshot_payload(text: str) -> dict[str, Any] | None:
     try:
         payload = json.loads(text)
     except (json.JSONDecodeError, ValueError):
         return None
     if not isinstance(payload, dict) or payload.get("type") != "screenshot":
         return None
+    return payload
+
+
+def _save_screenshot_fallback(payload: dict[str, Any], artifacts_dir: Path) -> str | None:
     b64 = payload.get("image_base64")
     if not isinstance(b64, str) or not b64:
         return None
@@ -138,6 +142,28 @@ def _save_screenshot_artifact(text: str, artifacts_dir: Path) -> str | None:
     full_path = artifacts_dir / f"screenshot_{timestamp}_{region}.png"
     full_path.write_bytes(raw)
     return str(full_path)
+
+
+def _prepare_screenshot_result(text: str, artifacts_dir: Path) -> tuple[str | None, str] | None:
+    payload = _parse_screenshot_payload(text)
+    if payload is None:
+        return None
+
+    artifact_path = payload.get("path")
+    if not isinstance(artifact_path, str) or not artifact_path:
+        artifact_path = _save_screenshot_fallback(payload, artifacts_dir)
+
+    compact: dict[str, Any] = {
+        "type": "screenshot",
+        "region": payload.get("region", "full"),
+    }
+    if artifact_path:
+        compact["artifact_path"] = artifact_path
+    for key in ("size_bytes", "mime_type"):
+        if key in payload:
+            compact[key] = payload[key]
+
+    return artifact_path, json.dumps(compact, ensure_ascii=False)
 
 
 def _extract_observation(tool_name: str, text: str) -> ObservationSummary | None:
@@ -230,15 +256,11 @@ async def execute_appium_tool(
 
     artifact_path: str | None = None
     if ok and name == "screenshot":
-        artifact_path = _save_screenshot_artifact(response.get("text") or "", cfg.artifacts_dir)
+        screenshot_result = _prepare_screenshot_result(response.get("text") or "", cfg.artifacts_dir)
+        if screenshot_result is not None:
+            artifact_path, rendered = screenshot_result
         if artifact_path:
             memory.record_artifact(artifact_path)
-            region = "full"
-            try:
-                region = json.loads(response.get("text") or "{}").get("region", "full")
-            except json.JSONDecodeError:
-                pass
-            rendered = json.dumps({"type": "screenshot", "artifact_path": artifact_path, "region": region}, ensure_ascii=False)
 
     if ok:
         _record_artifacts_from_data(response.get("data"), memory)

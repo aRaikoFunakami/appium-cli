@@ -129,4 +129,4 @@ appium-cli --raw generate_locator btn_ok
 
 ## Screenshot and page source
 
-`snapshot` is primary for structure and refs. `web_text` is primary for WebView page/article text. `screenshot` is rarely needed; use it only when visual pixels are necessary. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after targeted artifact extraction, `web_text`, `snapshot_search`, and `snapshot_refs` are insufficient.
+`snapshot` is primary for structure and refs. `web_text` is primary for WebView page/article text. `screenshot` is rarely needed; use it only when visual pixels are necessary. Session-backed screenshots return an artifact path under `.appium-cli/<session-id>/`; reuse that path and do not save a duplicate copy. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after targeted artifact extraction, `web_text`, `snapshot_search`, and `snapshot_refs` are insufficient.

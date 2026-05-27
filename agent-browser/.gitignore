@@ -4,5 +4,6 @@ __pycache__/
 .pytest_cache/
 artifacts/*
 !artifacts/.gitkeep
+.appium-cli/
 .agent-browser-memory.jsonl
 .env

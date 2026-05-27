@@ -50,6 +50,17 @@ def test_default_verification_fields() -> None:
     assert cfg.judge_fail_open is True
 
 
+def test_default_artifacts_dir_is_appium_cli_fallback() -> None:
+    cfg = AgentBrowserConfig()
+    assert str(cfg.artifacts_dir) == ".appium-cli/agent-browser/artifacts"
+
+
+def test_from_env_honors_artifacts_dir_override(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_BROWSER_ARTIFACTS_DIR", "custom-artifacts")
+    cfg = AgentBrowserConfig.from_env()
+    assert str(cfg.artifacts_dir) == "custom-artifacts"
+
+
 def test_from_env_honors_verify_with_llm_false(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_BROWSER_VERIFY_WITH_LLM", "false")
     cfg = AgentBrowserConfig.from_env()

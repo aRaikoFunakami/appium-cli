@@ -32,7 +32,7 @@ Responses API loop
    ├─ model picks tools and arguments
    ├─ executor classifies safety BEFORE talking to the daemon
    ├─ executor calls appium_cli.openai_tools.call_tool()
-   ├─ screenshot results are saved to artifacts/, base64 stripped from logs
+   ├─ screenshot paths from appium-cli are reused, base64 stripped from logs
    ├─ raw function_call/reasoning items are discarded after each step
    └─ latest observation overwrites old screen state
   │
@@ -107,9 +107,11 @@ guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
 
 ## Artifacts and memory
 
-- **Artifacts**: each `screenshot` tool call saves a PNG to
-  `AGENT_BROWSER_ARTIFACTS_DIR` (default `artifacts/`). The agent receives
-  only a short reference back, not the base64 payload.
+- **Artifacts**: normal screenshots are saved by `appium-cli` under
+  `.appium-cli/<session-id>/`, and agent-browser records the returned path
+  without saving a duplicate. The agent receives only a short reference back,
+  not the base64 payload. `AGENT_BROWSER_ARTIFACTS_DIR` is a fallback location
+  used only if an older screenshot response does not include a path.
 - **Episodic memory**: `MemoryEvent` records (tool successes/failures and task
   outcomes) are appended to `AGENT_BROWSER_MEMORY_PATH` (default
   `.agent-browser-memory.jsonl`).

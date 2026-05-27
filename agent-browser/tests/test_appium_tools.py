@@ -7,6 +7,7 @@ Appium server.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -127,11 +128,51 @@ class TestInvokeAppiumTool:
         mock_call.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_screenshot_saves_artifact(self, tmp_path) -> None:
+    async def test_screenshot_uses_returned_path_without_resaving(self, tmp_path) -> None:
         import base64
 
         ctx = _ctx(tmp_path)
         png_bytes = b"\x89PNG\r\n\x1a\n" + b"0" * 16
+        appium_path = tmp_path / ".appium-cli" / "session-test" / "screenshot-test.png"
+        appium_path.parent.mkdir(parents=True)
+        appium_path.write_bytes(png_bytes)
+        screenshot_payload = {
+            "type": "screenshot",
+            "image_base64": base64.b64encode(png_bytes).decode("ascii"),
+            "region": "full",
+            "path": str(appium_path),
+            "size_bytes": len(png_bytes),
+            "mime_type": "image/png",
+        }
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {
+                "ok": True,
+                "text": json.dumps(screenshot_payload),
+                "data": {},
+            }
+            result = await execute_appium_tool("screenshot", {}, ctx)
+
+        # The base64 must NOT appear in the result returned to the LLM.
+        assert "image_base64" not in result.output
+        payload = json.loads(result.output)
+        assert payload == {
+            "type": "screenshot",
+            "region": "full",
+            "artifact_path": str(appium_path),
+            "size_bytes": len(png_bytes),
+            "mime_type": "image/png",
+        }
+        assert result.artifact_path == str(appium_path)
+        assert ctx.memory.artifacts == [str(appium_path)]
+        assert not ctx.config.artifacts_dir.exists()
+        assert list(tmp_path.glob("artifacts/*.png")) == []
+
+    @pytest.mark.asyncio
+    async def test_screenshot_fallback_saves_when_path_missing(self, tmp_path) -> None:
+        import base64
+
+        ctx = _ctx(tmp_path)
+        png_bytes = b"\x89PNG\r\n\x1a\n" + b"1" * 16
         screenshot_payload = {
             "type": "screenshot",
             "image_base64": base64.b64encode(png_bytes).decode("ascii"),
@@ -145,16 +186,33 @@ class TestInvokeAppiumTool:
             }
             result = await execute_appium_tool("screenshot", {}, ctx)
 
-        # The base64 must NOT appear in the result returned to the LLM.
         assert "image_base64" not in result.output
-        # An artifact path must be recorded in working memory.
-        assert len(ctx.memory.artifacts) == 1
-        artifact = ctx.memory.artifacts[0]
-        assert artifact.endswith(".png")
-        # The file actually exists on disk.
-        from pathlib import Path
+        payload = json.loads(result.output)
+        artifact = Path(payload["artifact_path"])
+        assert artifact.parent == ctx.config.artifacts_dir
+        assert artifact.exists()
+        assert artifact.read_bytes() == png_bytes
+        assert result.artifact_path == str(artifact)
+        assert ctx.memory.artifacts == [str(artifact)]
 
-        assert Path(artifact).exists()
+    @pytest.mark.asyncio
+    async def test_screenshot_without_path_or_base64_does_not_record_artifact(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        screenshot_payload = {
+            "type": "screenshot",
+            "region": "full",
+        }
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {
+                "ok": True,
+                "text": json.dumps(screenshot_payload),
+                "data": {},
+            }
+            result = await execute_appium_tool("screenshot", {}, ctx)
+
+        assert json.loads(result.output) == {"type": "screenshot", "region": "full"}
+        assert result.artifact_path is None
+        assert ctx.memory.artifacts == []
 
     @pytest.mark.asyncio
     async def test_tool_failure_records_retry(self, tmp_path) -> None:

@@ -295,8 +295,13 @@ class TestLLMJudge:
         assert vr.missing == []
         kwargs = instance.chat.completions.create.call_args.kwargs
         assert kwargs["model"] == "gpt-4.1"
-        assert "tool trace" in kwargs["messages"][0]["content"].lower()
-        assert "Use the tool trace as evidence" in kwargs["messages"][0]["content"]
+        system_prompt = kwargs["messages"][0]["content"]
+        assert "completion gate, not a quality grader" in system_prompt
+        assert "Use the tool trace to verify actions" in system_prompt
+        assert "treat it as recovered" in system_prompt
+        assert "Do not add requirements that are not explicitly stated" in system_prompt
+        assert "titles, URLs" in system_prompt
+        assert "Judge constraints by substance, not self-attestation" in system_prompt
         assert "## Tool Trace\n1. web_query {} -> ok 10ms" in kwargs["messages"][1]["content"]
 
     def test_not_satisfied_returns_fail(self) -> None:
@@ -319,6 +324,8 @@ class TestLLMJudge:
         assert vr.layer == "llm_judge"
         assert "issue 4" in vr.missing
         assert "issue 5" in vr.missing
+        assert "Fix only clear unmet explicit requirements" in vr.feedback
+        assert "do not repeat it solely to satisfy verification" in vr.feedback
 
     def test_api_error_fail_open(self) -> None:
         judge = LLMJudge(api_key="test-key", fail_open=True)

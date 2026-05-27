@@ -208,7 +208,7 @@ Daemon runtime coordination files (`session.sock`, `session.pid`) live in a per-
 
 **Invocation log** (`.log`): Each CLI command appends a JSONL line with timestamp, command, sanitized args, status, exit code, and duration.
 
-**Screenshots**: `screenshot` saves a PNG file under the session artifact directory and includes the `path` field in the JSON response.
+**Screenshots**: `screenshot` saves a PNG file under the session artifact directory and includes the `path` field in the JSON response. Agent integrations should reuse that returned path instead of decoding and saving `image_base64` again.
 
 ## Tool command groups
 

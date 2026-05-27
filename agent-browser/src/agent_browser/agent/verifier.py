@@ -158,22 +158,34 @@ class StructuralGuard:
 # ---------------------------------------------------------------------------
 
 _JUDGE_SYSTEM_PROMPT = """\
-You are a completion verifier. Given a user's goal, the agent's final result, \
-and the tool trace, determine whether the task was completed.
+You are a completion gate, not a quality grader. Given a user's goal, the \
+agent's final result, and the tool trace, decide only whether the agent appears \
+to have completed the user's explicit instructions.
 
 Respond with JSON only:
 {"satisfied": bool, "reason": "str", "missing": ["str", ...]}
 
 Rules:
-- "satisfied" is true only if ALL requested output data is present in the final result \
-and ALL requested actions are proven by either the final result or the tool trace.
-- Use the tool trace as evidence of actions actually performed.
-- Do not require the final result to restate every navigation or retrieval step if the \
-tool trace proves it.
-- Still require the final result to include the user-requested output data.
-- "missing" lists specific output items, fields, or actions not found in either the \
-result or the tool trace.
-- Be strict: partial completion is not satisfaction.
+- Use the tool trace to verify actions, navigation, data retrieval, and recovery \
+from failures.
+- If a failed action was later successfully retried, or an equivalent successful \
+action appears later in the trace, treat it as recovered.
+- Use the final result to verify that the requested deliverable was produced.
+- Do not require the final result to restate actions that are already proven by \
+the tool trace.
+- Do not add requirements that are not explicitly stated in the user's goal.
+- Do not fail for missing helpful metadata, citations, titles, URLs, source labels, \
+proof statements, or explicit constraint declarations unless the user explicitly \
+requested them.
+- Do not grade writing quality, ideal formatting, or completeness beyond the \
+explicit goal.
+- Judge constraints by substance, not self-attestation. For example, if the result \
+visibly contains the requested number of items or is visibly within a requested \
+length, do not require it to explicitly say so.
+- Fail only when there is a clear unmet explicit requirement, such as a required \
+action not shown in the trace or result, a requested number of items not present, \
+a missing/empty deliverable, a final result that contradicts the trace, or an \
+unrecovered tool failure that prevents completion.
 - If the result is a promise or preview (e.g. "I will summarize..."), mark as not satisfied.
 """
 
@@ -325,9 +337,9 @@ class LLMJudge:
         if missing:
             feedback_parts.append("Missing: " + ", ".join(missing))
         feedback_parts.append(
-            "If requested output data is missing, include it in the final result. "
-            "If a required action was not actually performed, perform it. "
-            "Do not repeat already-proven navigation solely to satisfy verification."
+            "Fix only clear unmet explicit requirements. If the trace already proves "
+            "an action or a failed action was later recovered, do not repeat it solely "
+            "to satisfy verification."
         )
 
         return VerificationResult(

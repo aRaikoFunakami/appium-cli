@@ -69,7 +69,7 @@ class AgentBrowserConfig:
     max_output_tokens: int = 4096
     temperature: float = 0.2
     reasoning_effort: str | None = None
-    artifacts_dir: Path = field(default_factory=lambda: Path("artifacts"))
+    artifacts_dir: Path = field(default_factory=lambda: Path(".appium-cli/agent-browser/artifacts"))
     memory_path: Path = field(default_factory=lambda: Path(".agent-browser-memory.jsonl"))
     log_level: str = "INFO"
     # --- Completion verification ---
@@ -96,7 +96,7 @@ class AgentBrowserConfig:
             else:
                 load_dotenv(override=False)
 
-        artifacts = Path(_env_str("AGENT_BROWSER_ARTIFACTS_DIR", "artifacts") or "artifacts")
+        artifacts = Path(_env_str("AGENT_BROWSER_ARTIFACTS_DIR", ".appium-cli/agent-browser/artifacts") or ".appium-cli/agent-browser/artifacts")
         memory = Path(_env_str("AGENT_BROWSER_MEMORY_PATH", ".agent-browser-memory.jsonl") or ".agent-browser-memory.jsonl")
 
         return cls(
