@@ -60,7 +60,7 @@ Once in a WebView context, **prefer WebDriver/WebView commands** over native tou
 |------|----------------|
 | Navigate to URL | `appium-cli goto "https://..."` |
 | Observe page | `appium-cli web_snapshot` |
-| Find elements | `appium-cli snapshot_refs latest ...`, `snapshot_search ...`, or `web_query "input,button,a" --attrs=...` |
+| Find elements | `appium-cli snapshot_search ...`, `snapshot_show latest --ref=...`, or narrow `snapshot_refs latest --role=...` |
 | Click element | `appium-cli click web_<ref>` |
 | Fill input | `appium-cli fill web_<ref> "text"` |
 | Check current URL | `appium-cli webview_url` |
@@ -71,7 +71,7 @@ Once in a WebView context, **prefer WebDriver/WebView commands** over native tou
 
 > **Rule**: After `webview_switch` succeeds, treat page-level work as web automation until `native_switch` is called. Refer to [WebView and Chrome](references/webview.md) for the full reference.
 
-Do not read whole snapshot artifacts by default. Treat `.compact.yml` as a file artifact that preserves UI hierarchy outside the prompt. Pull relevant fragments with `snapshot_search`, `snapshot_refs`, `web_query`, `snapshot_show --ref`, or local grep/rg-style extraction when available.
+Do not read whole snapshot artifacts by default. Treat `.compact.yml` as a file artifact that preserves UI hierarchy outside the prompt. Pull relevant fragments with `snapshot_search`, `snapshot_show --ref`, narrow `snapshot_refs --role=...`, or local grep/rg-style extraction when available. Use `web_query` only as a CSS/attribute/href discovery fallback.
 
 For piping, diffs, or full tree output, use global `--raw` before the command:
 
@@ -103,7 +103,7 @@ appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 appium-cli snapshot_search "Storage" --role=row      # search saved artifact/index
 appium-cli snapshot_refs latest --role=button        # list actionable refs
 appium-cli snapshot_show latest --ref=btn_login      # targeted ref detail
-appium-cli snapshot_show latest                      # targeted fallback; can be large
+appium-cli snapshot_show latest                      # broad fallback; can be large
 appium-cli snapshot_show latest --artifact=full      # debugging only
 appium-cli generate_locator btn_login
 
@@ -113,7 +113,37 @@ appium-cli screenshot                       # rarely needed
 appium-cli get_page_source                  # token-heavy diagnostic escape hatch
 ```
 
-`snapshot` is primary. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
+`snapshot` is primary. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when targeted snapshot artifact extraction is insufficient.
+
+### Token-safe snapshot usage
+
+`snapshot` and `web_snapshot` save full trees as artifacts. Keep model context small by searching those artifacts instead of listing everything.
+
+Good:
+
+```bash
+appium-cli web_snapshot
+appium-cli snapshot_search "スポーツ"
+appium-cli snapshot_show latest --ref=web_link_sports
+appium-cli click web_link_sports
+```
+
+Good fallback for href discovery:
+
+```bash
+appium-cli web_query "a[href*='categories/sports'],a[href*='/articles/']" --attrs=href,textContent --limit=10
+appium-cli goto "https://news.yahoo.co.jp/categories/sports"
+```
+
+Avoid on large portal/list pages:
+
+```bash
+appium-cli snapshot_refs latest --role=link
+appium-cli snapshot_show latest
+appium-cli web_query "a" --attrs=href,textContent --limit=50
+```
+
+Use `snapshot_refs` only when the result is expected to be small, such as `--role=button`, `--role=textbox`, or a scoped/small page. For large link lists, search by text first, then inspect specific refs with `snapshot_show --ref`.
 
 ```bash
 appium-cli console_messages                 # browser console logs
@@ -174,7 +204,8 @@ appium-cli goto "https://example.com"       # navigate; auto-switches to WebView
 appium-cli go_back
 appium-cli go_forward
 appium-cli reload
-appium-cli web_query "input,button,a" --attrs=name,type,placeholder,aria-label,data-testid,autocomplete
+appium-cli snapshot_search "Submit"
+appium-cli snapshot_show latest --ref=web_btn_submit
 appium-cli web_eval "el.getAttribute('data-testid')" web_btn_submit
 appium-cli click web_btn_submit
 appium-cli fill web_search "query"
@@ -249,7 +280,7 @@ If the package id is unknown, use `appium-cli list_apps` to discover it (require
 ## Important rules
 
 - Keep `--raw` global: `appium-cli --raw snapshot`, not after the command.
-- Prefer targeted extraction over reading whole artifacts: `snapshot_search`, `snapshot_refs`, `web_query`, then `snapshot_show --ref`; whole `snapshot_show compact` is a fallback.
+- Prefer targeted extraction over reading whole artifacts: `snapshot_search`, then `snapshot_show --ref`, then narrow `snapshot_refs`; use `web_query` only for CSS/attribute/href fallback. Whole `snapshot_show compact` is a last resort.
 - Do not call `adb`, `appium`, `npm`, or installer commands directly unless the user explicitly asks.
 - Prefer canonical snake_case tool names: `get_device_info`, `type_text`, `press_keycode`.
 - Do not edit installed skill copies under `.agents/` or `~/.copilot/`; edit `skills/appium-cli/` and run `appium-cli install --skills`.
@@ -258,7 +289,7 @@ If the package id is unknown, use `appium-cli list_apps` to discover it (require
 
 - **Use `goto` to navigate the current tab to a URL** — never tap the address bar, use `web_eval window.location.href`, or use `tabs new --url` as a workaround just to load a URL in the current tab.
 - **Use `web_snapshot`** to observe the page — not `snapshot`.
-- **Use `snapshot_refs` / `snapshot_search` for refs from the latest `web_snapshot`; use `web_query` for CSS/attribute discovery.**
+- **Use `snapshot_search` / `snapshot_show --ref` first for refs from the latest `web_snapshot`; use narrow `snapshot_refs` only when the expected list is small; use `web_query` for CSS/attribute/href discovery fallback.**
 - **Use `fill`** to enter text in inputs — not `type_text` with a native ref.
 - **Prefer `click web_<ref>`** to click links and buttons; avoid native touch/tap workflows unless intentionally interacting outside the DOM.
 - **Use `webview_url` / `webview_title`** for quick URL/title checks before a full `web_snapshot`.

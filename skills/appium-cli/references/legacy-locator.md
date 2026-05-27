@@ -39,5 +39,6 @@ When a legacy command succeeds, return to the artifact-first loop immediately:
 
 ```bash
 appium-cli snapshot
-appium-cli snapshot_refs latest
+appium-cli snapshot_search "expected text"
+appium-cli snapshot_refs latest --role=button
 ```

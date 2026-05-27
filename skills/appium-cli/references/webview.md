@@ -11,9 +11,9 @@ Once `webview_switch` or `goto` succeeds, prefer these WebDriver/WebView command
 appium-cli web_snapshot                     # primary observation
 appium-cli webview_url                      # current URL (fast, no snapshot)
 appium-cli webview_title                    # page title (fast, no snapshot)
-appium-cli snapshot_refs latest             # refs from the latest web_snapshot
 appium-cli snapshot_search "Search"         # search the latest web_snapshot artifact
-appium-cli web_query "input,button,a" --attrs=name,type,placeholder,aria-label
+appium-cli snapshot_show latest --ref=web_search
+appium-cli snapshot_refs latest --role=textbox  # use only when the list should be small
 
 # Act on refs
 appium-cli click web_<ref>
@@ -90,7 +90,8 @@ appium-cli list_contexts
 appium-cli webview_switch
 appium-cli goto "https://example.com"
 appium-cli web_snapshot
-appium-cli snapshot_refs latest --role=textbox
+appium-cli snapshot_search "Login"
+appium-cli snapshot_show latest --ref=web_btn_login
 appium-cli click web_btn_login
 appium-cli native_switch
 ```
@@ -103,13 +104,27 @@ appium-cli native_switch
 appium-cli web_snapshot
 appium-cli snapshot_search "Search" --role=textbox
 appium-cli snapshot_refs latest --role=textbox
-appium-cli web_query "input,textarea,button,a" --attrs=name,type,placeholder,aria-label,data-testid
 appium-cli snapshot_show latest --ref=web_search
-appium-cli snapshot_show latest              # fallback; can be large
+appium-cli snapshot_show latest              # broad fallback; can be large
 appium-cli snapshot_show latest --artifact=full  # debugging only
 ```
 
-Do not read the full compact artifact just to find a DOM element. Use `web_query` for CSS/attribute extraction, `snapshot_search` for text, and `snapshot_refs` for ref indexes.
+Do not read the full compact artifact just to find a DOM element. Use `snapshot_search` for text, `snapshot_show --ref` for a single candidate, and narrow `snapshot_refs` only when the result should be small. Use `web_query` for CSS/attribute/href extraction only when snapshot artifacts are ambiguous or insufficient.
+
+Avoid broad extraction on large pages:
+
+```bash
+appium-cli snapshot_refs latest --role=link
+appium-cli web_query "a" --attrs=href,textContent --limit=50
+```
+
+Prefer targeted extraction:
+
+```bash
+appium-cli snapshot_search "スポーツ"
+appium-cli snapshot_show latest --ref=web_link_sports
+appium-cli web_query "a[href*='sports']" --attrs=href,textContent --limit=10
+```
 
 Use scoped snapshots for large pages:
 

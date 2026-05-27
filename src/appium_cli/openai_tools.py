@@ -50,13 +50,24 @@ tool sequences when a workflow below applies.
 
 Core loop:
 1. Observe with the context-appropriate snapshot tool.
-2. Extract targeted candidates with snapshot_search(), snapshot_refs(), snapshot_show(ref=...), or context-appropriate query tools.
-3. Act with refs/selectors using the context-appropriate action tools.
-4. Observe again after navigation, reload, scroll, click, fill+submit, dialog handling, or any action that may change the page.
-5. Use only refs from the latest observation/artifacts. Old refs can become stale.
+2. In WebView, treat web_snapshot() as the authoritative page observation and ref source.
+3. Find targets from the latest snapshot first with snapshot_search(), snapshot_refs(), and snapshot_show(ref=...).
+4. Act only on refs from the latest snapshot/ref map, or use goto() directly when auxiliary href extraction returns a target URL.
+5. Observe again after navigation, reload, scroll, click, fill+submit, dialog handling, or any action that may change the page.
+6. Use only refs from the latest observation/artifacts. Old refs can become stale.
+
+Token-safe artifact usage:
+- snapshot() and web_snapshot() save full trees as artifacts. Do not read or list the whole artifact by default.
+- Search first, then inspect small fragments: snapshot_search(text=...), snapshot_show(ref=...), or narrow snapshot_refs(role=...) when the result set is expected to be small.
+- Avoid broad link dumps on portal/list/search-result pages, especially snapshot_refs({"snapshot_id": "latest", "role": "link"}) and snapshot_show({"snapshot_id": "latest"}) without a ref.
+- Avoid broad CSS dumps such as web_query({"selector": "a", ...}) unless you are debugging. If href discovery is needed, use a narrow selector and a small limit.
+- Good low-token sequence: web_snapshot({}) -> snapshot_search({"snapshot_id": "latest", "text": "<target>"}) -> snapshot_show({"snapshot_id": "latest", "ref": "<candidate ref>"}) -> click({"ref": "<candidate ref>"}).
 
 Targeting rules:
 - Snapshot refs are valid function-call arguments.
+- Prefer snapshot refs over CSS/query targets. In WebView, snapshot refs are the web_* refs from the latest web_snapshot.
+- Use web_query() only as an auxiliary tool for CSS/attribute/href/text discovery when snapshot_search(), snapshot_refs(), or snapshot_show() are ambiguous or insufficient.
+- When web_query() returns an href for the desired page, prefer goto({"url": "<href>"}) instead of click({"ref": "..."}). Do not click refs copied from web_query output unless the same ref is present in the current web_snapshot ref map.
 - If duplicate labels/refs appear, inspect with snapshot_refs(), snapshot_show({"ref": "..."}), list_containers(), or within_container() before acting.
 - If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control; find_by_text can help locate it.
 
@@ -72,6 +83,8 @@ Diagnostics and fallback order:
 Verification and completion:
 - Before finishing, verify the current page/state with snapshot(), web_snapshot(), targeted query/search/ref tools, screenshot(), get_page_source(), or assert_visible().
 - If the goal asks for N items, collect and report all N items. Partial results are not success.
+- For information retrieval, report the actual data plus concise provenance: start page, list/search/category page, detail pages or records inspected, and explicit constraint checks.
+- If a verifier says evidence/provenance/formatting is missing but the data was already collected, finish again with a corrected result instead of browsing more.
 - If data cannot be obtained, report what was tried and what is missing.
 - Use wait_for() for asynchronous conditions: text appears, text disappears, or a ref becomes visible. Avoid wait_short_loading in normal workflows.
 
@@ -107,11 +120,13 @@ Native UI: scrolling and lists:
 5. Repeat with a changed target/search. Do not loop on the same query if the screen did not change.
 
 Starting WebView / Chrome work from native:
-1. If the task gives a URL, goto({"url": "https://example.com"}) is allowed; appium-cli will switch to WebView/Chrome if one is available, and future prompt guidance will become WebView.
-2. If you need an existing WebView without navigating, call webview_switch({}) first.
-3. If the known app package must be opened, activate_app({"app_id": "com.android.chrome"}), then observe or switch/navigate as needed.
-4. If the app package is unknown, use list_apps({}) when shell capability is available, then activate_app({"app_id": "<package>"}).
-5. Do not loop on launcher snapshots looking for app icons; launcher labels are often text-only and not actionable.
+1. For browser URL tasks, prefer activate_app({"app_id": "com.android.chrome"}) before page-level work when no WebView/Chrome context is known.
+2. If the task gives a URL, goto({"url": "https://example.com"}) is allowed; appium-cli will switch to WebView/Chrome if one is available, and future prompt guidance will become WebView.
+3. If goto fails with "No WebView context", do not retry immediately. Activate Chrome, webview_switch({}) if needed, then retry goto once.
+4. If you need an existing WebView without navigating, call webview_switch({}) first.
+5. If the known app package must be opened, activate_app({"app_id": "com.android.chrome"}), then observe or switch/navigate as needed.
+6. If the app package is unknown, use list_apps({}) when shell capability is available, then activate_app({"app_id": "<package>"}).
+7. Do not loop on launcher snapshots looking for app icons; launcher labels are often text-only and not actionable.
 """
 
 WEBVIEW_TOOL_PROMPT = """Current appium-cli context guidance: WebView / Chrome
@@ -123,30 +138,52 @@ Open a URL and inspect the page:
 2. web_snapshot({})
 3. webview_url({}) and webview_title({}) when you only need quick URL/title confirmation.
 4. snapshot_search({"text": "target text"}) for text in the latest snapshot artifact.
-5. snapshot_refs({"snapshot_id": "latest", "role": "link"}) or web_query({"selector": "a", "attrs": "href,textContent,aria-label", "limit": 50}) for links.
+5. snapshot_show({"ref": "<candidate ref>"}) when snapshot_search returns a likely ref.
+6. Use snapshot_refs({"snapshot_id": "latest", "role": "button"}) or role="textbox" only when the expected list is small.
+7. Use narrow web_query selectors only if snapshot refs are insufficient or you need href discovery for goto().
 
-Find a category or news page from a portal:
-1. goto({"url": "https://www.yahoo.co.jp/"})
+General recipe: collect N detail pages from a start page:
+1. goto({"url": "<start url>"})
 2. web_snapshot({})
-3. snapshot_search({"text": "スポーツ"})
-4. web_query({"selector": "a[href*='sports'], a[href*='news.yahoo.co.jp/categories/sports']", "attrs": "href,textContent,aria-label", "limit": 20})
-5. If the target URL is clear, prefer goto({"url": "https://news.yahoo.co.jp/categories/sports"}) over clicking an ambiguous duplicate link.
-6. web_snapshot({})
-7. web_query({"selector": "a[href*='/articles/']", "attrs": "href,textContent", "limit": 10})
-8. Open each needed article with goto({"url": "<article url>"}), then web_snapshot({}) or targeted web_query()/snapshot_search() to extract details.
+3. Find the list/category/search page from the latest snapshot first:
+   snapshot_search({"text": "<category keyword>", "snapshot_id": "latest"})
+   snapshot_show({"ref": "<candidate ref>"})
+4. If the latest snapshot contains a clear actionable ref, click({"ref": "<ref>"}), then web_snapshot({}).
+5. If snapshot refs are ambiguous or no stable ref exists, use web_query() only to extract hrefs, then goto({"url": "<href>"}):
+   web_query({"selector": "a[href*='<category keyword>'], a[href*='<category path>']", "attrs": "href,textContent,aria-label", "limit": 20})
+6. On the list page, take web_snapshot({}) and identify item links from the latest snapshot:
+   snapshot_search({"text": "<item/list keyword>", "snapshot_id": "latest"})
+   snapshot_show({"ref": "<candidate ref>"})
+7. If item hrefs are easier to extract by pattern, use web_query() as a fallback and navigate with goto():
+   web_query({"selector": "a[href*='<detail path pattern>']", "attrs": "href,textContent,aria-label", "limit": 20})
+8. Select exactly the first N unique detail refs or URLs. Track selected_urls/refs, visited_urls/refs, and completed_items in working_state.
+9. Visit each selected detail exactly once:
+   click({"ref": "<detail ref>"}) for refs from the latest snapshot, or goto({"url": "<detail url>"}) for hrefs.
+   web_snapshot({"scope": "full", "depth": 3})
+   Extract the requested title/body/details from that page.
+10. Once N detail pages have been collected, stop browsing. Do not return to the list page, click extra links, or take deep snapshots unless a selected item failed extraction.
+11. Final result must include the start URL, list/category/search URL, every detail page inspected, requested extracted data, and explicit checks for item count or character limits.
+
+Examples of URL-pattern extraction:
+- Category/list links: web_query({"selector": "a[href*='categories/sports'], a[href*='news'][href*='sports'], a[href*='sports']", "attrs": "href,textContent,aria-label", "limit": 20})
+- Article/detail links: web_query({"selector": "a[href*='/articles/'], a[href*='/article/'], a[href*='/products/'], a[href*='/items/']", "attrs": "href,textContent,aria-label", "limit": 20})
+- If the user asks for news, prefer news/category URLs (for example, paths containing categories or articles) over a separate sports portal URL that does not expose news detail links.
 
 Important portal-search rule:
 - Do not conclude that a link/category is absent from one broad query such as web_query({"selector": "a"}).
 - Broad link lists may be long. If the task names a category, domain, keyword, path, or URL pattern, narrow the selector/search text and try again.
 - Examples: web_query({"selector": "a[href*='login']"}), web_query({"selector": "a[href*='sports']"}), snapshot_search({"text": "ニュース"}).
+- Avoid repeatedly reading large web_snapshot output directly. Keep web_snapshot as the ref source, then pull relevant fragments with snapshot_search(), snapshot_refs(), and snapshot_show().
+- Do not use snapshot_refs(role="link") as the first step on large portal/list pages. It can return every link and waste tokens.
 
 Click and read using refs:
 1. goto({"url": "https://example.com"})
 2. web_snapshot({})
-3. snapshot_refs({"snapshot_id": "latest", "role": "link"})
-4. click({"ref": "web_<ref>"})
-5. web_snapshot({})
-6. snapshot_search({"text": "expected text"}) or assert_visible({"text": "expected text"})
+3. snapshot_search({"snapshot_id": "latest", "text": "expected link text"})
+4. snapshot_show({"snapshot_id": "latest", "ref": "web_<candidate ref>"})
+5. click({"ref": "web_<candidate ref>"})
+6. web_snapshot({})
+7. snapshot_search({"text": "expected text"}) or assert_visible({"text": "expected text"})
 
 Search or submit a simple form:
 1. goto({"url": "https://example.com"})
