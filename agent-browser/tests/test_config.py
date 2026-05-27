@@ -46,7 +46,7 @@ def test_default_verification_fields() -> None:
     assert cfg.max_no_progress_steps == 8
     assert cfg.verify_with_llm is True
     assert cfg.min_result_chars == 50
-    assert cfg.judge_model == "gpt-4.1-mini"
+    assert cfg.judge_model == "gpt-4.1"
     assert cfg.judge_fail_open is True
 
 

@@ -13,6 +13,7 @@ from agent_browser.agent.verifier import (
     LLMJudge,
     StructuralGuard,
     VerificationResult,
+    format_tool_trace,
 )
 from agent_browser.memory import WorkingMemory
 from agent_browser.schemas import ToolCallRecord
@@ -52,11 +53,22 @@ def _memory(
     return mem
 
 
-def _tool_call(name: str, ok: bool = True) -> ToolCallRecord:
+def _tool_call(
+    name: str,
+    ok: bool = True,
+    *,
+    args: str = "{}",
+    duration_ms: float | None = None,
+    error: str | None = None,
+    artifact_path: str | None = None,
+) -> ToolCallRecord:
     return ToolCallRecord(
         tool_name=name,
-        arguments_summary="{}",
+        arguments_summary=args,
+        duration_ms=duration_ms,
         ok=ok,
+        error=error,
+        artifact_path=artifact_path,
     )
 
 
@@ -208,6 +220,52 @@ class TestStructuralGuard:
 
 
 # ---------------------------------------------------------------------------
+# Tool trace formatter tests
+# ---------------------------------------------------------------------------
+
+class TestToolTraceFormatter:
+    """Tests for compact tool traces passed to the LLM judge."""
+
+    def test_empty_trace_is_explicit(self) -> None:
+        assert format_tool_trace([]) == "(no tool calls recorded)"
+
+    def test_formats_success_failure_duration_error_and_artifact(self) -> None:
+        trace = format_tool_trace([
+            _tool_call(
+                "goto",
+                args='{"url":"https://www.yahoo.co.jp"}',
+                duration_ms=1728.4,
+            ),
+            _tool_call(
+                "web_text",
+                ok=False,
+                args='{"selector":"article"}',
+                duration_ms=35.2,
+                error="ERROR: article text not found",
+                artifact_path="artifacts/screenshot-1.png",
+            ),
+        ])
+
+        assert '1. goto {"url":"https://www.yahoo.co.jp"} -> ok 1728ms' in trace
+        assert '2. web_text {"selector":"article"} -> fail 35ms' in trace
+        assert "error=ERROR: article text not found" in trace
+        assert "artifact=artifacts/screenshot-1.png" in trace
+
+    def test_truncates_by_call_count_and_char_limit(self) -> None:
+        calls = [
+            _tool_call("web_text", args=f'{{"index":{index},"payload":"{"x" * 50}"}}')
+            for index in range(5)
+        ]
+
+        trace = format_tool_trace(calls, max_calls=2, max_chars=300)
+
+        assert "... 3 earlier tool call(s) omitted ..." in trace
+        assert "4. web_text" in trace
+        assert "5. web_text" in trace
+        assert len(trace) <= 300
+
+
+# ---------------------------------------------------------------------------
 # LLMJudge tests (all mocked)
 # ---------------------------------------------------------------------------
 
@@ -215,7 +273,7 @@ class TestLLMJudge:
     """Tests for Layer 2: LLM-as-judge with mocked API calls."""
 
     def test_satisfied_returns_pass(self) -> None:
-        judge = LLMJudge(api_key="test-key", model="gpt-4.1-mini")
+        judge = LLMJudge(api_key="test-key", model="gpt-4.1")
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -225,12 +283,21 @@ class TestLLMJudge:
             instance = MockClient.return_value
             instance.chat.completions.create = AsyncMock(return_value=mock_response)
             vr = asyncio.get_event_loop().run_until_complete(
-                judge.verify("Find 5 issues", "Issue 1, Issue 2, Issue 3, Issue 4, Issue 5")
+                judge.verify(
+                    "Find 5 issues",
+                    "Issue 1, Issue 2, Issue 3, Issue 4, Issue 5",
+                    "1. web_query {} -> ok 10ms",
+                )
             )
 
         assert vr.passed
         assert vr.layer == "llm_judge"
         assert vr.missing == []
+        kwargs = instance.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == "gpt-4.1"
+        assert "tool trace" in kwargs["messages"][0]["content"].lower()
+        assert "Use the tool trace as evidence" in kwargs["messages"][0]["content"]
+        assert "## Tool Trace\n1. web_query {} -> ok 10ms" in kwargs["messages"][1]["content"]
 
     def test_not_satisfied_returns_fail(self) -> None:
         judge = LLMJudge(api_key="test-key")
@@ -245,7 +312,7 @@ class TestLLMJudge:
             instance = MockClient.return_value
             instance.chat.completions.create = AsyncMock(return_value=mock_response)
             vr = asyncio.get_event_loop().run_until_complete(
-                judge.verify("Find 5 issues", "Issue 1, Issue 2, Issue 3")
+                judge.verify("Find 5 issues", "Issue 1, Issue 2, Issue 3", "1. web_query {} -> ok")
             )
 
         assert not vr.passed
@@ -260,7 +327,7 @@ class TestLLMJudge:
             instance = MockClient.return_value
             instance.chat.completions.create = AsyncMock(side_effect=RuntimeError("API down"))
             vr = asyncio.get_event_loop().run_until_complete(
-                judge.verify("goal", "result")
+                judge.verify("goal", "result", "1. snapshot {} -> ok")
             )
 
         assert vr.passed
@@ -273,7 +340,7 @@ class TestLLMJudge:
             instance = MockClient.return_value
             instance.chat.completions.create = AsyncMock(side_effect=RuntimeError("API down"))
             vr = asyncio.get_event_loop().run_until_complete(
-                judge.verify("goal", "result")
+                judge.verify("goal", "result", "1. snapshot {} -> ok")
             )
 
         assert not vr.passed
@@ -321,6 +388,10 @@ class TestCompletionVerifier:
                 verifier.verify("goal", brain, mem)
             )
             mock_judge.assert_called_once()
+            args = mock_judge.call_args.args
+            assert args[0] == "goal"
+            assert args[1] == "Complete results with all requested data here."
+            assert "1. web_snapshot {} -> ok" in args[2]
 
         assert vr.passed
         assert vr.layer == "llm_judge"
@@ -410,3 +481,46 @@ class TestCompletionVerifier:
             verifier.verify("Find issues", good_brain, good_mem)
         )
         assert vr_good.passed
+
+    def test_tool_trace_can_prove_navigation_actions(self) -> None:
+        guard = StructuralGuard(min_result_chars=10)
+        judge = LLMJudge(api_key="test-key")
+        verifier = CompletionVerifier(guard=guard, judge=judge)
+
+        brain = _brain(
+            success=True,
+            result=(
+                "・記事1の要約。\n"
+                "・記事2の要約。\n"
+                "・記事3の要約。"
+            ),
+        )
+        mem = _memory(tool_calls=[
+            _tool_call("goto", args='{"url":"https://www.yahoo.co.jp"}'),
+            _tool_call("web_query", args='{"selector":"a[href*=sports]"}'),
+            _tool_call("goto", args='{"url":"https://news.yahoo.co.jp/categories/sports"}'),
+            _tool_call("web_eval", args='{"script":"return first three article urls"}'),
+            _tool_call("goto", args='{"url":"https://news.yahoo.co.jp/articles/1"}'),
+            _tool_call("web_text", args='{"selector":"","offset":0,"limit":6000}'),
+            _tool_call("goto", args='{"url":"https://news.yahoo.co.jp/articles/2"}'),
+            _tool_call("web_text", args='{"selector":"","offset":0,"limit":6000}'),
+            _tool_call("goto", args='{"url":"https://news.yahoo.co.jp/articles/3"}'),
+            _tool_call("web_text", args='{"selector":"","offset":0,"limit":6000}'),
+        ])
+
+        with patch.object(judge, "verify", new_callable=AsyncMock) as mock_judge:
+            mock_judge.return_value = VerificationResult(
+                passed=True,
+                layer="llm_judge",
+                reason="summaries present and navigation proven by tool trace",
+                feedback="",
+            )
+            vr = asyncio.get_event_loop().run_until_complete(
+                verifier.verify("Open Yahoo Sports and summarize first three articles", brain, mem)
+            )
+
+        assert vr.passed
+        trace = mock_judge.call_args.args[2]
+        assert "https://www.yahoo.co.jp" in trace
+        assert "https://news.yahoo.co.jp/categories/sports" in trace
+        assert trace.count("web_text") == 3

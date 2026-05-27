@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from agent_browser.agent.brain import AgentBrain
     from agent_browser.memory import WorkingMemory
+    from agent_browser.schemas import ToolCallRecord
 
 logger = logging.getLogger(__name__)
 
@@ -157,18 +158,87 @@ class StructuralGuard:
 # ---------------------------------------------------------------------------
 
 _JUDGE_SYSTEM_PROMPT = """\
-You are a completion verifier. Given a user's goal and the agent's final result, \
-determine whether the result fully satisfies the goal.
+You are a completion verifier. Given a user's goal, the agent's final result, \
+and the tool trace, determine whether the task was completed.
 
 Respond with JSON only:
 {"satisfied": bool, "reason": "str", "missing": ["str", ...]}
 
 Rules:
-- "satisfied" is true only if ALL requested items/actions are present in the result.
-- "missing" lists specific items, fields, or actions not found in the result.
+- "satisfied" is true only if ALL requested output data is present in the final result \
+and ALL requested actions are proven by either the final result or the tool trace.
+- Use the tool trace as evidence of actions actually performed.
+- Do not require the final result to restate every navigation or retrieval step if the \
+tool trace proves it.
+- Still require the final result to include the user-requested output data.
+- "missing" lists specific output items, fields, or actions not found in either the \
+result or the tool trace.
 - Be strict: partial completion is not satisfaction.
 - If the result is a promise or preview (e.g. "I will summarize..."), mark as not satisfied.
 """
+
+
+def _compact_trace_text(value: object, *, max_chars: int) -> str:
+    text = "" if value is None else str(value)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > max_chars:
+        return text[: max_chars - 14].rstrip() + "... [trimmed]"
+    return text
+
+
+def format_tool_trace(
+    tool_calls: list["ToolCallRecord"],
+    *,
+    max_calls: int = 40,
+    max_chars: int = 6000,
+) -> str:
+    """Return a bounded, deterministic tool trace for completion verification."""
+
+    if not tool_calls:
+        return "(no tool calls recorded)"
+
+    selected = tool_calls[-max_calls:]
+    omitted = len(tool_calls) - len(selected)
+    lines: list[str] = []
+
+    start_index = omitted + 1
+    for offset, call in enumerate(selected):
+        index = start_index + offset
+        status = "ok" if call.ok is True else "fail" if call.ok is False else "unknown"
+        args = _compact_trace_text(call.arguments_summary, max_chars=500)
+        duration = ""
+        if call.duration_ms is not None:
+            duration = f" {call.duration_ms:.0f}ms"
+        error = ""
+        if call.error:
+            error = f" error={_compact_trace_text(call.error, max_chars=240)}"
+        artifact = ""
+        if call.artifact_path:
+            artifact = f" artifact={_compact_trace_text(call.artifact_path, max_chars=160)}"
+        lines.append(
+            f"{index}. {call.tool_name} {args} -> {status}{duration}{error}{artifact}"
+        )
+
+    def build_trace(omitted_count: int, visible_lines: list[str]) -> str:
+        prefix = []
+        if omitted_count > 0:
+            prefix.append(f"... {omitted_count} earlier tool call(s) omitted ...")
+        return "\n".join(prefix + visible_lines)
+
+    trace = build_trace(omitted, lines)
+    while len(lines) > 1 and len(trace) > max_chars:
+        lines.pop(0)
+        omitted += 1
+        trace = build_trace(omitted, lines)
+
+    if len(trace) > max_chars:
+        prefix = f"... {omitted} earlier tool call(s) omitted ...\n" if omitted > 0 else ""
+        available = max_chars - len(prefix)
+        if available > 20 and lines:
+            lines[-1] = lines[-1][: available - 14].rstrip() + "... [trimmed]"
+            return build_trace(omitted, lines)
+        return trace[: max_chars - 24].rstrip() + "\n... [trace trimmed]"
+    return trace
 
 
 class LLMJudge:
@@ -178,7 +248,7 @@ class LLMJudge:
         self,
         *,
         api_key: str,
-        model: str = "gpt-4.1-mini",
+        model: str = "gpt-4.1",
         max_tokens: int = 512,
         fail_open: bool = True,
     ) -> None:
@@ -187,7 +257,12 @@ class LLMJudge:
         self._max_tokens = max_tokens
         self._fail_open = fail_open
 
-    async def verify(self, goal: str, result_text: str) -> VerificationResult:
+    async def verify(
+        self,
+        goal: str,
+        result_text: str,
+        tool_trace: str = "",
+    ) -> VerificationResult:
         """Call the judge model and return a VerificationResult."""
         import json as _json
 
@@ -195,7 +270,8 @@ class LLMJudge:
 
         user_msg = (
             f"## Goal\n{goal}\n\n"
-            f"## Agent Result\n{result_text}"
+            f"## Agent Result\n{result_text}\n\n"
+            f"## Tool Trace\n{tool_trace or '(no tool trace provided)'}"
         )
 
         try:
@@ -249,7 +325,9 @@ class LLMJudge:
         if missing:
             feedback_parts.append("Missing: " + ", ".join(missing))
         feedback_parts.append(
-            "Please include all requested data in your result before completing."
+            "If requested output data is missing, include it in the final result. "
+            "If a required action was not actually performed, perform it. "
+            "Do not repeat already-proven navigation solely to satisfy verification."
         )
 
         return VerificationResult(
@@ -294,7 +372,8 @@ class CompletionVerifier:
         # Layer 2: LLM judge (if enabled)
         if self._judge is not None:
             result_text = (brain.result or "").strip()
-            result = await self._judge.verify(goal, result_text)
+            tool_trace = format_tool_trace(memory.tool_calls)
+            result = await self._judge.verify(goal, result_text, tool_trace)
             if not result.passed:
                 logger.info(
                     "[verifier] LLM judge FAILED: %s (missing=%s)",
