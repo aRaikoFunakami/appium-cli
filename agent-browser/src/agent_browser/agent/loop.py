@@ -223,6 +223,7 @@ async def run_react_loop(
     last_progress_step = 0
     prev_observation_hash: int | None = None
     blocked_tools: set[str] = set()
+    consecutive_no_tool_calls = 0
 
     for step in range(1, cfg.max_turns + 1):
         # --- Wall-time safeguard ---
@@ -288,44 +289,92 @@ async def run_react_loop(
         calls = _function_calls(response)
         tool_results: list[ToolExecutionResult] = []
 
-        if calls:
-            # parallel_tool_calls=False, but execute defensively in returned order.
-            output_items: list[dict[str, Any]] = []
-            for call in calls:
-                name = str(call.get("name") or "")
-                args = _parse_args(call.get("arguments"))
-
-                # Block tools that have exceeded max_retries (skip observation tools).
-                if name in blocked_tools:
-                    result = ToolExecutionResult(
-                        name, _args_summary(args),
-                        f"BLOCKED: '{name}' reached retry limit ({cfg.max_retries}). Use a different tool.",
-                        False, 0.0,
-                    )
-                else:
-                    result = await execute_appium_tool(name, args, context)
-                    # Check if this tool just hit the retry limit.
-                    if (
-                        not result.ok
-                        and name not in INFO_ONLY_TOOLS
-                        and context.memory.retry_counts.get(name, 0) >= cfg.max_retries
-                    ):
-                        blocked_tools.add(name)
-                        logger.info(
-                            "[loop] tool '%s' blocked after %d retries (max_retries=%d)",
-                            name, context.memory.retry_counts[name], cfg.max_retries,
-                        )
-
-                tool_results.append(result)
-                output_items.append(_tool_output_item(call, result, cfg))
-
-            continuation_input = input_items + _items_to_input(getattr(response, "output", []) or []) + output_items
-            response = await client.create(
-                input_items=continuation_input,
-                instructions=build_system_prompt(),
-                tools=None,
-                call_type="brain",
+        if not calls:
+            consecutive_no_tool_calls += 1
+            output_items = getattr(response, "output", []) or []
+            item_types: list[str] = []
+            for item in output_items:
+                payload = item.model_dump(exclude_none=True) if hasattr(item, "model_dump") else item
+                itype = payload.get("type", "unknown") if isinstance(payload, dict) else type(item).__name__
+                item_types.append(str(itype))
+            logger.warning(
+                "[loop] action response contained no function calls despite required tool choice: items=%d types=%s",
+                len(output_items),
+                item_types,
             )
+            item = HistoryItem(
+                step=step,
+                action_name=None,
+                args_summary="",
+                success=False,
+                result_summary="action response contained no tool call",
+            )
+            history.add(item)
+            state.last_step = item.to_prompt_line()
+            loop_detector.record(None, "", state.latest_observation)
+            state.reflection = (
+                "The previous action response contained no browser tool call. "
+                "Select exactly one available browser tool for the next action."
+            )
+            if consecutive_no_tool_calls >= 3:
+                summary = f"Model produced {consecutive_no_tool_calls} consecutive action responses without tool calls."
+                logger.warning("[loop] %s", summary)
+                context.memory.record_failure(summary)
+                if context.episodic is not None:
+                    context.episodic.record(MemoryEvent(event_type="task_failed", detail=summary))
+                return TaskResult(
+                    goal=goal,
+                    success=False,
+                    url=context.memory.current_url,
+                    summary=summary,
+                    tool_calls=len(context.memory.tool_calls),
+                    retries=context.memory.total_retries(),
+                    artifacts=list(context.memory.artifacts),
+                    failures=list(context.memory.failures),
+                    billing=_build_billing_info(client.call_usages, cfg.model),
+                    verification_passed=False,
+                    verification_reason="action response missing tool call",
+                    verification_attempts=verification_attempts,
+                )
+            continue
+
+        # parallel_tool_calls=False, but execute defensively in returned order.
+        output_items: list[dict[str, Any]] = []
+        for call in calls:
+            name = str(call.get("name") or "")
+            args = _parse_args(call.get("arguments"))
+
+            # Block tools that have exceeded max_retries (skip observation tools).
+            if name in blocked_tools:
+                result = ToolExecutionResult(
+                    name, _args_summary(args),
+                    f"BLOCKED: '{name}' reached retry limit ({cfg.max_retries}). Use a different tool.",
+                    False, 0.0,
+                )
+            else:
+                result = await execute_appium_tool(name, args, context)
+                # Check if this tool just hit the retry limit.
+                if (
+                    not result.ok
+                    and name not in INFO_ONLY_TOOLS
+                    and context.memory.retry_counts.get(name, 0) >= cfg.max_retries
+                ):
+                    blocked_tools.add(name)
+                    logger.info(
+                        "[loop] tool '%s' blocked after %d retries (max_retries=%d)",
+                        name, context.memory.retry_counts[name], cfg.max_retries,
+                    )
+
+            tool_results.append(result)
+            output_items.append(_tool_output_item(call, result, cfg))
+
+        continuation_input = input_items + _items_to_input(getattr(response, "output", []) or []) + output_items
+        response = await client.create(
+            input_items=continuation_input,
+            instructions=build_system_prompt(),
+            tools=None,
+            call_type="brain",
+        )
 
         text = _extract_text_with_diagnostics(response, logger)
         try:
@@ -356,6 +405,7 @@ async def run_react_loop(
 
         primary_result = tool_results[-1] if tool_results else None
         if primary_result is not None:
+            consecutive_no_tool_calls = 0
             state.latest_observation = _latest_observation_from_result(primary_result, cfg)
             item = HistoryItem(
                 step=step,
@@ -380,17 +430,6 @@ async def run_react_loop(
                 prev_observation_hash = obs_hash
             elif obs_hash != prev_observation_hash:
                 prev_observation_hash = obs_hash
-        else:
-            item = HistoryItem(
-                step=step,
-                action_name=None,
-                args_summary="",
-                success=brain is not None,
-                result_summary="no tool call",
-            )
-            history.add(item)
-            state.last_step = item.to_prompt_line()
-            loop_detector.record(None, "", state.latest_observation)
 
         if brain is not None:
             state.working_state = brain.working_state

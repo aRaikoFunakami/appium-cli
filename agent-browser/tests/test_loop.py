@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -13,9 +14,11 @@ from agent_browser.agent.loop import (
     _latest_observation_from_result,
     _items_to_input,
     _tool_output_item,
+    run_react_loop,
 )
-from agent_browser.appium_tools import ToolExecutionResult
+from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult
 from agent_browser.config import AgentBrowserConfig
+from agent_browser.memory import WorkingMemory
 from agent_browser.token_counter import CallUsage
 
 
@@ -205,3 +208,54 @@ def test_build_billing_info_includes_per_call_breakdown() -> None:
     assert billing.call_breakdown[1].call_type == "brain"
     assert billing.call_breakdown[0].total_tokens == 1100
     assert billing.call_breakdown[1].total_tokens == 550
+
+
+@pytest.mark.asyncio
+async def test_run_react_loop_treats_action_text_without_tool_call_as_protocol_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid_brain_json = json.dumps(
+        {
+            "evaluation": "premature text response",
+            "working_state": "one article captured",
+            "next_goal": "navigate to the next article",
+            "is_done": False,
+            "success": False,
+            "result": None,
+        }
+    )
+
+    class TextOnlyActionResponse:
+        output_text = valid_brain_json
+        output = [
+            {
+                "type": "message",
+                "content": [{"type": "output_text", "text": valid_brain_json}],
+            }
+        ]
+        usage = None
+
+    class FakeResponsesClient:
+        def __init__(self, cfg: AgentBrowserConfig) -> None:
+            self.call_usages: list[CallUsage] = []
+
+        async def create(self, **kwargs: Any) -> Any:
+            assert kwargs["call_type"] == "action"
+            return TextOnlyActionResponse()
+
+    monkeypatch.setattr("agent_browser.agent.loop.ResponsesClient", FakeResponsesClient)
+    monkeypatch.setattr(
+        "agent_browser.agent.loop.get_response_tool_schemas",
+        lambda: [{"type": "function", "name": "snapshot", "parameters": {"type": "object"}}],
+    )
+
+    cfg = AgentBrowserConfig(max_turns=5, max_no_progress_steps=10, verify_with_llm=False)
+    memory = WorkingMemory(goal="collect three articles")
+    context = BrowserAgentContext(config=cfg, memory=memory)
+
+    result = await run_react_loop(goal=memory.goal, cfg=cfg, context=context)
+
+    assert result.success is False
+    assert result.verification_reason == "action response missing tool call"
+    assert result.tool_calls == 0
+    assert "without tool calls" in result.summary

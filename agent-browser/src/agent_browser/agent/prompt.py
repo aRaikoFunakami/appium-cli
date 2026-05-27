@@ -123,7 +123,9 @@ def build_input_items(
         [
             "",
             "<next_action_rule>",
-            "Choose exactly one browser action that advances the goal from the current screen, or finish with is_done=true.",
+            "When browser tools are available, choose one tool call that advances the goal from the current screen.",
+            "After a tool result is provided, return AgentBrain JSON only.",
+            "Complete only from AgentBrain after the requested outcome is verified or impossible.",
             "</next_action_rule>",
         ]
     )

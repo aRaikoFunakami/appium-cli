@@ -14,6 +14,17 @@ from agent_browser.token_counter import CallUsage, OpenAIPricingCalculator
 logger = logging.getLogger(__name__)
 
 
+def _agent_brain_text_config() -> dict[str, Any]:
+    return {
+        "format": {
+            "type": "json_schema",
+            "name": "AgentBrain",
+            "schema": build_agent_brain_schema(),
+            "strict": True,
+        }
+    }
+
+
 class ResponsesClient:
     def __init__(self, cfg: AgentBrowserConfig) -> None:
         self._cfg = cfg
@@ -68,21 +79,15 @@ class ResponsesClient:
             "model": self._cfg.model,
             "instructions": instructions,
             "input": input_items,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "AgentBrain",
-                    "schema": build_agent_brain_schema(),
-                    "strict": True,
-                }
-            },
             "store": False,
             "max_output_tokens": self._cfg.max_output_tokens,
         }
         if tools is not None:
             request["tools"] = tools
-            request["tool_choice"] = "auto"
+            request["tool_choice"] = "required"
             request["parallel_tool_calls"] = False
+        else:
+            request["text"] = _agent_brain_text_config()
         if self._cfg.reasoning_effort:
             request["reasoning"] = {"effort": self._cfg.reasoning_effort}
         if not self._cfg.model.startswith("gpt-5"):

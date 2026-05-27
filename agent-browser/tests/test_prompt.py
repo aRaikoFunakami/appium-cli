@@ -103,3 +103,16 @@ def test_system_prompt_is_built_dynamically(monkeypatch) -> None:
 
     assert "dynamic prompt 1" in prompt_module.build_system_prompt()
     assert "dynamic prompt 2" in prompt_module.build_system_prompt()
+
+
+def test_shared_prompt_rule_does_not_force_tool_calls_during_brain_phase() -> None:
+    text = _prompt_text(
+        build_input_items(
+            BrowserOperationState(goal="summarize page", working_state="article text captured"),
+            AgentBrowserConfig(),
+        )
+    )
+
+    assert "You MUST call exactly one browser tool now" not in text
+    assert "Do NOT output text or JSON without calling a tool" not in text
+    assert "After a tool result is provided, return AgentBrain JSON only." in text
