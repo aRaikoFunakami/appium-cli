@@ -60,7 +60,7 @@ Targeting rules:
 - Normal snapshot outputs are metadata plus artifact paths, not full trees. Do not use raw/full snapshot output in agent loops; inspect saved artifacts with snapshot_search(), snapshot_show({"ref": "..."}), and paginated snapshot_refs(). For article/body/page text, use web_text().
 - snapshot_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call snapshot_refs(offset=next_offset).
 - If duplicate labels/refs appear, inspect with snapshot_refs(), snapshot_show({"ref": "..."}), list_containers(), or within_container() before acting.
-- If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control; find_by_text can help locate it.
+- If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control. For native snapshots, snapshot_search() may return tap_target_ref/action_target_ref for this exact purpose.
 - Use any_text for synonym/translation/variant labels (e.g. snapshot_search({"text": "ログイン", "any_text": ["Login", "Sign in"]})). Keep to 2-4 variants. Do not invent regex or AND syntax.
 
 Diagnostics and fallback order:
@@ -90,13 +90,20 @@ NATIVE_TOOL_PROMPT = """Current appium-cli context guidance: NATIVE_APP
 
 Use native accessibility snapshots and native/mobile actions. Do not use WebView DOM tools until a WebView context switch/navigation succeeds.
 
-Native UI: observe, find refs, act:
+Native UI: observe, find tappable text targets, act:
 1. snapshot({})
-2. snapshot_refs({"snapshot_id": "latest", "role": "button"})
-3. tap({"ref": "<button ref>"})
+2. snapshot_search({"text": "<visible label>"})
+3. tap({"ref": "<tap_target_ref/action_target_ref if present, else matching ref>"})
 4. snapshot({})
 5. snapshot_search({"text": "expected text"}) or assert_visible({"text": "expected text"})
 6. For multilingual/variant labels: snapshot_search({"text": "ログイン", "any_text": ["Login", "Sign in"]})
+
+Native targeting rules:
+- Do NOT default to role="button" in native UI. Tappable native targets are often rows, tabs, layouts, or containers with child text labels.
+- Use role filters for specific element types such as textbox/list, or when the user explicitly asks for that role.
+- If snapshot_search returns tap_target_ref/action_target_ref, tap that ref. It is the nearest actionable native target for the visible text.
+- If persisted artifacts are unavailable or stale, find_by_text can locate the visible label in the current native snapshot.
+- Do not tap unlabeled refs such as generic buttons unless nearby text/snippet confirms the target.
 
 Native UI: enter text:
 1. snapshot({})

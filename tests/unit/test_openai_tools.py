@@ -126,9 +126,11 @@ class TestGetToolSkillPrompt:
     def test_includes_native_and_form_workflow_examples(self) -> None:
         prompt = get_tool_skill_prompt()
 
-        assert "Native UI: observe, find refs, act" in prompt
-        assert 'snapshot_refs({"snapshot_id": "latest", "role": "button"})' in prompt
-        assert 'tap({"ref": "<button ref>"})' in prompt
+        assert "Native UI: observe, find tappable text targets, act" in prompt
+        assert 'snapshot_search({"text": "<visible label>"})' in prompt
+        assert 'tap({"ref": "<tap_target_ref/action_target_ref if present, else matching ref>"})' in prompt
+        assert 'Do NOT default to role="button" in native UI' in prompt
+        assert "tap_target_ref/action_target_ref" in prompt
         assert "Search or submit a simple single-input form" not in prompt
 
     def test_includes_any_text_or_guidance(self) -> None:

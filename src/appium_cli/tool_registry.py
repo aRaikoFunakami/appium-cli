@@ -119,11 +119,13 @@ _add("snapshot_show",
 
 _add("snapshot_search",
      "Search persisted snapshot for elements by text. Fast, compact output. "
-     "Use this instead of snapshot_show(artifact=compact) to find elements.",
+     "Use this instead of snapshot_show(artifact=compact) to find elements. "
+     "For native UI, visible labels may live under tappable rows/tabs/containers; "
+     "use returned tap_target_ref/action_target_ref as the ref to tap.",
      parameters=_schema({
          "text": _str_param("Text to search for."),
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),
-         "role": _str_param("Optional role filter."),
+         "role": _str_param("Optional role filter. In native UI, role=button can hide tappable rows/tabs."),
          "any_text": _str_array_param("Additional text variants to match (OR). Literal, case-insensitive. No regex."),
      }, required=["text"]))
 
@@ -131,6 +133,8 @@ _add("snapshot_refs",
      "List actionable refs from the latest snapshot with pagination. Fast, compact output. "
      "Defaults to limit=50; use next_offset when has_more=true. "
      "Use this to discover available refs instead of reading the full tree. "
+     "For native UI, prefer snapshot_search(text=...) for visible labels; "
+     "role filters such as role=button can hide tappable rows/tabs/containers. "
      "Not the right tool for launching apps: launcher app icons are often text-only "
      "and will not appear here. To start a known app, use activate_app <package> instead.",
      parameters=_schema({

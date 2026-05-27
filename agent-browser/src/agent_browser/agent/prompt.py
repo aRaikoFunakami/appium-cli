@@ -47,6 +47,11 @@ Ref rules:
 - If the ref you need is not in the current snapshot, take a fresh web_snapshot first.
 - After fill/click/tap, refs remain valid until the next snapshot replaces the ref map.
 
+Native ref rules:
+- In native UI, do not assume tappable targets have role="button"; tabs and list items are often rows/layouts with child text.
+- Prefer snapshot_search(text="<visible label>") without a role filter, then tap the returned tap_target_ref/action_target_ref when present.
+- Avoid tapping unlabeled native refs unless the current snippet or nearby text confirms the user's intended target.
+
 Completion:
 - Set is_done=true only when the user's requested outcome is verified or impossible.
 - Set success=true only if the user's goal was satisfied.

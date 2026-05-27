@@ -225,6 +225,8 @@ def _build_index(
                 }
             )
 
+    text_targets = _build_text_targets(nodes, refs_by_tree, metadata)
+
     return {
         "snapshot_id": metadata["snapshot_id"],
         "source": metadata["source"],
@@ -238,7 +240,55 @@ def _build_index(
         "refs": refs_by_tree,
         "containers": containers,
         "inputs": inputs,
+        "text_targets": text_targets,
     }
+
+
+def _build_text_targets(
+    nodes: list[Any],
+    refs_by_tree: list[dict[str, Any]],
+    metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Persist native text leaves with their nearest real tap target."""
+    if metadata.get("source") != "native":
+        return []
+
+    target_by_ref = {
+        str(item.get("ref")): item for item in refs_by_tree if item.get("ref")
+    }
+    seen: set[tuple[str, str, tuple[int, int, int, int]]] = set()
+    text_targets: list[dict[str, Any]] = []
+
+    for node in nodes:
+        action_target_ref = getattr(node, "action_target_ref", None)
+        if not action_target_ref:
+            continue
+        text = str(getattr(node, "name", "") or getattr(node, "value", "") or "")
+        if not text:
+            continue
+        bounds = tuple(getattr(node, "bounds", (0, 0, 0, 0)))
+        key = (text, str(action_target_ref), bounds)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        item: dict[str, Any] = {
+            "text": text,
+            "role": getattr(node, "role", ""),
+            "bounds": list(bounds),
+            "action_target_ref": str(action_target_ref),
+            "tap_target_ref": str(action_target_ref),
+        }
+        target_item = target_by_ref.get(str(action_target_ref))
+        if target_item:
+            item["target_role"] = target_item.get("role", "")
+            item["target_name"] = target_item.get("name", "")
+            item["target_bounds"] = target_item.get("bounds")
+            item["target_actionable"] = bool(target_item.get("actionable", False))
+            item["target_editable"] = bool(target_item.get("editable", False))
+        text_targets.append(item)
+
+    return text_targets
 
 
 def _index_ref(node: Any, entry: RefEntry | None) -> dict[str, Any]:

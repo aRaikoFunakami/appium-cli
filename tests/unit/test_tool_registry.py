@@ -136,6 +136,8 @@ class TestSchemaStructure:
         assert refs.parameters["properties"]["role"]["type"] == "string"
         assert refs.parameters["properties"]["limit"]["default"] == 50
         assert refs.parameters["properties"]["offset"]["default"] == 0
+        assert "tap_target_ref/action_target_ref" in search.description
+        assert "role=button can hide tappable rows/tabs" in refs.description
 
     def test_or_search_schemas(self) -> None:
         search = get_tool("snapshot_search")

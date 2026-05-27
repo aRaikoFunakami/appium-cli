@@ -542,6 +542,12 @@ def _format_compact_field(key: str, value: Any) -> str:
     return f"{key}={text}"
 
 
+def _format_compact_bounds_field(key: str, value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return f"{key}=[{','.join(str(part) for part in value)}]"
+    return _format_compact_field(key, value)
+
+
 def _locator_hint(item: dict[str, Any]) -> str:
     strategy = item.get("primary_strategy")
     if not isinstance(strategy, dict):
@@ -576,6 +582,12 @@ def _merge_ref_item(
         if strategy is not None:
             merged["primary_strategy"] = strategy
     return merged
+
+
+def _is_native_index(index: dict[str, Any]) -> bool:
+    source = str(index.get("source") or "").lower()
+    context = str(index.get("context") or "").upper()
+    return source == "native" or context == "NATIVE_APP"
 
 
 def _load_index_ref_items(snapshot_id_or_latest: str) -> dict[str, dict[str, Any]]:
@@ -614,6 +626,32 @@ def _compact_ref_line(ref: str, item: dict[str, Any], *, rich: bool = False) -> 
         if suffix_fields:
             line = f"{line} {suffix_fields}"
     return line
+
+
+def _compact_text_target_line(item: dict[str, Any]) -> str:
+    text = str(item.get("text") or "")
+    line = f"text {json.dumps(text, ensure_ascii=False)}"
+    fields = [
+        _format_compact_bounds_field("bounds", item.get("bounds", "")),
+        f"tap_target=[ref:{item.get('tap_target_ref') or item.get('action_target_ref')}]"
+        if item.get("tap_target_ref") or item.get("action_target_ref")
+        else "",
+        _format_compact_field("target_role", item.get("target_role", "")),
+        _format_compact_bounds_field("target_bounds", item.get("target_bounds", "")),
+        _format_compact_field(
+            "target_actionable",
+            str(bool(item.get("target_actionable"))).lower(),
+        ),
+        _format_compact_field("requested_role", item.get("requested_role", "")),
+        _format_compact_field(
+            "role_mismatch",
+            str(bool(item.get("role_mismatch"))).lower()
+            if item.get("role_mismatch")
+            else "",
+        ),
+    ]
+    suffix = " ".join(field for field in fields if field)
+    return f"{line} {suffix}".rstrip()
 
 
 def _ref_detail(ref: str, item: dict[str, Any]) -> str:
@@ -925,6 +963,7 @@ def snapshot_search(
     matches: list[dict[str, Any]] = []
     seen_refs: set[str] = set()
     index_items: dict[str, dict[str, Any]] = {}
+    native_index = _is_native_index(index)
     for item in index.get("refs", []):
         if not isinstance(item, dict):
             continue
@@ -975,16 +1014,55 @@ def snapshot_search(
         matches.append(match)
         seen_refs.add(ref)
 
-    if not role:
+    for item in index.get("text_targets", []):
+        if not isinstance(item, dict):
+            continue
+        text_value = str(item.get("text") or "")
+        if not text_value:
+            continue
+        target_ref = str(item.get("tap_target_ref") or item.get("action_target_ref") or "")
+        if target_ref in seen_refs:
+            continue
+        target_role = str(item.get("target_role") or "")
+        text_role = str(item.get("role") or "")
+        role_matches = not role or role in {target_role, text_role}
+        if role and not role_matches and not native_index:
+            continue
+        haystack = " ".join(
+            str(item.get(key) or "")
+            for key in ("text", "target_name", "target_role", "action_target_ref")
+        ).lower()
+        matched_needle = _any_needle_in(needles, haystack)
+        if matched_needle is None:
+            continue
+
+        match = dict(item)
+        match["match_type"] = "text_target"
+        if target_ref:
+            match["ref"] = target_ref
+            match["tap_target_ref"] = target_ref
+            match["action_target_ref"] = target_ref
+        if role and not role_matches:
+            match["role_mismatch"] = True
+            match["requested_role"] = role
+        if multi_term:
+            match["matched_text"] = matched_needle
+        matches.append(match)
+
+    compact_fallback_allowed = not role or (native_index and not index.get("text_targets"))
+    if compact_fallback_allowed and not matches:
         for line_number, line in _matching_compact_lines(compact_text, needles):
             if any(f"[ref:{ref}]" in line for ref in seen_refs):
                 continue
-            matches.append(
-                {
-                    "line": line_number,
-                    "snippet": line.strip(),
-                }
-            )
+            match = {
+                "match_type": "compact_line",
+                "line": line_number,
+                "snippet": line.strip(),
+            }
+            if role:
+                match["requested_role"] = role
+                match["role_mismatch"] = True
+            matches.append(match)
 
     if raw:
         return json.dumps(matches, ensure_ascii=False, indent=2, sort_keys=True)
@@ -993,6 +1071,9 @@ def snapshot_search(
     lines = [f"Snapshot search results for '{query_label}' (total={len(matches)}):"]
     for rank, match in enumerate(matches, start=1):
         prefix = f"{rank}. "
+        if match.get("match_type") == "text_target":
+            lines.append(prefix + _compact_text_target_line(match))
+            continue
         ref = match.get("ref")
         if ref:
             line = prefix + _compact_ref_line(str(ref), match, rich=True)
@@ -1006,6 +1087,12 @@ def snapshot_search(
                 _format_compact_field("snippet", match.get("snippet", "")),
             ]
             lines.append(prefix + " ".join(field for field in fields if field))
+    if role and any(match.get("role_mismatch") for match in matches):
+        lines.append(
+            f"Note: No direct refs with role '{role}' matched. "
+            "Native text targets may be tappable rows/tabs/containers; "
+            "use the shown tap_target_ref."
+        )
     return "\n".join(lines)
 
 

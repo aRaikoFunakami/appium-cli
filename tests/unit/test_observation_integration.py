@@ -357,7 +357,56 @@ def test_snapshot_search_role_filter(monkeypatch, request):
 
     out = observation.snapshot_search("storage", role="button")
 
-    assert "No snapshot refs matching 'storage' found." in out
+    assert "Snapshot search results for 'storage'" in out
+    assert 'text "Storage"' in out
+    assert "tap_target=[ref:storage_row]" in out
+    assert "target_role=row" in out
+    assert "target_bounds=[0,300,1080,400]" in out
+    assert "requested_role=button" in out
+    assert "role_mismatch=true" in out
+    assert "Native text targets may be tappable rows/tabs/containers" in out
+
+
+def test_snapshot_search_text_target_without_direct_ref(monkeypatch, request):
+    _install_snapshot_artifacts(monkeypatch, request)
+
+    out = observation.snapshot_search("32 GB free")
+    raw = observation.snapshot_search("32 GB free", raw=True)
+    payload = json.loads(raw)
+
+    assert 'text "32 GB free"' in out
+    assert "bounds=[20,360,200,380]" in out
+    assert "tap_target=[ref:storage_row]" in out
+    assert payload[0]["match_type"] == "text_target"
+    assert payload[0]["action_target_ref"] == "storage_row"
+    assert payload[0]["tap_target_ref"] == "storage_row"
+    assert payload[0]["target_role"] == "row"
+
+
+def test_snapshot_search_webview_role_filter_remains_strict(monkeypatch, tmp_path):
+    monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: tmp_path)
+    snap = WebSnapshot.from_root(
+        context="WEBVIEW_chrome",
+        title="Example",
+        url="https://example.com",
+        root=WebSnapshotNode(
+            role="document",
+            children=[
+                WebSnapshotNode(
+                    role="button",
+                    name="News",
+                    ref="web_news_button",
+                    bounds=(0, 0, 100, 40),
+                )
+            ],
+        ),
+    )
+    bundle = create_snapshot_bundle_payload(snap, snapshot_id="web-fixed")
+    observation._write_snapshot_bundle(bundle)
+
+    out = observation.snapshot_search("News", role="link")
+
+    assert out == "No snapshot refs matching 'News' found."
 
 
 def test_snapshot_search_or_matches_alternate_term(monkeypatch, request):

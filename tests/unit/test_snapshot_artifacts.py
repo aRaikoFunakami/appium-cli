@@ -23,6 +23,19 @@ def test_native_snapshot_bundle_serializes_metadata_refs_and_index(monkeypatch, 
         strategies=[LocatorStrategy(by="id", value="com.example:id/ok")],
         state=["enabled"],
     )
+    movie_tab = NativeSnapshotNode(
+        role="row",
+        ref="tabbackground_2",
+        bounds=(362, 82, 662, 242),
+        children=[
+            NativeSnapshotNode(
+                role="text",
+                name="映画",
+                bounds=(456, 121, 568, 203),
+                action_target_ref="tabbackground_2",
+            )
+        ],
+    )
     list_node = NativeSnapshotNode(
         role="list",
         ref="recycler",
@@ -30,7 +43,7 @@ def test_native_snapshot_bundle_serializes_metadata_refs_and_index(monkeypatch, 
         scrollable=True,
         scroll_direction="vertical",
         bounds=(0, 10, 100, 200),
-        children=[button],
+        children=[button, movie_tab],
     )
     snap = NativeSnapshot.from_root(
         root=NativeSnapshotNode(role="container", children=[list_node]),
@@ -57,9 +70,10 @@ def test_native_snapshot_bundle_serializes_metadata_refs_and_index(monkeypatch, 
     assert refs["ok"]["source_type"] == "native"
     json.dumps(bundle.refs_json)
 
-    assert bundle.index_json["node_count"] == 3
-    assert bundle.index_json["ref_count"] == 2
+    assert bundle.index_json["node_count"] == 5
+    assert bundle.index_json["ref_count"] == 3
     assert bundle.index_json["roles"]["button"] == 1
+    assert bundle.index_json["roles"]["row"] == 1
     assert bundle.index_json["refs"][0]["ref"] == "recycler"
     assert bundle.index_json["refs"][1]["primary_strategy"] == {
         "by": "id",
@@ -67,6 +81,20 @@ def test_native_snapshot_bundle_serializes_metadata_refs_and_index(monkeypatch, 
     }
     assert bundle.index_json["containers"][0]["container_kind"] == "list"
     assert bundle.index_json["containers"][0]["scroll_direction"] == "vertical"
+    assert bundle.index_json["text_targets"] == [
+        {
+            "text": "映画",
+            "role": "text",
+            "bounds": [456, 121, 568, 203],
+            "action_target_ref": "tabbackground_2",
+            "tap_target_ref": "tabbackground_2",
+            "target_role": "row",
+            "target_name": "",
+            "target_bounds": [362, 82, 662, 242],
+            "target_actionable": True,
+            "target_editable": False,
+        }
+    ]
 
 
 def test_web_snapshot_bundle_includes_title_url_and_textbox_index(monkeypatch, tmp_path):
@@ -114,6 +142,7 @@ def test_web_snapshot_bundle_includes_title_url_and_textbox_index(monkeypatch, t
             "value": "query",
         }
     ]
+    assert bundle.index_json["text_targets"] == []
     assert "title: Example" in bundle.compact_yml
     json.dumps(bundle.index_json)
 
