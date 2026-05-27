@@ -98,7 +98,8 @@ class TestGetToolSkillPrompt:
         assert "appium-cli snapshot" not in prompt
         assert "get_system_prompt" not in prompt
         assert "depth=8" not in prompt
-        assert "full-page observations should preserve all visible targets" in prompt
+        assert "Do not use depth for normal full-page observations" in prompt
+        assert "Use depth only for scoped/debug snapshots" in prompt
 
     def test_includes_ordered_webview_workflow_examples(self) -> None:
         self._mock_successful_call("goto", {"url": "https://example.com"})

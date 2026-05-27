@@ -94,9 +94,9 @@ diff before.yml after.yml | grep -E "Qiita|検索|title|url|ref:"
 
 ```bash
 appium-cli snapshot                         # native metadata + artifacts
-appium-cli snapshot main_list --depth=2     # element-scoped native snapshot
+appium-cli snapshot main_list               # element-scoped native snapshot
 appium-cli web_snapshot                     # WebView metadata + artifacts
-appium-cli web_snapshot web_form --depth=3  # element-scoped DOM snapshot
+appium-cli web_snapshot web_form            # element-scoped DOM snapshot
 appium-cli --raw snapshot > screen.yml      # full tree for piping/diffing
 appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 
@@ -114,7 +114,7 @@ appium-cli screenshot                       # rarely needed
 appium-cli get_page_source                  # token-heavy diagnostic escape hatch
 ```
 
-`snapshot` is primary. `snapshot_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
+`snapshot` is primary. Do not use `--depth` for normal full-page observations; snapshots are saved as artifacts, and depth can hide searchable targets. `snapshot_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary. Use `get_page_source` only for diagnostics when snapshot artifacts are insufficient.
 
 ```bash
 appium-cli console_messages                 # browser console logs
@@ -125,16 +125,13 @@ appium-cli network_requests --filter "/api" # filter by URL
 
 ### depth parameter
 
-`snapshot` and `web_snapshot` accept an optional `depth` parameter to limit the depth of the snapshot tree. By default, the full tree is returned with no depth limit.
+`snapshot` and `web_snapshot` accept an optional `depth` parameter to limit the depth of the snapshot tree, but do not use it for normal full-page observations. By default, the full tree is saved to artifacts with no depth limit.
 
-Depth counts only **semantic levels** (interactive elements, landmarks, headings, lists, tables) — layout wrappers like `<div>` and `<span>` are automatically flattened. This means `depth=2` reaches inputs, buttons, and links directly:
+Depth is only a scoped/debug escape hatch when you intentionally want a smaller subtree. Token control should normally use `snapshot_search`, `snapshot_show --ref`, and paginated `snapshot_refs`, not `depth`.
 
-```bash
-appium-cli web_snapshot --depth=2     # form > textbox, button, combobox
-appium-cli snapshot --depth=1         # top-level landmarks only
-```
+Depth counts only **semantic levels** (interactive elements, landmarks, headings, lists, tables) — layout wrappers like `<div>` and `<span>` are automatically flattened.
 
-Do not set `depth` for full-page observations — the default (full tree) ensures all elements are visible.
+Do not set `depth` for normal observations — the default full artifact ensures all elements remain searchable. If the user explicitly asks for a smaller debug subtree, apply depth only to an already scoped snapshot.
 
 ## Actions
 

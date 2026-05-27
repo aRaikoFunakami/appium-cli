@@ -36,9 +36,9 @@ appium-cli --raw swipe_left carousel
 For verification, diff raw snapshots before and after:
 
 ```bash
-appium-cli --raw snapshot carousel --depth=2 > before.yml
+appium-cli --raw snapshot carousel > before.yml
 appium-cli swipe_left carousel
-appium-cli --raw snapshot carousel --depth=2 > after.yml
+appium-cli --raw snapshot carousel > after.yml
 diff before.yml after.yml
 ```
 

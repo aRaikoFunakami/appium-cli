@@ -40,9 +40,9 @@ diff before.yml after.yml
 For focused diffs:
 
 ```bash
-appium-cli --raw snapshot settings_panel --depth=3 > before.yml
+appium-cli --raw snapshot settings_panel > before.yml
 appium-cli tap toggle_wifi
-appium-cli --raw snapshot settings_panel --depth=3 > after.yml
+appium-cli --raw snapshot settings_panel > after.yml
 diff before.yml after.yml
 ```
 

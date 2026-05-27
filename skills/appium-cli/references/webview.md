@@ -112,10 +112,10 @@ appium-cli snapshot_show latest --artifact=full  # debugging only
 
 Do not read the full compact artifact just to find a DOM element. Use `web_query` for CSS/attribute extraction, `snapshot_search` for text, and `snapshot_refs` for ref indexes.
 
-Use scoped snapshots for large pages:
+Use scoped snapshots for large pages; avoid `--depth` unless you intentionally want a smaller debug subtree:
 
 ```bash
-appium-cli web_snapshot web_results --depth=4
+appium-cli web_snapshot web_results
 appium-cli --raw web_snapshot web_form > form.yml
 appium-cli web_snapshot web_dialog --filename=dialog.yml
 ```
@@ -271,9 +271,9 @@ diff before.yml after.yml | grep -E "Qiita|検索|title|url|ref:"
 Use element-scoped raw snapshots for smaller diffs:
 
 ```bash
-appium-cli --raw web_snapshot web_panel --depth=3 > before.yml
+appium-cli --raw web_snapshot web_panel > before.yml
 appium-cli click web_toggle
-appium-cli --raw web_snapshot web_panel --depth=3 > after.yml
+appium-cli --raw web_snapshot web_panel > after.yml
 diff before.yml after.yml
 ```
 

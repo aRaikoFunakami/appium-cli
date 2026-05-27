@@ -80,7 +80,8 @@ Responsibility boundary:
 - Tool calls require an active appium-cli session. When the caller owns lifecycle, use one fresh session per user task and stop it at task end; stale sessions can cause InvalidSessionIdException.
 - If refs/session state appear stale or the daemon loses WebDriver state, recover with session status, session stop, session start, then snapshot.
 - Do not call adb, appium, npm, or installer commands directly from an appium-cli tool-calling agent unless the user explicitly asked for prerequisite management outside appium-cli.
-- Do not cap depth for normal full-page observations unless there is a clear reason; full-page observations should preserve all visible targets.
+- Do not use depth for normal full-page observations. Snapshots are saved as artifacts, so preserve the full tree and reduce tokens with snapshot_search(), snapshot_show({"ref": "..."}), and paginated snapshot_refs() instead.
+- Use depth only for scoped/debug snapshots when you intentionally want a smaller subtree.
 """
 
 NATIVE_TOOL_PROMPT = """Current appium-cli context guidance: NATIVE_APP

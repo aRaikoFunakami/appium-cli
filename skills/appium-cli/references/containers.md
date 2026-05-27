@@ -54,12 +54,12 @@ Filter with `--role=<role>` and `--position=first|last|<index>`.
 For deep containers, prefer a scoped artifact:
 
 ```bash
-appium-cli snapshot recycler --depth=3
-appium-cli --raw snapshot recycler --depth=3 > recycler.yml
+appium-cli snapshot recycler
+appium-cli --raw snapshot recycler > recycler.yml
 appium-cli snapshot_search "Target" --role=row
 ```
 
-This avoids printing full-screen trees while keeping a persisted artifact bundle.
+This avoids printing full-screen trees while keeping a persisted artifact bundle. Avoid `--depth` unless you intentionally need a smaller debug subtree, because depth can hide searchable targets.
 
 ## assert_visible
 

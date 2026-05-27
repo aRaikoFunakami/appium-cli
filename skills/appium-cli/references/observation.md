@@ -58,13 +58,13 @@ Scope a snapshot to a specific ref when a full tree is too large:
 
 ```bash
 appium-cli snapshot main_list
-appium-cli snapshot row_settings --depth=2
-appium-cli web_snapshot web_form --depth=3
+appium-cli snapshot row_settings
+appium-cli web_snapshot web_form
 appium-cli snapshot dialog_root --filename=dialog.yml
 appium-cli --raw web_snapshot web_results > results.yml
 ```
 
-`--filename` saves the rendered tree to a file while normal stdout still prints metadata. `--depth` caps the rendered subtree depth. `--max-nodes` and `--boxes` are available for larger/debug sessions.
+`--filename` saves the rendered tree to a file while normal stdout still prints metadata. Do not use `--depth` for normal observations; full artifacts keep targets searchable, and token control should use `snapshot_search`, `snapshot_show --ref`, and paginated `snapshot_refs`. `--depth` is only a scoped/debug escape hatch when you intentionally want a smaller subtree. `--max-nodes` and `--boxes` are available for larger/debug sessions.
 
 ## Artifact types
 

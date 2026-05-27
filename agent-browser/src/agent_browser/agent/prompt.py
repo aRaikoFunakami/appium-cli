@@ -21,6 +21,8 @@ Memory rules:
 
 WebView observation rules:
 - After goto or webview_switch, take web_snapshot as the primary page observation before making page-structure judgments.
+- Do not pass depth for normal full-page web_snapshot calls. Full artifacts keep searchable targets; reduce tokens with snapshot_search, snapshot_show(ref), and paginated snapshot_refs instead.
+- Use depth only for scoped/debug snapshots when intentionally inspecting a smaller subtree.
 - Use snapshot_search, snapshot_refs, and web_query for targeted extraction from the observed page/artifacts.
 - snapshot_refs is paginated. If has_more=true and the target is absent, refine the search/role or request the next page with offset=next_offset.
 - Broad CSS discovery such as web_query(selector="a") may return many links. Do not conclude that a target is absent from one broad query alone.

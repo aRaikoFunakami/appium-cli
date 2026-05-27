@@ -44,7 +44,8 @@ def test_system_prompt_mentions_single_input_submit_rule() -> None:
 
 def test_system_prompt_mentions_snapshot_depth_guidance() -> None:
     prompt = build_system_prompt()
-    assert "Do not cap depth for normal full-page observations" in prompt
+    assert "Do not use depth for normal full-page observations" in prompt
+    assert "Use depth only for scoped/debug snapshots" in prompt
     assert "depth=8" not in prompt
 
 

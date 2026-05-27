@@ -79,9 +79,9 @@ diff before.yml after.yml | grep -E "expanded|selected|visible|ref:"
 For smaller diffs, scope the snapshot:
 
 ```bash
-appium-cli --raw snapshot settings_panel --depth=3 > before.yml
+appium-cli --raw snapshot settings_panel > before.yml
 appium-cli tap toggle_wifi
-appium-cli --raw snapshot settings_panel --depth=3 > after.yml
+appium-cli --raw snapshot settings_panel > after.yml
 diff before.yml after.yml
 ```
 
