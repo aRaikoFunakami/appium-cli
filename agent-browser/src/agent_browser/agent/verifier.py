@@ -1,4 +1,4 @@
-"""Two-layer completion verification: StructuralGuard + LLMJudge."""
+"""Completion gate: StructuralGuard + LLMJudge over result and tool trace."""
 
 from __future__ import annotations
 
@@ -254,7 +254,7 @@ def format_tool_trace(
 
 
 class LLMJudge:
-    """Semantic goal-vs-result verification using a cheap LLM call."""
+    """LLM completion gate using the goal, final result, and compact tool trace."""
 
     def __init__(
         self,
@@ -356,7 +356,7 @@ class LLMJudge:
 # ---------------------------------------------------------------------------
 
 class CompletionVerifier:
-    """Two-layer verification: structural guard first, then optional LLM judge."""
+    """Completion gate: structural guard first, then optional LLM judge."""
 
     def __init__(
         self,

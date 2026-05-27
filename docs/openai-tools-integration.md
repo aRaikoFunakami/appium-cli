@@ -900,12 +900,12 @@ LLM agents, `parallel_tool_calls=False` is recommended.
 - one tool call per action
 - safety classification and approval blocking
 - full successful tool output forwarding to the next model turn
-- screenshot artifact extraction
+- screenshot artifact path reuse with base64-save fallback
 - observation extraction into current screen state
 - retry counters and tool blocking after repeated failures
 - loop detection and wall-time/no-progress limits
-- structural completion verification
-- optional LLM judge
+- structural completion checks
+- optional LLM completion gate using final result plus tool trace
 - JSONL episodic memory
 - token usage and cost tracking
 

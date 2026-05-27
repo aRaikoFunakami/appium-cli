@@ -191,7 +191,7 @@ def _build_billing_info(call_usages: list[CallUsage], model: str) -> BillingInfo
 
 
 def _build_verifier(cfg: AgentBrowserConfig) -> CompletionVerifier:
-    """Construct the two-layer completion verifier from config."""
+    """Construct the completion gate from config."""
     guard = StructuralGuard(min_result_chars=cfg.min_result_chars)
     judge: LLMJudge | None = None
     if cfg.verify_with_llm and cfg.openai_api_key:

@@ -100,7 +100,8 @@ guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
 - Credentials must NEVER be passed on the command line or hard-coded. Provide
   them through your own out-of-band mechanism.
 - Argument values that look like sensitive content are summarized, not logged.
-  Screenshot base64 is written to disk but never echoed to logs.
+  Screenshot base64 is stripped from model-facing output; the saved artifact
+  path is used instead.
 - The agent avoids Enter-based submission on intermediate fields of multi-field
   forms. `submit=true` is reserved for intentional submission steps and is not
   used for autocomplete / React-Select style controls.
@@ -119,6 +120,15 @@ guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
   observation/current screen, bounded `working_state`, the last 5 short step
   records, and optional loop/reflection warnings. Old snapshots, stale refs,
   raw function calls, reasoning items, and screenshot base64 are not replayed.
+
+## Completion verification
+
+Completion verification is a gate, not a quality grader. A deterministic
+structural guard runs first, then the optional LLM judge (`AGENT_BROWSER_JUDGE_MODEL`,
+default `gpt-4.1`) checks the final result together with the compact tool trace.
+The judge should verify only explicit user requirements, treat later successful
+retries as recovery, and avoid requiring titles, URLs, citations, proof
+statements, or character-count declarations unless the user asked for them.
 
 ## Known limitations
 
