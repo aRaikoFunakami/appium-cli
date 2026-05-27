@@ -1,0 +1,13 @@
+{
+  "artifacts": {
+    "compact": "movie_tab_before_scroll.compact.yml",
+    "full": "movie_tab_before_scroll.full.yml",
+    "index": "movie_tab_before_scroll.index.json",
+    "meta": "movie_tab_before_scroll.meta.json",
+    "refs": "movie_tab_before_scroll.refs.json"
+  },
+  "context": "NATIVE_APP",
+  "screen_id": "1af846",
+  "snapshot_id": "native-2026-05-27T09-26-19-125Z-1af846",
+  "source": "native"
+}

@@ -1,0 +1,768 @@
+{
+  "context": "NATIVE_APP",
+  "refs": {
+    "btn": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        170,
+        378,
+        550,
+        494
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "360,436"
+        }
+      ]
+    },
+    "btn_2": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        570,
+        378,
+        950,
+        494
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "760,436"
+        }
+      ]
+    },
+    "btn_3": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        970,
+        378,
+        1350,
+        494
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "1160,436"
+        }
+      ]
+    },
+    "btn_4": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1370,
+        378,
+        1750,
+        494
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "1560,436"
+        }
+      ]
+    },
+    "btn_5": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1770,
+        378,
+        2150,
+        494
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "1960,436"
+        }
+      ]
+    },
+    "btn_6": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        2170,
+        378,
+        2534,
+        494
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "2352,436"
+        }
+      ]
+    },
+    "btn_7": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        768,
+        1046,
+        938,
+        1216
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "853,1131"
+        }
+      ]
+    },
+    "btn_8": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1020,
+        1046,
+        1190,
+        1216
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "1105,1131"
+        }
+      ]
+    },
+    "cardbackground": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        36,
+        1362,
+        518,
+        1536
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "277,1449"
+        }
+      ]
+    },
+    "cardbackground_2": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        538,
+        1362,
+        1019,
+        1536
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "778,1449"
+        }
+      ]
+    },
+    "cardbackground_3": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1039,
+        1362,
+        1521,
+        1536
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "1280,1449"
+        }
+      ]
+    },
+    "cardbackground_4": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1541,
+        1362,
+        2022,
+        1536
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "1781,1449"
+        }
+      ]
+    },
+    "cardbackground_5": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        2042,
+        1362,
+        2524,
+        1536
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "2283,1449"
+        }
+      ]
+    },
+    "favoriteicon": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        434,
+        1372,
+        508,
+        1446
+      ],
+      "name": "Favorite Icon",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+        },
+        {
+          "by": "accessibility_id",
+          "value": "Favorite Icon"
+        },
+        {
+          "by": "xpath",
+          "value": "//*[@content-desc=\"Favorite Icon\"]"
+        },
+        {
+          "by": "coordinates",
+          "value": "471,1409"
+        }
+      ]
+    },
+    "favoriteicon_2": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        935,
+        1372,
+        1009,
+        1446
+      ],
+      "name": "Favorite Icon",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+        },
+        {
+          "by": "accessibility_id",
+          "value": "Favorite Icon"
+        },
+        {
+          "by": "xpath",
+          "value": "//*[@content-desc=\"Favorite Icon\"]"
+        },
+        {
+          "by": "coordinates",
+          "value": "972,1409"
+        }
+      ]
+    },
+    "favoriteicon_3": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1437,
+        1372,
+        1511,
+        1446
+      ],
+      "name": "Favorite Icon",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+        },
+        {
+          "by": "accessibility_id",
+          "value": "Favorite Icon"
+        },
+        {
+          "by": "xpath",
+          "value": "//*[@content-desc=\"Favorite Icon\"]"
+        },
+        {
+          "by": "coordinates",
+          "value": "1474,1409"
+        }
+      ]
+    },
+    "favoriteicon_4": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1938,
+        1372,
+        2012,
+        1446
+      ],
+      "name": "Favorite Icon",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+        },
+        {
+          "by": "accessibility_id",
+          "value": "Favorite Icon"
+        },
+        {
+          "by": "xpath",
+          "value": "//*[@content-desc=\"Favorite Icon\"]"
+        },
+        {
+          "by": "coordinates",
+          "value": "1975,1409"
+        }
+      ]
+    },
+    "favoriteicon_5": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        2440,
+        1372,
+        2514,
+        1446
+      ],
+      "name": "Favorite Icon",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+        },
+        {
+          "by": "accessibility_id",
+          "value": "Favorite Icon"
+        },
+        {
+          "by": "xpath",
+          "value": "//*[@content-desc=\"Favorite Icon\"]"
+        },
+        {
+          "by": "coordinates",
+          "value": "2477,1409"
+        }
+      ]
+    },
+    "ib_search": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        2038,
+        94,
+        2174,
+        230
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/ib_search"
+        },
+        {
+          "by": "coordinates",
+          "value": "2106,162"
+        }
+      ]
+    },
+    "ib_settings": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        2264,
+        94,
+        2400,
+        230
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/ib_settings"
+        },
+        {
+          "by": "coordinates",
+          "value": "2332,162"
+        }
+      ]
+    },
+    "iv_chevron_right": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        2080,
+        520,
+        2560,
+        1020
+      ],
+      "name": "chevron_right",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/iv_chevron_right"
+        },
+        {
+          "by": "accessibility_id",
+          "value": "chevron_right"
+        },
+        {
+          "by": "xpath",
+          "value": "//*[@content-desc=\"chevron_right\"]"
+        },
+        {
+          "by": "coordinates",
+          "value": "2320,770"
+        }
+      ]
+    },
+    "iv_favorite_icon": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        2308,
+        1046,
+        2488,
+        1226
+      ],
+      "name": "",
+      "role": "button",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/iv_favorite_icon"
+        },
+        {
+          "by": "coordinates",
+          "value": "2398,1136"
+        }
+      ]
+    },
+    "movies_section_scroll_view": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        0,
+        520,
+        2560,
+        1536
+      ],
+      "name": "",
+      "role": "list",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/movies_section_scroll_view"
+        },
+        {
+          "by": "coordinates",
+          "value": "1280,1028"
+        }
+      ]
+    },
+    "row": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        0,
+        520,
+        2560,
+        1020
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "coordinates",
+          "value": "1280,770"
+        }
+      ]
+    },
+    "rv_genres": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        160,
+        378,
+        2534,
+        494
+      ],
+      "name": "",
+      "role": "list",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/rv_genres"
+        },
+        {
+          "by": "coordinates",
+          "value": "1347,436"
+        }
+      ]
+    },
+    "rv_popups": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        0,
+        520,
+        2560,
+        1020
+      ],
+      "name": "",
+      "role": "list",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/rv_popups"
+        },
+        {
+          "by": "coordinates",
+          "value": "1280,770"
+        }
+      ]
+    },
+    "rv_tab_menu": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        62,
+        82,
+        2012,
+        242
+      ],
+      "name": "",
+      "role": "list",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/rv_tab_menu"
+        },
+        {
+          "by": "coordinates",
+          "value": "1037,162"
+        }
+      ]
+    },
+    "tabbackground": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        62,
+        82,
+        362,
+        242
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "212,162"
+        }
+      ]
+    },
+    "tabbackground_2": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        362,
+        82,
+        662,
+        242
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "512,162"
+        }
+      ]
+    },
+    "tabbackground_3": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        662,
+        82,
+        962,
+        242
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "812,162"
+        }
+      ]
+    },
+    "tabbackground_4": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        962,
+        82,
+        1262,
+        242
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "1112,162"
+        }
+      ]
+    },
+    "tabbackground_5": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1262,
+        82,
+        1562,
+        242
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "1412,162"
+        }
+      ]
+    },
+    "tabbackground_6": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1562,
+        82,
+        1862,
+        242
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "1712,162"
+        }
+      ]
+    },
+    "tabbackground_7": {
+      "context": "NATIVE_APP",
+      "expected_bounds": [
+        1862,
+        82,
+        2012,
+        242
+      ],
+      "name": "",
+      "role": "row",
+      "source_type": "native",
+      "strategies": [
+        {
+          "by": "id",
+          "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+        },
+        {
+          "by": "coordinates",
+          "value": "1937,162"
+        }
+      ]
+    }
+  },
+  "screen_id": "1af846",
+  "snapshot_id": "native-2026-05-27T09-26-19-125Z-1af846",
+  "source": "native"
+}

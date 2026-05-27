@@ -10,6 +10,7 @@ import sys
 from agent_browser.agent import run_react_loop
 from agent_browser.appium_tools import BrowserAgentContext
 from agent_browser.config import AgentBrowserConfig
+from agent_browser.controller.controller import run_structured_controller
 from agent_browser.memory import EpisodicMemory, JsonlMemoryStore, WorkingMemory
 from agent_browser.schemas import MemoryEvent, TaskResult
 from agent_browser.session import AppiumSessionManager
@@ -62,7 +63,10 @@ async def run_browser_task(
             session_info.started_by_us,
         )
         try:
-            result = await run_react_loop(goal=goal, cfg=cfg, context=context)
+            if cfg.controller == "structured":
+                result = await run_structured_controller(goal=goal, cfg=cfg, context=context)
+            else:
+                result = await run_react_loop(goal=goal, cfg=cfg, context=context)
         except Exception as exc:
             logger.exception("[run] runner failed")
             memory.record_failure(f"runner_error: {type(exc).__name__}: {exc}")
@@ -110,6 +114,12 @@ def cli_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default=None, help="Override model (default from env).")
     parser.add_argument("--udid", default=None, help="Android device UDID.")
     parser.add_argument("--max-turns", type=int, default=None, help="Override max agent turns.")
+    parser.add_argument(
+        "--controller",
+        choices=("react", "structured"),
+        default=None,
+        help="Controller implementation to use (default from config/env).",
+    )
     parser.add_argument("--log-level", default=None, help="DEBUG/INFO/WARNING.")
     parser.add_argument("--env-file", default=None, help="Path to a .env file.")
     parser.add_argument(
@@ -126,13 +136,15 @@ def cli_main(argv: list[str] | None = None) -> int:
         cfg.udid = args.udid
     if args.max_turns is not None:
         cfg.max_turns = args.max_turns
+    if args.controller:
+        cfg.controller = args.controller
     if args.log_level:
         cfg.log_level = args.log_level
 
-    if not cfg.openai_api_key:
+    if cfg.controller == "react" and not cfg.openai_api_key:
         print(
-            "ERROR: OPENAI_API_KEY is not set. Configure it in the environment "
-            "or in a .env file.",
+            "ERROR: OPENAI_API_KEY is required for --controller=react. "
+            "Configure it in the environment or in a .env file.",
             file=sys.stderr,
         )
         return 2

@@ -1,14 +1,14 @@
 # agent-browser
 
-Production-oriented mobile browser automation built on the OpenAI Responses API
-and the [`appium-cli`](../README.md) tool surface.
+Production-oriented mobile browser automation built on the [`appium-cli`](../README.md)
+tool surface, with an optional OpenAI-backed legacy ReAct controller.
 
 ## Architecture
 
-`agent-browser` runs a **single custom ReAct Browser Agent** with rich tools
-rather than a chain of Planner / Observer / Executor / Verifier agents. The
-agent rebuilds a minimal prompt every iteration from browser-operation state,
-with safety enforced at the tool boundary.
+`agent-browser` defaults to a **structured Appium controller** that compiles the
+user goal into ordered mandatory steps, keeps a snapshot-backed world model, and
+uses deterministic policy/planning/recovery before falling back to the legacy
+OpenAI ReAct loop via `--controller=react`.
 
 ```
 User goal
@@ -23,18 +23,13 @@ load JSONL episodic memory (hints from past runs)
 ensure appium-cli session daemon is healthy (reuse or start)
   │
   ▼
-create custom ReAct loop
-  │ tools: 70+ appium-cli tools (Responses API function schemas)
-  │ prompt: goal + current screen + working_state + last 5 step lines
-  │ completion: structured AgentBrain {is_done, result}
-   ▼
-Responses API loop
-   ├─ model picks tools and arguments
-   ├─ executor classifies safety BEFORE talking to the daemon
-   ├─ executor calls appium_cli.openai_tools.call_tool()
-   ├─ screenshot paths from appium-cli are reused, base64 stripped from logs
-   ├─ raw function_call/reasoning items are discarded after each step
-   └─ latest observation overwrites old screen state
+structured controller
+  ├─ TaskCompiler preserves explicit numbered steps
+  ├─ WorldModel loads appium-cli snapshot artifacts
+  ├─ PolicyEngine blocks out-of-order actions
+  ├─ Planner scores targets/scroll containers deterministically
+  ├─ Executor calls appium-cli tools and verifies effects
+  └─ RecoveryManager handles stale refs and no-effect actions
   │
   ▼
 TaskResult { success, title, url, summary, tool_calls, retries, artifacts }
@@ -59,7 +54,8 @@ You must have:
 - Android emulator or physical device connected via `adb`.
 - Parent `appium-cli` package installed (this project depends on it via the
   local editable path in `pyproject.toml`).
-- `OPENAI_API_KEY` set in environment or `.env`.
+- `OPENAI_API_KEY` set in environment or `.env` only when using
+  `--controller=react` or future LLM-assisted disambiguation.
 
 ## Install
 

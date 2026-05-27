@@ -1,0 +1,1072 @@
+{
+  "containers": [
+    {
+      "actionable": false,
+      "bounds": [
+        62,
+        82,
+        2012,
+        242
+      ],
+      "container_kind": "list",
+      "editable": false,
+      "name": "",
+      "ref": "rv_tab_menu",
+      "role": "list",
+      "scroll_direction": "vertical",
+      "scrollable": true
+    },
+    {
+      "actionable": false,
+      "bounds": [
+        160,
+        378,
+        2534,
+        494
+      ],
+      "container_kind": "list",
+      "editable": false,
+      "name": "",
+      "ref": "rv_genres",
+      "role": "list",
+      "scroll_direction": "vertical",
+      "scrollable": true
+    },
+    {
+      "actionable": false,
+      "bounds": [
+        0,
+        520,
+        2560,
+        1536
+      ],
+      "container_kind": "list",
+      "editable": false,
+      "name": "",
+      "ref": "movies_section_scroll_view",
+      "role": "list",
+      "scroll_direction": "vertical",
+      "scrollable": true
+    },
+    {
+      "actionable": false,
+      "bounds": [
+        0,
+        520,
+        2560,
+        1020
+      ],
+      "container_kind": "list",
+      "editable": false,
+      "name": "",
+      "ref": "rv_popups",
+      "role": "list",
+      "scroll_direction": "vertical",
+      "scrollable": true
+    }
+  ],
+  "context": "NATIVE_APP",
+  "inputs": [],
+  "node_count": 54,
+  "ref_count": 34,
+  "refs": [
+    {
+      "actionable": false,
+      "bounds": [
+        62,
+        82,
+        2012,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/rv_tab_menu"
+      },
+      "ref": "rv_tab_menu",
+      "role": "list",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        62,
+        82,
+        362,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+      },
+      "ref": "tabbackground",
+      "role": "row",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        362,
+        82,
+        662,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+      },
+      "ref": "tabbackground_2",
+      "role": "row",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        662,
+        82,
+        962,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+      },
+      "ref": "tabbackground_3",
+      "role": "row",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        962,
+        82,
+        1262,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+      },
+      "ref": "tabbackground_4",
+      "role": "row",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1262,
+        82,
+        1562,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+      },
+      "ref": "tabbackground_5",
+      "role": "row",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1562,
+        82,
+        1862,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+      },
+      "ref": "tabbackground_6",
+      "role": "row",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1862,
+        82,
+        2012,
+        242
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/tabBackground"
+      },
+      "ref": "tabbackground_7",
+      "role": "row",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        2038,
+        94,
+        2174,
+        230
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/ib_search"
+      },
+      "ref": "ib_search",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        2264,
+        94,
+        2400,
+        230
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/ib_settings"
+      },
+      "ref": "ib_settings",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": false,
+      "bounds": [
+        160,
+        378,
+        2534,
+        494
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/rv_genres"
+      },
+      "ref": "rv_genres",
+      "role": "list",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        170,
+        378,
+        550,
+        494
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "360,436"
+      },
+      "ref": "btn",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        570,
+        378,
+        950,
+        494
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "760,436"
+      },
+      "ref": "btn_2",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        970,
+        378,
+        1350,
+        494
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "1160,436"
+      },
+      "ref": "btn_3",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1370,
+        378,
+        1750,
+        494
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "1560,436"
+      },
+      "ref": "btn_4",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1770,
+        378,
+        2150,
+        494
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "1960,436"
+      },
+      "ref": "btn_5",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        2170,
+        378,
+        2534,
+        494
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "2352,436"
+      },
+      "ref": "btn_6",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": false,
+      "bounds": [
+        0,
+        520,
+        2560,
+        1536
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/movies_section_scroll_view"
+      },
+      "ref": "movies_section_scroll_view",
+      "role": "list",
+      "selector_count": 2
+    },
+    {
+      "actionable": false,
+      "bounds": [
+        0,
+        520,
+        2560,
+        1020
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/rv_popups"
+      },
+      "ref": "rv_popups",
+      "role": "list",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        0,
+        520,
+        2560,
+        1020
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "1280,770"
+      },
+      "ref": "row",
+      "role": "row",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        2080,
+        520,
+        2560,
+        1020
+      ],
+      "editable": false,
+      "name": "chevron_right",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/iv_chevron_right"
+      },
+      "ref": "iv_chevron_right",
+      "role": "button",
+      "selector_count": 4
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        768,
+        1046,
+        938,
+        1216
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "853,1131"
+      },
+      "ref": "btn_7",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1020,
+        1046,
+        1190,
+        1216
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "coordinates",
+        "value": "1105,1131"
+      },
+      "ref": "btn_8",
+      "role": "button",
+      "selector_count": 1
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        2308,
+        1046,
+        2488,
+        1226
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/iv_favorite_icon"
+      },
+      "ref": "iv_favorite_icon",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        36,
+        1362,
+        518,
+        1536
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+      },
+      "ref": "cardbackground",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        434,
+        1372,
+        508,
+        1446
+      ],
+      "editable": false,
+      "name": "Favorite Icon",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+      },
+      "ref": "favoriteicon",
+      "role": "button",
+      "selector_count": 4
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        538,
+        1362,
+        1019,
+        1536
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+      },
+      "ref": "cardbackground_2",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        935,
+        1372,
+        1009,
+        1446
+      ],
+      "editable": false,
+      "name": "Favorite Icon",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+      },
+      "ref": "favoriteicon_2",
+      "role": "button",
+      "selector_count": 4
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1039,
+        1362,
+        1521,
+        1536
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+      },
+      "ref": "cardbackground_3",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1437,
+        1372,
+        1511,
+        1446
+      ],
+      "editable": false,
+      "name": "Favorite Icon",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+      },
+      "ref": "favoriteicon_3",
+      "role": "button",
+      "selector_count": 4
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1541,
+        1362,
+        2022,
+        1536
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+      },
+      "ref": "cardbackground_4",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        1938,
+        1372,
+        2012,
+        1446
+      ],
+      "editable": false,
+      "name": "Favorite Icon",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+      },
+      "ref": "favoriteicon_4",
+      "role": "button",
+      "selector_count": 4
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        2042,
+        1362,
+        2524,
+        1536
+      ],
+      "editable": false,
+      "name": "",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/cardBackground"
+      },
+      "ref": "cardbackground_5",
+      "role": "button",
+      "selector_count": 2
+    },
+    {
+      "actionable": true,
+      "bounds": [
+        2440,
+        1372,
+        2514,
+        1446
+      ],
+      "editable": false,
+      "name": "Favorite Icon",
+      "primary_strategy": {
+        "by": "id",
+        "value": "com.access_company.twine4car.videocenter:id/favoriteIcon"
+      },
+      "ref": "favoriteicon_5",
+      "role": "button",
+      "selector_count": 4
+    }
+  ],
+  "roles": {
+    "button": 22,
+    "container": 1,
+    "list": 6,
+    "row": 8,
+    "text": 17
+  },
+  "screen_id": "1af846",
+  "snapshot_id": "native-2026-05-27T09-26-19-125Z-1af846",
+  "source": "native",
+  "text_targets": [
+    {
+      "action_target_ref": "tabbackground",
+      "bounds": [
+        129,
+        121,
+        296,
+        203
+      ],
+      "role": "text",
+      "tap_target_ref": "tabbackground",
+      "target_actionable": true,
+      "target_bounds": [
+        62,
+        82,
+        362,
+        242
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "ホーム"
+    },
+    {
+      "action_target_ref": "tabbackground_2",
+      "bounds": [
+        456,
+        121,
+        568,
+        203
+      ],
+      "role": "text",
+      "tap_target_ref": "tabbackground_2",
+      "target_actionable": true,
+      "target_bounds": [
+        362,
+        82,
+        662,
+        242
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "映画"
+    },
+    {
+      "action_target_ref": "tabbackground_3",
+      "bounds": [
+        728,
+        121,
+        896,
+        203
+      ],
+      "role": "text",
+      "tap_target_ref": "tabbackground_3",
+      "target_actionable": true,
+      "target_bounds": [
+        662,
+        82,
+        962,
+        242
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "テレビ"
+    },
+    {
+      "action_target_ref": "tabbackground_4",
+      "bounds": [
+        1028,
+        121,
+        1196,
+        203
+      ],
+      "role": "text",
+      "tap_target_ref": "tabbackground_4",
+      "target_actionable": true,
+      "target_bounds": [
+        962,
+        82,
+        1262,
+        242
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "アプリ"
+    },
+    {
+      "action_target_ref": "tabbackground_5",
+      "bounds": [
+        1262,
+        122,
+        1562,
+        203
+      ],
+      "role": "text",
+      "tap_target_ref": "tabbackground_5",
+      "target_actionable": true,
+      "target_bounds": [
+        1262,
+        82,
+        1562,
+        242
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "放送中の番組"
+    },
+    {
+      "action_target_ref": "tabbackground_6",
+      "bounds": [
+        1572,
+        121,
+        1852,
+        203
+      ],
+      "role": "text",
+      "tap_target_ref": "tabbackground_6",
+      "target_actionable": true,
+      "target_bounds": [
+        1562,
+        82,
+        1862,
+        242
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "お気に入り"
+    },
+    {
+      "action_target_ref": "tabbackground_7",
+      "bounds": [
+        1872,
+        121,
+        2012,
+        203
+      ],
+      "role": "text",
+      "tap_target_ref": "tabbackground_7",
+      "target_actionable": true,
+      "target_bounds": [
+        1862,
+        82,
+        2012,
+        242
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "最近の項目"
+    },
+    {
+      "action_target_ref": "btn",
+      "bounds": [
+        170,
+        395,
+        550,
+        477
+      ],
+      "role": "text",
+      "tap_target_ref": "btn",
+      "target_actionable": true,
+      "target_bounds": [
+        170,
+        378,
+        550,
+        494
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "button",
+      "text": "アドベンチャー"
+    },
+    {
+      "action_target_ref": "btn_2",
+      "bounds": [
+        592,
+        395,
+        928,
+        477
+      ],
+      "role": "text",
+      "tap_target_ref": "btn_2",
+      "target_actionable": true,
+      "target_bounds": [
+        570,
+        378,
+        950,
+        494
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "button",
+      "text": "ファンタジー"
+    },
+    {
+      "action_target_ref": "btn_3",
+      "bounds": [
+        970,
+        395,
+        1350,
+        477
+      ],
+      "role": "text",
+      "tap_target_ref": "btn_3",
+      "target_actionable": true,
+      "target_bounds": [
+        970,
+        378,
+        1350,
+        494
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "button",
+      "text": "アニメーション"
+    },
+    {
+      "action_target_ref": "btn_4",
+      "bounds": [
+        1476,
+        395,
+        1644,
+        477
+      ],
+      "role": "text",
+      "tap_target_ref": "btn_4",
+      "target_actionable": true,
+      "target_bounds": [
+        1370,
+        378,
+        1750,
+        494
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "button",
+      "text": "ドラマ"
+    },
+    {
+      "action_target_ref": "btn_5",
+      "bounds": [
+        1876,
+        395,
+        2044,
+        477
+      ],
+      "role": "text",
+      "tap_target_ref": "btn_5",
+      "target_actionable": true,
+      "target_bounds": [
+        1770,
+        378,
+        2150,
+        494
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "button",
+      "text": "ホラー"
+    },
+    {
+      "action_target_ref": "btn_6",
+      "bounds": [
+        2221,
+        395,
+        2499,
+        477
+      ],
+      "role": "text",
+      "tap_target_ref": "btn_6",
+      "target_actionable": true,
+      "target_bounds": [
+        2170,
+        378,
+        2534,
+        494
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "button",
+      "text": "アクション"
+    },
+    {
+      "action_target_ref": "row",
+      "bounds": [
+        160,
+        560,
+        1097,
+        642
+      ],
+      "role": "text",
+      "tap_target_ref": "row",
+      "target_actionable": true,
+      "target_bounds": [
+        0,
+        520,
+        2560,
+        1020
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "ソニック × シャドウ TOKYO MISSION"
+    },
+    {
+      "action_target_ref": "row",
+      "bounds": [
+        160,
+        668,
+        2400,
+        784
+      ],
+      "role": "text",
+      "tap_target_ref": "row",
+      "target_actionable": true,
+      "target_bounds": [
+        0,
+        520,
+        2560,
+        1020
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "row",
+      "text": "ついに舞台はセガとソニックの母国である日本。闇のダークヒーロー<シャドウ>が東京・渋谷に降臨!ソニック、テイルス、ナックルズが最強ダークヒーローに立ち向かうハイスピードバトルが開幕!"
+    },
+    {
+      "action_target_ref": "movies_section_scroll_view",
+      "bounds": [
+        144,
+        1071,
+        368,
+        1125
+      ],
+      "role": "text",
+      "tap_target_ref": "movies_section_scroll_view",
+      "target_actionable": false,
+      "target_bounds": [
+        0,
+        520,
+        2560,
+        1536
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "list",
+      "text": "Choose your"
+    },
+    {
+      "action_target_ref": "movies_section_scroll_view",
+      "bounds": [
+        144,
+        1125,
+        574,
+        1201
+      ],
+      "role": "text",
+      "tap_target_ref": "movies_section_scroll_view",
+      "target_actionable": false,
+      "target_bounds": [
+        0,
+        520,
+        2560,
+        1536
+      ],
+      "target_editable": false,
+      "target_name": "",
+      "target_role": "list",
+      "text": "favourite channel"
+    }
+  ]
+}
