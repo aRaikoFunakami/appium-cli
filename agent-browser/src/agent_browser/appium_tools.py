@@ -90,7 +90,11 @@ def _summarize_args(args: dict[str, Any] | None, *, limit: int = 240) -> str:
 
 
 def _normalize_snapshot_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    if name not in {"snapshot", "web_snapshot"} or "depth" not in args:
+    if name not in {"snapshot", "web_snapshot"}:
+        return args
+
+    needs_normalize = "depth" in args or "filename" in args
+    if not needs_normalize:
         return args
 
     scope = args.get("scope")
@@ -98,13 +102,17 @@ def _normalize_snapshot_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     ref = args.get("ref")
     positional_target = target or ref
 
-    if positional_target:
-        return args
-    if scope not in (None, "", "full"):
-        return args
-
     normalized = dict(args)
-    normalized.pop("depth", None)
+
+    # Strip depth for full-page observations (keep for scoped snapshots)
+    if "depth" in normalized:
+        if not positional_target and scope in (None, "", "full"):
+            normalized.pop("depth", None)
+
+    # Strip filename: agent workflows should not write arbitrary files to cwd.
+    # Snapshot bundles are already persisted under .appium-cli/snapshots/.
+    normalized.pop("filename", None)
+
     return normalized
 
 

@@ -39,7 +39,7 @@ class TestInvokeAppiumTool:
         assert ctx.memory.tool_calls[0].ok is True
 
     @pytest.mark.asyncio
-    async def test_full_web_snapshot_depth_is_stripped(self, tmp_path) -> None:
+    async def test_full_web_snapshot_depth_and_filename_stripped(self, tmp_path) -> None:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:
             mock_call.return_value = {"ok": True, "text": "snapshot_id: web-test\n", "data": {}}
@@ -52,9 +52,23 @@ class TestInvokeAppiumTool:
         assert result.ok is True
         mock_call.assert_called_once_with(
             "web_snapshot",
-            {"scope": "full", "boxes": False, "filename": "latest"},
+            {"scope": "full", "boxes": False},
         )
         assert '"depth"' not in ctx.memory.tool_calls[0].arguments_summary
+        assert '"filename"' not in ctx.memory.tool_calls[0].arguments_summary
+
+    @pytest.mark.asyncio
+    async def test_filename_stripped_even_without_depth(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": "snapshot_id: web-test\n", "data": {}}
+            await execute_appium_tool(
+                "web_snapshot",
+                {"scope": "full", "filename": "yahoo_top.json"},
+                ctx,
+            )
+
+        mock_call.assert_called_once_with("web_snapshot", {"scope": "full"})
 
     @pytest.mark.asyncio
     async def test_full_native_snapshot_depth_is_stripped(self, tmp_path) -> None:
