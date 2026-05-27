@@ -39,6 +39,49 @@ class TestInvokeAppiumTool:
         assert ctx.memory.tool_calls[0].ok is True
 
     @pytest.mark.asyncio
+    async def test_full_web_snapshot_depth_is_stripped(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": "snapshot_id: web-test\n", "data": {}}
+            result = await execute_appium_tool(
+                "web_snapshot",
+                {"scope": "full", "depth": 1, "boxes": False, "filename": "latest"},
+                ctx,
+            )
+
+        assert result.ok is True
+        mock_call.assert_called_once_with(
+            "web_snapshot",
+            {"scope": "full", "boxes": False, "filename": "latest"},
+        )
+        assert '"depth"' not in ctx.memory.tool_calls[0].arguments_summary
+
+    @pytest.mark.asyncio
+    async def test_full_native_snapshot_depth_is_stripped(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": "snapshot_id: native-test\n", "data": {}}
+            await execute_appium_tool("snapshot", {"depth": 2, "boxes": False}, ctx)
+
+        mock_call.assert_called_once_with("snapshot", {"boxes": False})
+
+    @pytest.mark.asyncio
+    async def test_scoped_snapshot_depth_is_preserved(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {"ok": True, "text": "snapshot_id: web-test\n", "data": {}}
+            await execute_appium_tool(
+                "web_snapshot",
+                {"scope": "web_form", "depth": 2, "boxes": False},
+                ctx,
+            )
+
+        mock_call.assert_called_once_with(
+            "web_snapshot",
+            {"scope": "web_form", "depth": 2, "boxes": False},
+        )
+
+    @pytest.mark.asyncio
     async def test_blocked_tool_does_not_call_daemon(self, tmp_path) -> None:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:

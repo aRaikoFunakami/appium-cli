@@ -89,6 +89,25 @@ def _summarize_args(args: dict[str, Any] | None, *, limit: int = 240) -> str:
     return rendered if len(rendered) <= limit else rendered[:limit] + "..."
 
 
+def _normalize_snapshot_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    if name not in {"snapshot", "web_snapshot"} or "depth" not in args:
+        return args
+
+    scope = args.get("scope")
+    target = args.get("target")
+    ref = args.get("ref")
+    positional_target = target or ref
+
+    if positional_target:
+        return args
+    if scope not in (None, "", "full"):
+        return args
+
+    normalized = dict(args)
+    normalized.pop("depth", None)
+    return normalized
+
+
 def _save_screenshot_artifact(text: str, artifacts_dir: Path) -> str | None:
     try:
         payload = json.loads(text)
@@ -159,6 +178,7 @@ async def execute_appium_tool(
 ) -> ToolExecutionResult:
     """Dispatch one appium-cli tool call through guardrails and memory logging."""
 
+    args = _normalize_snapshot_args(name, args)
     cfg = context.config
     memory = context.memory
     decision = classify_tool_call(name, args)
