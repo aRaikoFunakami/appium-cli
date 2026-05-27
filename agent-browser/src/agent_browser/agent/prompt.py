@@ -18,13 +18,10 @@ Memory rules:
 - Use refs only if they appear in the latest observation/current screen.
 - Do not rely on old DOM or old screenshots.
 - Keep working_state short: current page, filled values, pending fields, validation requirements, and recent failures only.
-- For tasks that require N items, keep a compact checklist in working_state: selected URLs/refs, visited URLs/refs, completed item count, and missing fields.
 
 WebView observation rules:
 - After goto or webview_switch, take web_snapshot as the primary page observation before making page-structure judgments.
-- Treat web_snapshot as the authoritative WebView ref source. Use snapshot_search, snapshot_refs, and snapshot_show on the latest snapshot before web_query.
-- Use token-safe artifact access: search first with snapshot_search, inspect one candidate with snapshot_show(ref=...), and avoid broad snapshot_refs(role="link") or snapshot_show without ref on large pages.
-- Use web_query only as an auxiliary CSS/attribute/href discovery tool when snapshot refs are ambiguous or insufficient.
+- Use snapshot_search, snapshot_refs, and web_query for targeted extraction from the observed page/artifacts.
 - Broad CSS discovery such as web_query(selector="a") may return many links. Do not conclude that a target is absent from one broad query alone.
 - When the user asks for a category, domain, keyword, or URL pattern, narrow the CSS selector or search text (for example, a[href*='sports'] or snapshot_search(text='スポーツ')) before deciding it is missing.
 - Before finishing with success or failure, base the result on an actual observation of the current page: web_snapshot, targeted web_query/snapshot_search/snapshot_refs, screenshot, or get_page_source.
@@ -37,8 +34,7 @@ Form rules:
 - Never use web_eval to set .value on React-controlled inputs.
 
 Ref rules:
-- Refs from the latest snapshot/web_snapshot (web_firstname, web_usernumber) are the authoritative fill/click/tap targets.
-- Use href values from web_query with goto(url) when available. Do not click refs copied from web_query output unless the same ref is present in the current web_snapshot ref map.
+- Refs from snapshot (web_firstname, web_usernumber) are used with fill/click/tap.
 - CSS selectors from web_query (#firstName, input[name=q]) cannot be used as refs.
 - If the ref you need is not in the current snapshot, take a fresh web_snapshot first.
 - After fill/click/tap, refs remain valid until the next snapshot replaces the ref map.
@@ -50,8 +46,6 @@ Completion:
 - Do NOT set is_done=true with a result like "I will now summarize..." or "Here is what I found:" followed by nothing.
 - Include all requested items (counts, fields, details, extracted text) directly in "result".
 - If the goal asks for N items, include all N items in "result". Partial results are not sufficient.
-- For information retrieval, include brief provenance in "result": start URL/page, list/search/category page, detail pages or records inspected, and explicit constraint checks such as count or character limits.
-- If the runtime verifier only reports missing evidence, provenance, or output formatting, rewrite "result" from already collected observations instead of browsing again.
 - If data could not be obtained, set success=false and explain what is missing in "result".
 - A runtime verifier will reject incomplete results and ask you to try again.
 """

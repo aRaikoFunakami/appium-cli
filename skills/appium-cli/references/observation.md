@@ -29,7 +29,7 @@ appium-cli snapshot_search "Storage" --role=row
 appium-cli snapshot_refs latest --role=button
 appium-cli snapshot_show latest --ref=btn_ok
 appium-cli snapshot_show latest --artifact=meta
-appium-cli snapshot_show latest              # broad fallback; can be large
+appium-cli snapshot_show latest              # fallback; can be large
 appium-cli snapshot_show latest --artifact=full  # debugging only
 appium-cli generate_locator btn_ok
 ```
@@ -71,29 +71,14 @@ appium-cli --raw web_snapshot web_results > results.yml
 - `index` - searchable compact index.
 - `meta` - snapshot id, source, context, screen id, and artifact paths.
 
-Use `snapshot_search` before choosing targets in a large screen, then inspect likely refs with `snapshot_show --ref`. Use `snapshot_refs` only when the expected result is small, such as buttons, textboxes, rows in a small scoped snapshot, or containers.
+Use `snapshot_refs` before choosing targets in a large screen, and `snapshot_search` to find likely refs or text snippets without re-querying the device.
 
 ## Targeted artifact extraction
 
 ```bash
 appium-cli snapshot_search "Qiita"
-appium-cli snapshot_show latest --ref=web_link_qiita
-```
-
-Avoid broad extraction on large WebView, portal, or search-result pages:
-
-```bash
 appium-cli snapshot_refs latest --role=link
-appium-cli snapshot_show latest
-appium-cli web_query "a" --attrs=href,textContent --limit=50
-```
-
-Prefer token-safe targeted extraction:
-
-```bash
-appium-cli web_snapshot
-appium-cli snapshot_search "スポーツ"
-appium-cli snapshot_show latest --ref=web_link_sports
+appium-cli snapshot_show latest --ref=web_link_qiita
 ```
 
 For before/after files, compare and filter locally instead of reading both files into the model:

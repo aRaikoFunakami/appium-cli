@@ -179,7 +179,7 @@ appium-cli snapshot
 | Goal | Native context | WebView context |
 |------|---------------|-----------------|
 | Observe screen | `snapshot` | `web_snapshot` |
-| Find elements | `snapshot_search`, `snapshot_show --ref`, narrow `snapshot_refs` | `snapshot_search`, `snapshot_show --ref`, narrow `snapshot_refs`; `web_query` only for CSS/href fallback |
+| Find elements | `snapshot_refs` | `snapshot_refs latest`, `snapshot_search`, or `web_query "input,button,a"` |
 | Click | `tap <ref>` | Prefer `click web_<ref>` |
 | Type text | `type_text <ref> "text"` | `fill web_<ref> "text"` |
 | Navigate | — | `goto "https://..."` |
