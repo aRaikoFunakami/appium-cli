@@ -166,6 +166,11 @@ class TestSchemaStructure:
         assert text.parameters.get("required", []) == []
         assert text.parameters["properties"]["limit"]["default"] == 6000
 
+    def test_press_key_schema_exposes_webview_escape(self) -> None:
+        tool = get_tool("press_key")
+        assert tool is not None
+        assert "escape" in tool.parameters["properties"]["key"]["enum"]
+
 
 class TestKnownDaemonTools:
     def test_includes_base_tools(self) -> None:

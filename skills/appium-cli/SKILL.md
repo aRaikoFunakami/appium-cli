@@ -189,7 +189,16 @@ appium-cli tabs switch --index 1            # switch to tab
 appium-cli tabs new --url "https://example.com"  # open new tab (embedded WebView only)
 ```
 
-Inputs that depend on key-by-key events may need `--slowly`. Slow typing only enters text; it may or may not open transient UI such as suggestions, combobox menus, validation popovers, or overlays:
+After any `fill`, **always take a `web_snapshot` before touching the next element or clicking a submit button**. Autocomplete suggestions, station dropdowns, or validation overlays may appear from regular `fill` (not just `--slowly`) — the previous snapshot is stale the moment transient UI may have changed the DOM. This is especially critical for station/address/location inputs (transit search, maps, etc.).
+
+```bash
+appium-cli fill web_via "品川"
+appium-cli press_key escape                       # close autocomplete/dropdown if the typed value is enough
+appium-cli web_snapshot                          # always: check for autocomplete
+appium-cli click web_<matching_suggestion_ref>   # alternatively confirm if a visible option must be selected
+```
+
+Use `--slowly` when a site requires key-by-key input events (React-controlled inputs, search-as-you-type, comboboxes). The post-fill `web_snapshot` rule applies equally with or without `--slowly`:
 
 ```bash
 appium-cli fill web_subjects "Comp" --slowly
@@ -197,7 +206,7 @@ appium-cli web_snapshot
 appium-cli click web_option_computer_science
 ```
 
-After `fill --slowly`, stabilize the UI before interacting with another field or button: run `web_snapshot` if the page may have changed, click a relevant suggestion/option if one is visible, or dismiss an unneeded dropdown/overlay with `press_key Escape`. If nothing transient is visible, continue normally. Do not use `web_eval` to set `.value` directly on controlled inputs — React and similar frameworks may ignore DOM-level value changes.
+Do not use `web_eval` to set `.value` directly on controlled inputs — React and similar frameworks may ignore DOM-level value changes.
 
 Targeting layers:
 
@@ -270,7 +279,7 @@ If the package id is unknown, use `appium-cli list_apps` to discover it (require
 - **Use `go_back`, `go_forward`, `reload`** for browser navigation — not `press_key back`.
 - **Use `tabs list`, `tabs switch`, `tabs new`, `tabs close`** for multi-tab workflows.
 - After any navigation (`goto`, `go_back`, `go_forward`, `reload`), take a new `web_snapshot`; old refs are stale.
-- After `fill --slowly`, check and stabilize transient UI before the next interaction when needed. If a later element is not clickable, suspect an open dropdown/overlay before trying other recovery. Do not bypass form input by assigning values with `web_eval`.
+- **After every `fill`, take a `web_snapshot` before the next interaction.** Autocomplete suggestions or overlays can appear from any `fill` (not just `--slowly`) — station/address/location inputs are especially prone. If a suggestion is visible, click it to confirm. If none is needed, dismiss with `press_key Escape`. Do not click the next field or a submit button while a dropdown or overlay is still open. Do not bypass form input by assigning values with `web_eval`.
 
 ### Inspection-only shortcut: `web_form_url`
 

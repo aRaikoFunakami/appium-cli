@@ -214,7 +214,7 @@ _add("type_text", "Type text into an element.",
          "slowly": _bool_param("Type one character at a time for autocomplete/React-Select inputs."),
      }, required=["ref", "text"]))
 
-_add("fill", "Web-friendly alias for type_text.",
+_add("fill", "Web-friendly alias for type_text. In multi-field station/address/location forms, close autocomplete overlays before the next field or click.",
      parameters=_schema({
          "ref": _str_param("Element ref of the input field."),
          "text": _str_param("Text to type."),
@@ -312,8 +312,8 @@ for _dir in ("up", "down", "left", "right"):
          }),
          inject_args={"direction": _dir})
 
-_add("press_key", "Press a key (back, home, enter, delete, tab).",
-     parameters=_schema({"key": _str_param("Key name.", enum=["back", "home", "enter", "delete", "tab"])},
+_add("press_key", "Press a key. Use escape in WebView to dismiss autocomplete/dropdown overlays.",
+     parameters=_schema({"key": _str_param("Key name.", enum=["back", "home", "enter", "delete", "tab", "escape"])},
                         required=["key"]))
 
 _add("wait", "Wait for N seconds.",

@@ -88,25 +88,41 @@ appium-cli web_query "input,textarea,select" --attrs=name,type,placeholder,aria-
 appium-cli fill web_search "query"
 ```
 
-## Slow typing and transient UI
+## Fill and transient UI (autocomplete, suggestions, dropdowns)
 
-Use `--slowly` when a site needs real key-by-key input events (autocomplete, comboboxes, validation, search-as-you-type, React-controlled inputs, etc.):
+After `fill`, transient UI such as autocomplete suggestions, station/address dropdowns, or validation overlays may appear **regardless of whether `--slowly` is used**. The site decides when to fire autocomplete — many sites do so on every `input` event, not only on keystroke-by-keystroke typing.
+
+**Always take `web_snapshot` after `fill` before interacting with the next element or clicking a submit button.** The previous snapshot is stale as soon as transient UI may have appeared; acting on stale refs leaves a suggestion open and the input unconfirmed.
+
+Autocomplete is especially common on:
+- Station / transit / route search fields (Yahoo!乗換案内, Navitime, Google Maps, etc.)
+- Address / location search inputs
+- Search-as-you-type fields, React-controlled inputs, comboboxes
+
+Use `--slowly` when the site requires key-by-key input events to fire (React-controlled inputs, inputs that do not fire `change` on bulk send\_keys). `--slowly` does not change the rule — take `web_snapshot` after either form.
 
 ```bash
+appium-cli fill web_departure "秋葉原"
+appium-cli press_key escape             # station/address/location inputs often leave autocomplete open
+appium-cli web_snapshot                 # always: check for suggestions before moving on
+appium-cli fill web_destination "横浜"
+appium-cli press_key escape
 appium-cli web_snapshot
-appium-cli fill web_search "query" --slowly
+appium-cli fill web_via "品川"
+appium-cli press_key escape
+appium-cli web_snapshot                 # suggestions may appear here
+appium-cli click web_<matching_suggestion_ref>   # confirm if visible
+appium-cli click web_search_button
 ```
-
-After slow typing, the site may show suggestions, dropdowns, validation UI, or nothing at all. Before moving to another field or button, observe and stabilize the UI when needed. Do not use `web_eval` to set values directly on controlled inputs.
 
 ### If suggestions/options appear
 
 Click the matching option ref to confirm the value and close the transient UI before continuing:
 
 ```bash
-appium-cli fill web_first_input "first value" --slowly
+appium-cli fill web_via_input "品川"
 appium-cli web_snapshot
-appium-cli click web_<matching_first_option_ref>
+appium-cli click web_<matching_suggestion_ref>   # e.g. web_li_shinagawa or similar
 
 appium-cli fill web_second_input "second value" --slowly
 appium-cli web_snapshot
@@ -118,13 +134,13 @@ appium-cli click web_<matching_second_option_ref>
 Dismiss the dropdown/overlay before moving on:
 
 ```bash
-appium-cli fill web_first_input "first value" --slowly
+appium-cli fill web_first_input "first value"
 appium-cli web_snapshot
-appium-cli press_key Escape
+appium-cli press_key escape
 
-appium-cli fill web_second_input "second value" --slowly
+appium-cli fill web_second_input "second value"
 appium-cli web_snapshot
-appium-cli press_key Escape
+appium-cli press_key escape
 ```
 
 ### If no transient UI is visible
@@ -132,12 +148,12 @@ appium-cli press_key Escape
 Continue normally:
 
 ```bash
-appium-cli fill web_first_input "first value" --slowly
+appium-cli fill web_first_input "first value"
 appium-cli web_snapshot
-appium-cli fill web_second_input "second value" --slowly
+appium-cli fill web_second_input "second value"
 ```
 
-Do not start interacting with another element while a previous dropdown or overlay is still open. If the next element is not clickable after slow typing, inspect with `web_snapshot` and resolve the overlay before retrying.
+Do not start interacting with another element while a previous dropdown or overlay is still open. If the next element is not clickable after fill, inspect with `web_snapshot` and resolve the overlay before retrying.
 
 For React Select / autocomplete inputs, this commonly looks like:
 

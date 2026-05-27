@@ -42,6 +42,12 @@ def test_system_prompt_mentions_single_input_submit_rule() -> None:
     assert "use submit=true" in prompt
 
 
+def test_system_prompt_mentions_station_autocomplete_escape_rule() -> None:
+    prompt = build_system_prompt()
+    assert "station, address, or location field" in prompt
+    assert 'press_key(key="escape")' in prompt
+
+
 def test_system_prompt_mentions_snapshot_depth_guidance() -> None:
     prompt = build_system_prompt()
     assert "Do not use depth for normal full-page observations" in prompt

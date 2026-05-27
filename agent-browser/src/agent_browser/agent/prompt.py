@@ -32,10 +32,13 @@ WebView observation rules:
 - Before finishing with success or failure, base the result on an actual observation of the current page: web_snapshot, targeted web_query/snapshot_search/snapshot_refs, screenshot, or get_page_source.
 
 Form rules:
-- For simple inputs, fill and continue.
-- For single-input forms (search bars, URL bars, filter boxes), use submit=true so the input is applied.
+- For simple single-input forms only (search bars, URL bars, filter boxes), use submit=true so the input is applied.
 - Never use submit=true for intermediate fields in a multi-field form.
-- For React-Select/autocomplete/combobox: use fill(ref, text, slowly=true), then web_snapshot to see suggestions, then click the matching option.
+- For multi-field forms, fill each field ONE AT A TIME. After each fill, take web_snapshot before filling the next field or clicking anything.
+- After filling ANY station, address, or location field, call press_key(key="escape") IMMEDIATELY to dismiss any open autocomplete dropdown, THEN proceed to the next field or action. The typed value stays in the field — escape only closes the transient suggestion UI.
+- Before clicking any button or checkbox after completing all field fills, call press_key(key="escape") once more to ensure no autocomplete is still open. A hidden autocomplete dropdown will intercept clicks on other elements.
+- If a click fails with "element click intercepted", call press_key(key="escape") to close any open dropdown, then retry the click.
+- For React-Select/autocomplete/combobox where key-by-key events are required AND you must select a specific option from the list: use fill(ref, text, slowly=true), then web_snapshot to see suggestions, then click the matching option. Skip press_key(key="escape") in this case — clicking the option closes the dropdown.
 - Never use web_eval to set .value on React-controlled inputs.
 
 Ref rules:

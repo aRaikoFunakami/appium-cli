@@ -154,7 +154,7 @@ Click and read using refs:
 5. web_snapshot({})
 6. snapshot_search({"text": "expected text"}) or assert_visible({"text": "expected text"})
 
-Search or submit a simple form:
+Search or submit a simple single-input form:
 1. goto({"url": "https://example.com"})
 2. web_snapshot({})
 3. snapshot_refs({"snapshot_id": "latest", "role": "textbox"}) or web_query({"selector": "input,textarea,button", "attrs": "name,type,placeholder,aria-label", "limit": 30})
@@ -162,11 +162,20 @@ Search or submit a simple form:
 5. web_snapshot({})
 6. snapshot_search({"text": "query"}) or web_query({"selector": "a,article,h1,h2,h3", "attrs": "href,textContent", "limit": 30})
 
-Forms with suggestions, comboboxes, or React-controlled fields:
+Multi-field station/address/location forms:
+1. web_snapshot({})
+2. snapshot_refs({"snapshot_id": "latest", "role": "textbox"})
+3. fill({"ref": "web_<first input ref>", "text": "first value", "submit": false})
+4. press_key({"key": "escape"}) to close any autocomplete/dropdown before the next field.
+5. web_snapshot({})
+6. Repeat fill -> press_key(escape) -> web_snapshot for each station/address/location field.
+7. Before clicking checkboxes/buttons after field entry, press_key({"key": "escape"}) once more if any autocomplete may still be open.
+
+Forms where a visible suggestion/option must be selected:
 1. web_snapshot({})
 2. fill({"ref": "web_<input ref>", "text": "partial text", "slowly": true})
 3. web_snapshot({})
-4. click({"ref": "web_<matching option ref>"}) or press_key({"key": "Escape"}) to dismiss an unneeded overlay.
+4. click({"ref": "web_<matching option ref>"}) or press_key({"key": "escape"}) to dismiss an unneeded overlay.
 5. Continue only after the transient UI is stable.
 Never use web_eval to set input values; use fill so browser/framework input events fire.
 For file inputs, use file_upload({"ref": "web_<file input ref>", "path": "/path/to/file"}) instead of typing a path manually.

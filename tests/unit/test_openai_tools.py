@@ -129,7 +129,7 @@ class TestGetToolSkillPrompt:
         assert "Native UI: observe, find refs, act" in prompt
         assert 'snapshot_refs({"snapshot_id": "latest", "role": "button"})' in prompt
         assert 'tap({"ref": "<button ref>"})' in prompt
-        assert "Search or submit a simple form" not in prompt
+        assert "Search or submit a simple single-input form" not in prompt
 
     def test_includes_any_text_or_guidance(self) -> None:
         prompt = get_tool_skill_prompt()
@@ -139,8 +139,10 @@ class TestGetToolSkillPrompt:
 
         self._mock_successful_call("webview_switch", {})
         prompt = get_tool_skill_prompt()
-        assert "Search or submit a simple form" in prompt
+        assert "Search or submit a simple single-input form" in prompt
         assert 'fill({"ref": "web_<search input ref>", "text": "query", "submit": true})' in prompt
+        assert "Multi-field station/address/location forms" in prompt
+        assert 'press_key({"key": "escape"})' in prompt
         assert "file_upload" in prompt
 
     def test_prompt_mode_switches_to_webview_after_goto(self, monkeypatch) -> None:
