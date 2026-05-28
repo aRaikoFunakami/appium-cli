@@ -1,41 +1,51 @@
 # agent-browser
 
-Production-oriented mobile browser automation built on the [`appium-cli`](../README.md)
-tool surface, with an optional OpenAI-backed legacy ReAct controller.
+Production-oriented mobile browser automation built on the OpenAI Responses API
+and the [`appium-cli`](../README.md) tool surface.
 
 ## Architecture
 
-`agent-browser` defaults to a **structured Appium controller** that compiles the
-user goal into ordered mandatory steps, keeps a snapshot-backed world model, and
-uses deterministic policy/planning/recovery. The legacy OpenAI ReAct loop is
-still available via `--controller=react`.
+`agent-browser` runs a **single custom ReAct Browser Agent** with rich tools
+rather than a chain of Planner / Observer / Executor / Verifier agents. The
+agent rebuilds a minimal prompt every iteration from browser-operation state,
+with safety enforced at the tool boundary.
 
-See [agent-browser loop architecture](../docs/agent-browser-loop.md) for the
-full module diagram, data flow, sequence diagrams, design trade-offs, and
-implementation map.
-
-```mermaid
-flowchart TD
-    Goal["User goal"] --> Config["load config"]
-    Config --> Memory["load JSONL episodic memory"]
-    Memory --> Session["start fresh appium-cli session"]
-    Session --> Controller["structured controller"]
-    Controller --> Compiler["TaskCompiler"]
-    Controller --> World["WorldModel"]
-    Controller --> Policy["PolicyEngine"]
-    Controller --> Planner["Planner"]
-    Controller --> Executor["Executor"]
-    Controller --> Recovery["RecoveryManager"]
-    Controller --> Result["TaskResult"]
+```
+User goal
+  │
+  ▼
+load config (.env -> env vars override)
+  │
+  ▼
+load JSONL episodic memory (hints from past runs)
+  │
+  ▼
+ensure appium-cli session daemon is healthy (reuse or start)
+  │
+  ▼
+create custom ReAct loop
+  │ tools: 70+ appium-cli tools (Responses API function schemas)
+  │ prompt: goal + current screen + working_state + last 5 step lines
+  │ completion: structured AgentBrain {is_done, result}
+   ▼
+Responses API loop
+   ├─ model picks tools and arguments
+   ├─ executor classifies safety BEFORE talking to the daemon
+   ├─ executor calls appium_cli.openai_tools.call_tool()
+   ├─ screenshot paths from appium-cli are reused, base64 stripped from logs
+   ├─ raw function_call/reasoning items are discarded after each step
+   └─ latest observation overwrites old screen state
+  │
+  ▼
+TaskResult { success, title, url, summary, tool_calls, retries, artifacts }
 ```
 
 ### Why single-agent?
 
 A previous multi-agent prototype required 6-8 LLM API calls per browser step
-because of orchestrator/handoff overhead. The current default folds planning,
-observation, policy, recovery, and verification into a deterministic structured
-controller, while the legacy OpenAI ReAct loop remains available with
-`--controller=react`.
+because of orchestrator/handoff overhead. The v2 design folds planning,
+observation and verification into a custom ReAct loop while avoiding SDK
+history accumulation. Only browser-operation state is sent to the model.
 
 ## Prerequisites
 
@@ -49,8 +59,7 @@ You must have:
 - Android emulator or physical device connected via `adb`.
 - Parent `appium-cli` package installed (this project depends on it via the
   local editable path in `pyproject.toml`).
-- `OPENAI_API_KEY` set in environment or `.env` only when using
-  `--controller=react` or future LLM-assisted disambiguation.
+- `OPENAI_API_KEY` set in environment or `.env`.
 
 ## Install
 
@@ -79,12 +88,6 @@ uv run agent-browser --json "Open https://example.com and report the page title"
 
 The CLI prints structured progress logs to stderr (tool calls, durations,
 guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
-
-The final result always includes billing visibility. Structured runs that make
-no LLM calls report `calls=0`, `tokens=0`, and `$0.000000`. LLM-backed runs show
-each model invocation and the final total. Per-tool token rows are estimates of
-how much tool payload text was included in a later LLM input; the API-provided
-per-call totals remain the source of truth for billable usage.
 
 ## Safety policy
 
