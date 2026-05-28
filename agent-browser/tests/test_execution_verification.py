@@ -154,3 +154,35 @@ async def test_favorite_tap_without_visible_diff_defers_verification(tmp_path) -
     assert outcome.ok is True
     assert outcome.effect_observed is True
     assert outcome.diff_summary == "favorite tap accepted; visible state verification deferred"
+
+
+@pytest.mark.asyncio
+async def test_tab_tap_without_visible_diff_is_accepted(tmp_path) -> None:
+    snapshots = {
+        "before": _snapshot("before"),
+        "after": _snapshot("after"),
+    }
+    action = PlannedAction(
+        tool="tap",
+        args={"ref": "tabbtn_2"},
+        rationale="test",
+        expected_effect="tab_selected",
+        verify_with="snapshot_diff",
+    )
+    executor = Executor(
+        context=_ctx(tmp_path),
+        world=WorldModel(),
+        snapshot_loader=lambda snapshot_id: snapshots[snapshot_id],
+    )
+
+    with patch("agent_browser.controller.executor.execute_appium_tool", new=AsyncMock()) as mock_tool:
+        mock_tool.side_effect = [
+            _result("snapshot", "snapshot_id: before\n"),
+            _result("tap", "OK"),
+            _result("snapshot", "snapshot_id: after\n"),
+        ]
+        outcome = await executor.execute(action)
+
+    assert outcome.ok is True
+    assert outcome.effect_observed is True
+    assert outcome.diff_summary == "tab tap accepted; target may already be selected"

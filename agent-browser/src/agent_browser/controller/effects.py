@@ -37,6 +37,11 @@ def verify_effect(
             summary=_diff_summary(diff) if observed else "no visible movement detected",
         )
     if action.verify_with == "snapshot_diff":
+        if action.expected_effect == "tab_selected" and not diff.has_changes:
+            return EffectReport(
+                observed=True,
+                summary="tab tap accepted; target may already be selected",
+            )
         return EffectReport(
             observed=diff.has_changes,
             summary=_diff_summary(diff) if diff.has_changes else "no snapshot diff detected",
