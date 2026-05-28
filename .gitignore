@@ -40,3 +40,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# prompts
+agent-browser/.prompts
