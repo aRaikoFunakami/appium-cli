@@ -39,10 +39,8 @@ Your agent
 `call_tool()` still requires an active `appium-cli` session daemon. Start one
 before the model loop and stop it after the task.
 
-For a production-oriented example of a full task loop, see
-[agent-browser loop architecture](agent-browser-loop.md). It documents the
-default structured controller, the legacy ReAct controller, module boundaries,
-data flow, recovery, and verification patterns.
+For a production-oriented example of a full ReAct task loop, see
+[agent-browser loop architecture](agent-browser-loop.md).
 
 ## 2. Prerequisites
 
@@ -371,10 +369,6 @@ Recommended model-loop settings:
 - set `parallel_tool_calls=False`
 - execute returned tool calls in order defensively
 - keep only current operation state, not unbounded raw history
-
-For newer agents, prefer the structured-controller pattern documented in
-[agent-browser loop architecture](agent-browser-loop.md) when a task can be
-compiled into ordered steps over snapshot-backed UI state.
 
 ## 6. Minimal Chat Completions example
 
