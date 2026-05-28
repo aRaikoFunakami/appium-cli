@@ -1244,15 +1244,8 @@ def test_refresh_native_snapshot_via_fake_driver(monkeypatch, tmp_path):
     out = observation.snapshot()
     assert "snapshot_id:" in out
     assert "artifacts:" in out
-    # Default native snapshot now inlines the actionable_tree for one-call ergonomics.
-    assert "actionable_tree:" in out
-    assert "[ref:ok]" in out
+    assert "[ref:ok]" not in out
     assert "screen_id:" in out
-
-    # --no-tree opt-out suppresses the inlined actionable_tree.
-    out_no_tree = observation.snapshot(no_tree=True)
-    assert "actionable_tree:" not in out_no_tree
-    assert "[ref:ok]" not in out_no_tree
     latest = json.loads((tmp_path / "snapshots" / "latest.json").read_text(encoding="utf-8"))
     compact = (tmp_path / "snapshots" / f"{latest['snapshot_id']}.compact.yml").read_text(encoding="utf-8")
     refs = json.loads((tmp_path / "snapshots" / f"{latest['snapshot_id']}.refs.json").read_text(encoding="utf-8"))

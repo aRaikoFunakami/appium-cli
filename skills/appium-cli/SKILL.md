@@ -39,7 +39,7 @@ appium-cli session start
 appium-cli session stop
 ```
 
-Default `snapshot` output for native context bundles metadata + artifact links **and** an inlined `actionable_tree` block, so you can usually choose your next ref without an extra `snapshot_actionable_tree` call. `web_snapshot` returns metadata + artifact links only. Full trees live in files under `.appium-cli/snapshots/`. Use `snapshot_actionable_tree` to re-render the cached tree (e.g. after detecting staleness), and `snapshot_search`, paginated `web_refs`, or `snapshot_show --ref` for targeted detail. Pass `--no-tree` to suppress the inlined tree when piping/diffing metadata.
+Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. For native screens with tabs, menus, lists, or duplicate labels, inspect the operable hierarchy with `snapshot_actionable_tree` before tapping. For other targeted lookups, use `snapshot_search`, paginated `web_refs`, or `snapshot_show --ref`.
 
 ## Core workflow
 
@@ -47,8 +47,8 @@ The command set you use depends on the current context. Always match commands to
 
 ### Native context (default)
 
-1. Observe: `appium-cli snapshot` (output already includes the operable `actionable_tree`).
-2. Re-render the cached tree if needed: `snapshot_actionable_tree` (e.g. after a positional gesture that may have invalidated refs).
+1. Observe: `appium-cli snapshot`.
+2. Understand operable structure: `snapshot_actionable_tree` when the screen has tabs, menus, lists, duplicate labels, or ambiguous regions.
 3. Extract detail if needed: `snapshot_search`, `web_refs`, or `snapshot_show --ref`.
 4. Act: `tap <ref>`, `type_text <ref> <text>`, `scroll_down [ref]`.
 5. Observe again after actions that may change the screen.
@@ -95,9 +95,8 @@ diff before.yml after.yml | grep -E "Qiita|検索|title|url|ref:"
 ## Observation commands
 
 ```bash
-appium-cli snapshot                         # native metadata + artifacts + actionable_tree
+appium-cli snapshot                         # native metadata + artifacts
 appium-cli snapshot main_list               # element-scoped native snapshot
-appium-cli snapshot --no-tree               # suppress inlined actionable_tree
 appium-cli web_snapshot                     # WebView metadata + artifacts
 appium-cli web_snapshot web_form            # element-scoped DOM snapshot
 appium-cli web_text                         # readable WebView page/article text
@@ -106,7 +105,7 @@ appium-cli web_eval "return Array.from(document.querySelectorAll('a[href*=\"/art
 appium-cli --raw snapshot > screen.yml      # full tree for piping/diffing
 appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 
-appium-cli snapshot_actionable_tree         # re-render cached native operable hierarchy
+appium-cli snapshot_actionable_tree         # native operable UI hierarchy
 appium-cli snapshot_search "Storage" --role=row      # search saved artifact/index
 appium-cli snapshot_search "ログイン" --or-text Login --or-text "Sign in"  # OR search
 appium-cli web_refs latest --role=button        # list refs, paginated by default
@@ -128,7 +127,8 @@ appium-cli get_page_source                  # token-heavy diagnostic escape hatc
 For duplicate native labels such as a main tab and sub-tab both named "アプリ":
 
 ```bash
-appium-cli snapshot           # actionable_tree already inlined in output
+appium-cli snapshot
+appium-cli snapshot_actionable_tree
 appium-cli tap tabbtn_2
 appium-cli snapshot
 ```
