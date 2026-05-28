@@ -466,6 +466,32 @@ def test_snapshot_actionable_tree_webview_message():
     assert "WebView snapshots use the DOM tree" in out
 
 
+def test_snapshot_actionable_tree_warns_when_stale():
+    state.current_snapshot = _build_duplicate_app_tabs_snapshot()
+    state.ref_resolver.clear_stale()
+    state.ref_resolver.mark_stale(
+        getattr(state.current_snapshot, "context", state.current_context),
+        "scroll_up",
+        ref="movies_section",
+    )
+    try:
+        out = observation.snapshot_actionable_tree()
+        assert "WARNING:" in out
+        assert "scroll_up" in out
+        assert "snapshot()" in out
+    finally:
+        state.ref_resolver.clear_stale()
+
+
+def test_snapshot_actionable_tree_no_warning_when_fresh():
+    state.current_snapshot = _build_duplicate_app_tabs_snapshot()
+    state.ref_resolver.clear_stale()
+
+    out = observation.snapshot_actionable_tree()
+
+    assert "WARNING:" not in out
+
+
 def test_snapshot_search_uses_artifacts_without_current_snapshot(monkeypatch, request):
     _install_snapshot_artifacts(monkeypatch, request)
     state.current_snapshot = None

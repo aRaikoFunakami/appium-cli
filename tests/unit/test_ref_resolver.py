@@ -94,6 +94,7 @@ class TestRefResolverResolution:
 
         driver = MagicMock()
         el = _mock_element()
+        driver.find_elements.return_value = [el]
         driver.find_element.return_value = el
 
         result = resolver.resolve("btn", driver)
@@ -112,6 +113,7 @@ class TestRefResolverResolution:
 
         driver = MagicMock()
         wrong_el = _mock_element(x=0, y=0, w=50, h=50)
+        driver.find_elements.return_value = [wrong_el]
         driver.find_element.return_value = wrong_el
 
         result = resolver.resolve("btn", driver)
@@ -127,6 +129,7 @@ class TestRefResolverResolution:
 
         driver = MagicMock()
         el = _mock_element()
+        driver.find_elements.return_value = [el]
         driver.find_element.return_value = el
 
         result = resolver.resolve("[ref:btn]", driver)
@@ -145,6 +148,7 @@ class TestRefResolverResolution:
 
         driver = MagicMock()
         wrong_el = _mock_element(x=0, y=0, w=50, h=50)
+        driver.find_elements.return_value = [wrong_el]
         driver.find_element.return_value = wrong_el
 
         result = resolver.resolve("snap-current:btn", driver)
@@ -161,6 +165,7 @@ class TestRefResolverResolution:
         resolver = RefResolver()
         driver = MagicMock()
         el = _mock_element()
+        driver.find_elements.return_value = [el]
         driver.find_element.return_value = el
 
         result = resolver.resolve("snap-latest:btn", driver)
@@ -441,6 +446,134 @@ class TestRefResolverDuplicateIdCandidates:
         result = resolver.resolve("web_query_input_2", driver)
         assert result == el2
         assert not isinstance(result, _CoordinateElement)
+
+
+class TestRefResolverStaleBehavior:
+    def _make_native_entry_with_id(self):
+        entry = _make_entry(
+            bounds=(100, 200, 300, 400),
+            strategies=[
+                LocatorStrategy(by="id", value="com.example:id/btn"),
+                LocatorStrategy(by="coordinates", value="200,300"),
+            ],
+        )
+        entry.context = "NATIVE_APP"
+        return entry
+
+    def test_mark_stale_and_is_stale(self):
+        resolver = RefResolver()
+        assert not resolver.is_stale("NATIVE_APP")
+        resolver.mark_stale("NATIVE_APP", "scroll_up", ref="container")
+        assert resolver.is_stale("NATIVE_APP")
+        assert "scroll_up" in resolver.stale_reason("NATIVE_APP")
+        assert "container" in resolver.stale_reason("NATIVE_APP")
+
+    def test_register_all_clears_stale(self):
+        resolver = RefResolver()
+        resolver.mark_stale("NATIVE_APP", "scroll_up")
+        resolver.register_all({"btn": _make_entry()})
+        assert not resolver.is_stale("NATIVE_APP")
+
+    def test_register_context_clears_only_that_context(self):
+        resolver = RefResolver()
+        resolver.mark_stale("NATIVE_APP", "scroll_up")
+        resolver.mark_stale("CHROMIUM", "scroll_up")
+        resolver.register_context("CHROMIUM", {})
+        assert resolver.is_stale("NATIVE_APP")
+        assert not resolver.is_stale("CHROMIUM")
+
+    def test_clear_resets_stale(self):
+        resolver = RefResolver()
+        resolver.mark_stale("NATIVE_APP", "scroll_up")
+        resolver.clear()
+        assert not resolver.is_stale("NATIVE_APP")
+
+    def test_resolve_skips_coordinates_when_stale(self):
+        resolver = RefResolver()
+        entry = self._make_native_entry_with_id()
+        resolver.register_all({"favoriteicon": entry})
+        resolver.mark_stale("NATIVE_APP", "scroll_up", ref="movies_section")
+
+        driver = MagicMock()
+        # id strategy returns a wrong-bounds element (post-scroll, the element
+        # at this resource-id is now somewhere else)
+        wrong = _mock_element(x=0, y=0, w=10, h=10)
+        driver.find_elements.return_value = [wrong]
+        driver.find_element.return_value = wrong
+
+        with pytest.raises(ElementNotFoundError) as exc:
+            resolver.resolve("favoriteicon", driver)
+
+        msg = str(exc.value)
+        assert "stale" in msg.lower()
+        assert "snapshot()" in msg
+        assert "scroll_up" in msg
+        # coordinates strategy must have been skipped explicitly
+        assert "skipped (snapshot is stale)" in msg
+
+    def test_verify_bounds_rejects_coordinate_element_when_stale(self):
+        resolver = RefResolver()
+        coord = _CoordinateElement(200, 300, MagicMock())
+        assert resolver._verify_bounds(coord, (100, 200, 300, 400), stale=False) is True
+        assert resolver._verify_bounds(coord, (100, 200, 300, 400), stale=True) is False
+
+    def test_verify_bounds_returns_false_on_exception(self):
+        resolver = RefResolver()
+        broken = MagicMock()
+        # accessing .location raises
+        type(broken).location = property(lambda self: (_ for _ in ()).throw(RuntimeError("stale element")))
+        assert resolver._verify_bounds(broken, (100, 200, 300, 400)) is False
+
+
+class TestRefResolverNativeIdEnumeration:
+    def test_native_id_enumerates_and_picks_by_bounds(self):
+        from appium.webdriver.common.appiumby import AppiumBy
+
+        resolver = RefResolver()
+        # Multiple elements share the same resource-id (e.g. RecyclerView rows)
+        entry = _make_entry(
+            bounds=(434, 628, 508, 702),
+            strategies=[
+                LocatorStrategy(by="id", value="com.example:id/favoriteicon"),
+            ],
+        )
+        resolver.register_all({"favoriteicon": entry})
+
+        driver = MagicMock()
+        wrong1 = _mock_element(x=434, y=1372, w=74, h=74)  # first match, but wrong bounds
+        right = _mock_element(x=434, y=628, w=74, h=74)
+        wrong2 = _mock_element(x=434, y=2116, w=74, h=74)
+        driver.find_elements.return_value = [wrong1, right, wrong2]
+
+        result = resolver.resolve("favoriteicon", driver)
+        assert result is right
+        # find_elements should be called with id strategy
+        driver.find_elements.assert_called()
+        called_by = driver.find_elements.call_args[0][0]
+        assert called_by == AppiumBy.ID
+
+    def test_native_accessibility_id_enumerates(self):
+        from appium.webdriver.common.appiumby import AppiumBy
+
+        resolver = RefResolver()
+        entry = _make_entry(
+            bounds=(434, 628, 508, 702),
+            strategies=[
+                LocatorStrategy(by="accessibility_id", value="お気に入り"),
+            ],
+        )
+        resolver.register_all({"favoriteicon": entry})
+
+        driver = MagicMock()
+        wrong = _mock_element(x=0, y=0, w=10, h=10)
+        right = _mock_element(x=434, y=628, w=74, h=74)
+        driver.find_elements.return_value = [wrong, right]
+
+        result = resolver.resolve("favoriteicon", driver)
+        assert result is right
+        driver.find_elements.assert_called()
+        called_by = driver.find_elements.call_args[0][0]
+        assert called_by == AppiumBy.ACCESSIBILITY_ID
 
 
 class TestRefParsing:

@@ -21,6 +21,22 @@ from appium_cli.utils.errors import AppiumCliError
 from appium_cli.utils.exit_codes import FEATURE_NOT_ENABLED
 
 
+_STALE_HINT = "snapshot_stale: true (call snapshot() before ref-based actions)"
+
+
+def _mark_positional_stale(action: str, ref: str, ref_context_used: bool) -> None:
+    """Mark the appropriate context as positionally stale after a gesture.
+
+    If the gesture targeted a specific ref, the ref's context is invalidated;
+    otherwise the driver's current context is invalidated.
+    """
+    if ref and ref_context_used:
+        context = _ref_context(ref)
+    else:
+        context = state.current_context
+    state.ref_resolver.mark_stale(context, action, ref=ref)
+
+
 _SCROLL_DIRECTION_REVERSE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 _KEYCODE_MAP = {"back": 4, "home": 3, "enter": 66, "delete": 67, "tab": 61}
 
@@ -451,8 +467,8 @@ def scroll(direction: str, ref: str = "", percent: float = 0.8) -> str:
             params.update(_screen_rect())
         can_scroll_more = _require_driver().execute_script("mobile: scrollGesture", params)
         time.sleep(0.5)
-        ctx = _ref_context(ref) if ref else state.current_context
-        return _ok(f"OK\ncan_scroll_more: {can_scroll_more}")
+        _mark_positional_stale("scroll", ref, ref_context_used=bool(ref))
+        return _ok(f"OK\ncan_scroll_more: {can_scroll_more}\n{_STALE_HINT}")
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
@@ -486,8 +502,8 @@ def _web_scroll(direction: str, ref: str, percent: float) -> str:
         driver.execute_script(f"window.scrollBy({dx}, {dy})")
 
     time.sleep(0.5)
-    ctx = _ref_context(ref) if ref else state.current_context
-    return _ok()
+    _mark_positional_stale("scroll", ref, ref_context_used=bool(ref))
+    return _ok(f"OK\n{_STALE_HINT}")
 
 
 def swipe(direction: str, ref: str = "", percent: float = 0.8) -> str:
@@ -503,7 +519,8 @@ def swipe(direction: str, ref: str = "", percent: float = 0.8) -> str:
             params.update(_screen_rect())
         _require_driver().execute_script("mobile: swipeGesture", params)
         time.sleep(0.5)
-        return _ok()
+        _mark_positional_stale("swipe", ref, ref_context_used=bool(ref))
+        return _ok(f"OK\n{_STALE_HINT}")
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
@@ -610,7 +627,8 @@ def drag(ref: str, end_x: int, end_y: int, speed: int | None = None) -> str:
             params["speed"] = speed
         _require_driver().execute_script("mobile: dragGesture", params)
         time.sleep(0.5)
-        return _ok()
+        _mark_positional_stale("drag", ref, ref_context_used=True)
+        return _ok(f"OK\n{_STALE_HINT}")
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:
@@ -635,7 +653,8 @@ def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
             params.update(_screen_rect())
         can_scroll_more = _require_driver().execute_script("mobile: flingGesture", params)
         time.sleep(0.5)
-        return _ok(f"OK\ncan_scroll_more: {can_scroll_more}")
+        _mark_positional_stale("fling", ref, ref_context_used=bool(ref))
+        return _ok(f"OK\ncan_scroll_more: {can_scroll_more}\n{_STALE_HINT}")
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
     except AppiumCliError:

@@ -1043,8 +1043,21 @@ def snapshot_actionable_tree() -> str:
         return "ERROR: Current snapshot is not a native snapshot."
 
     lines: list[str] = []
+    # If a positional gesture (scroll/swipe/fling/drag) ran since the last
+    # snapshot, surface a warning so the agent knows the rendered refs may no
+    # longer match on-screen positions. This tool only renders cached state;
+    # it does not refresh the device snapshot.
+    snapshot_context = getattr(snapshot_obj, "context", state.current_context)
+    if state.ref_resolver.is_stale(snapshot_context):
+        reason = state.ref_resolver.stale_reason(snapshot_context) or "a positional gesture"
+        lines.append(
+            f"WARNING: snapshot is stale after {reason};"
+            " ref positions may be wrong. Call snapshot() before ref-based actions."
+        )
     _render_actionable_tree_node(snapshot_obj.root, lines, indent=0)
-    if not lines:
+    if not lines or (len(lines) == 1 and lines[0].startswith("WARNING:")):
+        if lines:
+            return lines[0] + "\nNo operable elements found in current snapshot."
         return "No operable elements found in current snapshot."
     return "\n".join(lines)
 

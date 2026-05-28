@@ -115,8 +115,9 @@ Native UI: scrolling and lists:
 1. snapshot({})
 2. list_containers({}) to find scrollable/list refs.
 3. scroll_down({"ref": "<container ref>"}) to scroll inside a list; scroll_down({}) only for intentional full-screen scrolling.
-4. snapshot({})
-5. Repeat with a changed target/search. Do not loop on the same query if the screen did not change.
+4. snapshot({}) — REQUIRED before the next ref-based action. scroll/swipe/fling/drag do not refresh the snapshot; cached refs use OLD coordinates and may tap the wrong widget.
+5. snapshot_actionable_tree({}) only renders the last snapshot; it does NOT refresh the device state. Always call snapshot({}) first after any positional gesture.
+6. Repeat with a changed target/search. Do not loop on the same query if the screen did not change.
 
 Starting WebView / Chrome work from native:
 1. If the task gives a URL, goto({"url": "https://example.com"}) is allowed; appium-cli will switch to WebView/Chrome if one is available, and future prompt guidance will become WebView.

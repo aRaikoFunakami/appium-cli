@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 _BOUNDS_TOLERANCE = 20
 
+# Cap on candidates enumerated for native id / accessibility_id strategies.
+# Android RecyclerView typically shows under 20 rows; 32 gives headroom while
+# preventing pathological lookups in long lists.
+_NATIVE_CANDIDATE_LIMIT = 32
+
 
 class ElementNotFoundError(Exception):
     """Raised when all locator strategies fail to resolve a ref."""
@@ -96,6 +101,8 @@ class RefResolver:
         self._current_snapshot_metadata: dict[str, Any] = {}
         self._artifact_ref_maps: dict[str, dict[str, RefEntry]] = {}
         self._artifact_metadata: dict[str, dict[str, Any]] = {}
+        # context -> {"action": str, "ref": str, "ts": float}
+        self._stale_contexts: dict[str, dict[str, Any]] = {}
 
     def register_all(
         self,
@@ -108,6 +115,9 @@ class RefResolver:
         self._ref_map = dict(ref_map)
         if snapshot_id is not None:
             self.mark_current_snapshot(snapshot_id, metadata)
+        # A fresh full ref map clears all per-context stale flags because
+        # callers register everything they currently know about.
+        self._stale_contexts.clear()
 
     def mark_current_snapshot(
         self,
@@ -126,6 +136,48 @@ class RefResolver:
             del self._ref_map[k]
         # Add new refs
         self._ref_map.update(ref_map)
+        # The caller just refreshed this context; clear its stale flag.
+        self._stale_contexts.pop(context, None)
+
+    def mark_stale(
+        self,
+        context: str,
+        action: str,
+        *,
+        ref: str = "",
+    ) -> None:
+        """Mark a context's ref map as positionally stale.
+
+        Called by gesture tools (scroll/swipe/fling/drag) that move elements
+        relative to the viewport without updating the snapshot. While stale,
+        resolve() refuses to fall back to the recorded coordinates strategy.
+        """
+        import time as _time
+
+        self._stale_contexts[context] = {
+            "action": action,
+            "ref": ref,
+            "ts": _time.time(),
+        }
+
+    def is_stale(self, context: str) -> bool:
+        return context in self._stale_contexts
+
+    def stale_reason(self, context: str) -> str:
+        info = self._stale_contexts.get(context)
+        if not info:
+            return ""
+        action = info.get("action", "")
+        ref = info.get("ref", "")
+        if ref:
+            return f"{action}({ref})"
+        return str(action)
+
+    def clear_stale(self, context: str | None = None) -> None:
+        if context is None:
+            self._stale_contexts.clear()
+        else:
+            self._stale_contexts.pop(context, None)
 
     def has(self, ref: str) -> bool:
         try:
@@ -173,9 +225,19 @@ class RefResolver:
         # Switch to the ref's context if needed
         self._ensure_context(driver, entry.context)
 
+        stale = self.is_stale(entry.context)
+
         errors: list[str] = []
 
         for strategy in entry.strategies:
+            # While positionally stale (e.g. after scroll/swipe/fling/drag),
+            # refuse to fall back to recorded coordinates. The screen has moved
+            # and the old x,y would tap whatever now occupies that pixel.
+            if stale and strategy.by == "coordinates":
+                errors.append(
+                    f"{strategy.by}={strategy.value}: skipped (snapshot is stale)"
+                )
+                continue
             try:
                 candidates = self._find_candidates(driver, strategy)
                 if not candidates:
@@ -184,7 +246,7 @@ class RefResolver:
 
                 # Check bounds on all candidates
                 for element in candidates:
-                    if self._verify_bounds(element, entry.expected_bounds):
+                    if self._verify_bounds(element, entry.expected_bounds, stale=stale):
                         logger.info(
                             f"ref '{ref}' resolved via {strategy.by}={strategy.value}"
                             f" (checked {len(candidates)} candidate(s))"
@@ -198,9 +260,18 @@ class RefResolver:
             except Exception as e:
                 errors.append(f"{strategy.by}={strategy.value}: {e}")
 
+        if stale:
+            reason = self.stale_reason(entry.context)
+            stale_hint = (
+                f"Snapshot is stale after {reason}; call snapshot() to refresh"
+                " before retrying this ref."
+            )
+        else:
+            stale_hint = "Run snapshot() to refresh."
+
         raise ElementNotFoundError(
             parsed.display,
-            f"All strategies failed. Run snapshot() to refresh."
+            f"All strategies failed. {stale_hint}"
             f" Tried: {'; '.join(errors)}",
         )
 
@@ -412,15 +483,24 @@ class RefResolver:
 
         if by == "id":
             try:
-                return [driver.find_element(AppiumBy.ID, value)]
+                elements = driver.find_elements(AppiumBy.ID, value) or []
+                return elements[:_NATIVE_CANDIDATE_LIMIT]
             except Exception:
-                return []
+                try:
+                    # Fallback for drivers that only implement find_element.
+                    return [driver.find_element(AppiumBy.ID, value)]
+                except Exception:
+                    return []
 
         if by == "accessibility_id":
             try:
-                return [driver.find_element(AppiumBy.ACCESSIBILITY_ID, value)]
+                elements = driver.find_elements(AppiumBy.ACCESSIBILITY_ID, value) or []
+                return elements[:_NATIVE_CANDIDATE_LIMIT]
             except Exception:
-                return []
+                try:
+                    return [driver.find_element(AppiumBy.ACCESSIBILITY_ID, value)]
+                except Exception:
+                    return []
 
         if by == "xpath":
             try:
@@ -523,13 +603,22 @@ class RefResolver:
     def _verify_bounds(
         element: Any,
         expected: tuple[int, int, int, int],
+        *,
+        stale: bool = False,
     ) -> bool:
         """Check if element bounds match expected bounds within tolerance.
 
-        Skips verification for (0,0,0,0) bounds (web refs without precise bounds).
+        Skips verification for (0,0,0,0) bounds (web refs without precise
+        bounds). When ``stale`` is True (a positional gesture invalidated
+        the snapshot), ``_CoordinateElement`` is rejected so callers cannot
+        silently tap an old pixel that now overlaps a different widget.
         """
         if isinstance(element, _CoordinateElement):
-            return True
+            # While stale, recorded coordinates may now overlap a different
+            # widget. resolve() already skips the "coordinates" strategy when
+            # stale; this is defense in depth in case the strategy list ever
+            # carries a coordinate-typed entry from another path.
+            return not stale
 
         # Skip bounds check for zero bounds (web elements may lack them)
         if expected == (0, 0, 0, 0):
@@ -551,7 +640,9 @@ class RefResolver:
                 and abs(actual_y2 - ey2) <= _BOUNDS_TOLERANCE
             )
         except Exception:
-            return True
+            # Treat as mismatch so the resolver tries the next strategy
+            # rather than silently accepting an element we couldn't inspect.
+            return False
 
     def clear(self) -> None:
         self._ref_map.clear()
@@ -559,3 +650,4 @@ class RefResolver:
         self._current_snapshot_metadata = {}
         self._artifact_ref_maps.clear()
         self._artifact_metadata.clear()
+        self._stale_contexts.clear()
