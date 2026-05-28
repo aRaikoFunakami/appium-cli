@@ -15,6 +15,7 @@ INFO_ONLY_TOOLS = frozenset({
     "snapshot",
     "web_snapshot",
     "snapshot_show",
+    "snapshot_actionable_tree",
     "snapshot_search",
     "snapshot_refs",
     "web_query",
@@ -28,7 +29,7 @@ INFO_ONLY_TOOLS = frozenset({
     "web_eval",
 })
 
-LOOP_REPEAT_EXEMPT = frozenset({"snapshot", "web_snapshot", "screenshot"})
+LOOP_REPEAT_EXEMPT = frozenset({"snapshot", "web_snapshot", "snapshot_actionable_tree", "screenshot"})
 
 
 @dataclass(slots=True)

@@ -19,6 +19,7 @@ from agent_browser.schemas import SafetyCategory, SafetyDecision
 _OBSERVATION_TOOLS = frozenset({
     "snapshot",
     "web_snapshot",
+    "snapshot_actionable_tree",
     "describe",
     "find_by_text",
     "screenshot",

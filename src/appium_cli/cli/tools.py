@@ -91,6 +91,14 @@ def snapshot_show(
     )
 
 
+def snapshot_actionable_tree(
+    json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
+) -> None:
+    """Show the current native snapshot as an operable-only hierarchy."""
+
+    _daemon_request("snapshot_actionable_tree", json_output)
+
+
 def snapshot_search(
     text: Annotated[str, typer.Argument(help="Text to search in the latest snapshot artifacts.")],
     snapshot_id: Annotated[str, typer.Option("--snapshot", help="Snapshot id or 'latest'.")] = "latest",

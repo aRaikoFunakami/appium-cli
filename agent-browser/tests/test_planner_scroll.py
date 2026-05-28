@@ -7,7 +7,9 @@ from pathlib import Path
 from agent_browser.controller.planner import Planner
 from agent_browser.controller.scoring import ScrollScoreContext, rank_scroll_containers
 from agent_browser.controller.task_compiler import TaskCompiler
+from agent_browser.controller.task_plan import StepKind, TaskStep
 from agent_browser.world import load_snapshot
+from agent_browser.world.model import RefView, Snapshot, TextTarget
 
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "twine4car"
@@ -66,3 +68,30 @@ def test_planner_can_tap_favorite_after_scroll_step_is_done() -> None:
     assert action.tool == "tap"
     assert action.args == {"ref": "iv_favorite_icon"}
     assert action.expected_effect == "favorite_toggled"
+
+
+def test_planner_uses_actionable_tree_for_duplicate_native_navigation_label() -> None:
+    snapshot = Snapshot(
+        id="recent",
+        screen_id="recent",
+        context="NATIVE_APP",
+        refs={"tabbtn_2": RefView(ref="tabbtn_2", role="button", name="アプリ", actionable=True)},
+        text_targets=[
+            TextTarget(text="アプリ", tap_target_ref="tabbackground_4"),
+            TextTarget(text="アプリ", tap_target_ref="tabbtn_2"),
+        ],
+    )
+    step = TaskStep(
+        id="step-4",
+        index=4,
+        kind=StepKind.NAVIGATE,
+        raw_text="サブタブの「アプリ」タブをタップする",
+        intent="tap app sub-tab",
+        target_hint="アプリ",
+    )
+
+    action = Planner().plan_navigation(step, snapshot)
+
+    assert action.tool == "tap"
+    assert action.args == {"ref": "tabbtn_2"}
+    assert action.expected_effect == "tab_selected"

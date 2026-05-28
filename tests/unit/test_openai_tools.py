@@ -81,6 +81,7 @@ class TestGetToolSkillPrompt:
         for expected in (
             "webview_status",
             "list_apps",
+            "snapshot_actionable_tree",
             "list_containers",
             "within_container",
             "assert_visible",
@@ -126,9 +127,10 @@ class TestGetToolSkillPrompt:
     def test_includes_native_and_form_workflow_examples(self) -> None:
         prompt = get_tool_skill_prompt()
 
-        assert "Native UI: observe, find tappable text targets, act" in prompt
+        assert "Native UI: observe, understand operable hierarchy, act" in prompt
+        assert "snapshot_actionable_tree({})" in prompt
         assert 'snapshot_search({"text": "<visible label>"})' in prompt
-        assert 'tap({"ref": "<tap_target_ref/action_target_ref if present, else matching ref>"})' in prompt
+        assert 'tap({"ref": "<ref selected from the actionable hierarchy>"})' in prompt
         assert 'Do NOT default to role="button" in native UI' in prompt
         assert "tap_target_ref/action_target_ref" in prompt
         assert "Search or submit a simple single-input form" not in prompt

@@ -7,7 +7,7 @@ from typing import Literal
 
 from agent_browser.controller.scoring import ScrollScoreContext, rank_scroll_containers
 from agent_browser.controller.task_plan import StepKind, TaskStep
-from agent_browser.world.model import Snapshot
+from agent_browser.world.model import Snapshot, TextTarget
 from agent_browser.world.query import candidate_refs_by_name
 
 
@@ -117,17 +117,25 @@ class Planner:
     def plan_navigation(self, step: TaskStep, snapshot: Snapshot) -> PlannedAction:
         """Plan a tap on a text target such as a tab."""
         if step.target_hint:
+            named_ref = _unique_candidate_ref_by_name(snapshot, step.target_hint)
+            if named_ref:
+                return PlannedAction(
+                    tool="tap",
+                    args={"ref": named_ref},
+                    rationale=f"tap unique named ref {step.target_hint}",
+                    expected_effect="tab_selected",
+                    verify_with="snapshot_diff",
+                )
             targets = snapshot.find_text(step.target_hint)
-            for target in targets:
-                ref = target.tap_target_ref or target.action_target_ref
-                if ref:
-                    return PlannedAction(
-                        tool="tap",
-                        args={"ref": ref},
-                        rationale=f"tap text target {step.target_hint}",
-                        expected_effect="tab_selected",
-                        verify_with="snapshot_diff",
-                    )
+            ref = _unique_text_target_ref(targets)
+            if ref:
+                return PlannedAction(
+                    tool="tap",
+                    args={"ref": ref},
+                    rationale=f"tap unique text target {step.target_hint}",
+                    expected_effect="tab_selected",
+                    verify_with="snapshot_diff",
+                )
         return PlannedAction(
             tool="snapshot_search",
             args={"text": step.target_hint or step.intent},
@@ -167,6 +175,27 @@ def _normalize_interaction_hint(hint: str) -> str:
     if "お気に入り" in hint or "favorite" in lowered:
         return "favorite"
     return hint
+
+
+def _unique_candidate_ref_by_name(snapshot: Snapshot, hint: str) -> str | None:
+    exact = [
+        ref.ref
+        for ref in candidate_refs_by_name(snapshot, hint)
+        if ref.name == hint
+    ]
+    return exact[0] if len(exact) == 1 else None
+
+
+def _unique_text_target_ref(targets: list[TextTarget]) -> str | None:
+    refs = {
+        ref
+        for target in targets
+        for ref in (target.tap_target_ref, target.action_target_ref)
+        if ref
+    }
+    if len(refs) == 1:
+        return next(iter(refs))
+    return None
 
 
 def _interaction_candidate_rank(ref: str, hint: str, group_counts: dict[str, int]) -> tuple[int, str]:

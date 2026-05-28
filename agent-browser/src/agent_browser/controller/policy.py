@@ -41,6 +41,7 @@ class PolicyEngine:
 
         if step.kind == StepKind.SCROLL and tool not in {
             "snapshot",
+            "snapshot_actionable_tree",
             "snapshot_search",
             "snapshot_refs",
             "list_containers",
@@ -63,7 +64,7 @@ class PolicyEngine:
         return PolicyDecision(allowed=True)
 
     def _check_stale_ref(self, tool: str, args: dict[str, object]) -> PolicyDecision:
-        if tool in {"snapshot", "snapshot_search", "snapshot_refs", "list_containers"}:
+        if tool in {"snapshot", "snapshot_actionable_tree", "snapshot_search", "snapshot_refs", "list_containers"}:
             return PolicyDecision(allowed=True)
         ref = args.get("ref") or args.get("container_ref")
         if isinstance(ref, str) and self.current_refs and ref not in self.current_refs:

@@ -38,6 +38,7 @@ from appium_cli.tools.observation import (
     webview_url,
     console_messages,
     network_requests,
+    snapshot_actionable_tree,
 )
 from appium_cli.tools.session import format_driver_status, is_driver_alive
 
@@ -99,6 +100,8 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return {"text": result.text, "data": result.data}
     if tool == "snapshot_show":
         return {"text": snapshot_show(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "snapshot_actionable_tree":
+        return {"text": snapshot_actionable_tree(), "data": {}}
     if tool == "snapshot_search":
         return {"text": snapshot_search(**args, raw=bool(request.get("raw"))), "data": {}}
     if tool == "snapshot_refs":

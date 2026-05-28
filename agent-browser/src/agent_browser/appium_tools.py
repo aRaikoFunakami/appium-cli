@@ -27,6 +27,7 @@ _OBSERVATION_PRODUCING = frozenset({
     "snapshot",
     "web_snapshot",
     "snapshot_show",
+    "snapshot_actionable_tree",
     "webview_url",
     "webview_title",
     "get_page_source",

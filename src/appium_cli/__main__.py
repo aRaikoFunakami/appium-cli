@@ -74,6 +74,7 @@ from appium_cli.cli.tools import (
     set_orientation,
     send_keys,
     snapshot,
+    snapshot_actionable_tree,
     snapshot_refs,
     snapshot_search,
     snapshot_show,
@@ -191,6 +192,7 @@ app.command(name="doctor")(doctor)
 app.command(name="devices")(devices)
 app.command(name="snapshot")(snapshot)
 app.command(name="snapshot_show")(snapshot_show)
+app.command(name="snapshot_actionable_tree")(snapshot_actionable_tree)
 app.command(name="snapshot_search")(snapshot_search)
 app.command(name="snapshot_refs")(snapshot_refs)
 app.command(name="generate_locator")(generate_locator)

@@ -106,7 +106,8 @@ _add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=
 
 _add("snapshot_show",
      "Show a persisted snapshot artifact. "
-     "PREFER snapshot_search(text=...) or snapshot_refs(role=...) for finding elements - "
+     "PREFER snapshot_actionable_tree for native operable hierarchy, or "
+     "snapshot_search(text=...) / snapshot_refs(role=...) for targeted element detail - "
      "they return compact targeted results. "
      "Use snapshot_show only with ref=<specific_ref> for one element's detail. "
      "artifact=compact returns the FULL tree (large) and wastes tokens in agent loops.",
@@ -117,11 +118,20 @@ _add("snapshot_show",
          "ref": _str_param("Optional ref to show in detail."),
      }))
 
+_add("snapshot_actionable_tree",
+     "Show the current native snapshot as an operable-only UI hierarchy. "
+     "Prefer this before tapping on native screens with tabs, menus, lists, "
+     "or duplicate labels because it preserves parent/child/sibling regions. "
+     "Run snapshot first; this reads the current in-memory snapshot.",
+     parameters=_schema({}))
+
 _add("snapshot_search",
      "Search persisted snapshot for elements by text. Fast, compact output. "
      "Use this instead of snapshot_show(artifact=compact) to find elements. "
+     "If duplicate labels or multiple tab/list regions may exist, inspect "
+     "snapshot_actionable_tree first and do not blindly tap the first match. "
      "For native UI, visible labels may live under tappable rows/tabs/containers; "
-     "use returned tap_target_ref/action_target_ref as the ref to tap.",
+     "use returned tap_target_ref/action_target_ref only when the target is unambiguous.",
      parameters=_schema({
          "text": _str_param("Text to search for."),
          "snapshot_id": _str_param("Snapshot id or latest.", default="latest"),

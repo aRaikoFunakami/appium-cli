@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from appium_cli.core.ref_resolver import ElementNotFoundError, parse_ref, _CoordinateElement
-from appium_cli.core.native_snapshot import NativeSnapshot
+from appium_cli.core.native_snapshot import NativeSnapshot, NativeSnapshotNode
 from appium_cli.core.native_snapshot_generator import NativeSnapshotGenerator
 from appium_cli.core.snapshot import compress_xml
 from appium_cli.core.snapshot_artifacts import (
@@ -622,6 +622,8 @@ def _compact_ref_line(ref: str, item: dict[str, Any], *, rich: bool = False) -> 
         action_target_ref = item.get("action_target_ref")
         if action_target_ref:
             fields.append(_format_compact_field("target", action_target_ref))
+        if item.get("path"):
+            fields.append(_format_compact_field("path", item.get("path")))
         suffix_fields = " ".join(field for field in fields if field)
         if suffix_fields:
             line = f"{line} {suffix_fields}"
@@ -643,6 +645,7 @@ def _compact_text_target_line(item: dict[str, Any]) -> str:
             str(bool(item.get("target_actionable"))).lower(),
         ),
         _format_compact_field("requested_role", item.get("requested_role", "")),
+        _format_compact_field("path", item.get("path", "")),
         _format_compact_field(
             "role_mismatch",
             str(bool(item.get("role_mismatch"))).lower()
@@ -712,6 +715,90 @@ def _serialize_current_ref_entry(entry: Any) -> dict[str, Any]:
             else {}
         ),
     }
+
+
+def _native_ref_paths(snapshot_obj: NativeSnapshot) -> dict[str, str]:
+    paths: dict[str, str] = {}
+
+    def node_segment(node: NativeSnapshotNode) -> str:
+        segment = node.role
+        if node.ref:
+            segment += f"[{node.ref}]"
+        return segment
+
+    def walk(node: NativeSnapshotNode, ancestors: list[str]) -> None:
+        current = [*ancestors, node_segment(node)]
+        if node.ref:
+            paths[node.ref] = " > ".join(current)
+        for child in node.children:
+            walk(child, current)
+
+    walk(snapshot_obj.root, [])
+    return paths
+
+
+def _current_native_ref_paths(snapshot_id: str) -> dict[str, str]:
+    snapshot_obj = state.current_snapshot
+    if not isinstance(snapshot_obj, NativeSnapshot):
+        return {}
+    if snapshot_id not in ("", "latest") and snapshot_id != state.current_snapshot_id:
+        return {}
+    return _native_ref_paths(snapshot_obj)
+
+
+def _is_operable_node(node: NativeSnapshotNode) -> bool:
+    return node.actionable or node.scrollable
+
+
+def _direct_text_label(node: NativeSnapshotNode) -> str:
+    if node.name:
+        return node.name
+    labels: list[str] = []
+    for child in node.children:
+        if child.role != "text":
+            continue
+        value = child.name or child.value or child.text
+        if value:
+            labels.append(str(value))
+    return " / ".join(labels)
+
+
+def _has_operable_descendant(node: NativeSnapshotNode) -> bool:
+    return any(
+        _is_operable_node(child) or _has_operable_descendant(child)
+        for child in node.children
+    )
+
+
+def _actionable_tree_line(node: NativeSnapshotNode) -> str:
+    parts = [node.role]
+    if node.ref:
+        parts.append(f"[ref:{node.ref}]")
+    label = _direct_text_label(node) if _is_operable_node(node) else ""
+    if label:
+        parts.append(json.dumps(label, ensure_ascii=False))
+    visible_states = [item for item in node.state if item != "enabled"]
+    if visible_states:
+        parts.append(f"[{','.join(visible_states)}]")
+    if node.scrollable:
+        direction = node.scroll_direction or "any"
+        parts.append(f"[scrollable:{direction}]")
+    if node.value is not None and node.value != label:
+        parts.append(f"value={json.dumps(str(node.value), ensure_ascii=False)}")
+    return " ".join(parts)
+
+
+def _render_actionable_tree_node(
+    node: NativeSnapshotNode,
+    lines: list[str],
+    *,
+    indent: int,
+) -> None:
+    if not _is_operable_node(node) and not _has_operable_descendant(node):
+        return
+    lines.append("  " * indent + _actionable_tree_line(node))
+    for child in node.children:
+        _render_actionable_tree_node(child, lines, indent=indent + 1)
 
 
 def _lookup_ref_item(ref: str) -> tuple[str, dict[str, Any]] | None:
@@ -942,6 +1029,26 @@ def snapshot_show(
         return f"ERROR: {exc}"
 
 
+def snapshot_actionable_tree() -> str:
+    """Render the current native snapshot as an operable-only hierarchy."""
+    snapshot_obj = state.current_snapshot
+    if snapshot_obj is None:
+        return "ERROR: No snapshot available. Run snapshot() first."
+    if isinstance(snapshot_obj, WebSnapshot):
+        return (
+            "WebView snapshots use the DOM tree as structure; use web_snapshot, "
+            "snapshot_refs, or web_query for WebView refs."
+        )
+    if not isinstance(snapshot_obj, NativeSnapshot):
+        return "ERROR: Current snapshot is not a native snapshot."
+
+    lines: list[str] = []
+    _render_actionable_tree_node(snapshot_obj.root, lines, indent=0)
+    if not lines:
+        return "No operable elements found in current snapshot."
+    return "\n".join(lines)
+
+
 def snapshot_search(
     text: str,
     snapshot_id: str = "latest",
@@ -964,6 +1071,8 @@ def snapshot_search(
     seen_refs: set[str] = set()
     index_items: dict[str, dict[str, Any]] = {}
     native_index = _is_native_index(index)
+    effective_snapshot_id = str(index.get("snapshot_id") or snapshot_id)
+    ref_paths = _current_native_ref_paths(effective_snapshot_id) if native_index else {}
     for item in index.get("refs", []):
         if not isinstance(item, dict):
             continue
@@ -1008,6 +1117,8 @@ def snapshot_search(
         }
         if multi_term:
             match["matched_text"] = matched_needle
+        if ref in ref_paths:
+            match["path"] = ref_paths[ref]
         for key in ("value", "action_target_ref"):
             if key in merged:
                 match[key] = merged[key]
@@ -1042,6 +1153,8 @@ def snapshot_search(
             match["ref"] = target_ref
             match["tap_target_ref"] = target_ref
             match["action_target_ref"] = target_ref
+            if target_ref in ref_paths:
+                match["path"] = ref_paths[target_ref]
         if role and not role_matches:
             match["role_mismatch"] = True
             match["requested_role"] = role
@@ -1092,6 +1205,16 @@ def snapshot_search(
             f"Note: No direct refs with role '{role}' matched. "
             "Native text targets may be tappable rows/tabs/containers; "
             "use the shown tap_target_ref."
+        )
+    matched_refs = {
+        str(match.get("ref") or match.get("tap_target_ref") or match.get("action_target_ref"))
+        for match in matches
+        if match.get("ref") or match.get("tap_target_ref") or match.get("action_target_ref")
+    }
+    if native_index and len(matched_refs) > 1:
+        lines.append(
+            "Ambiguous native label: multiple operable targets matched. "
+            "Inspect snapshot_actionable_tree() and choose by parent region before tapping."
         )
     return "\n".join(lines)
 

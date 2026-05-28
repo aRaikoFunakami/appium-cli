@@ -124,9 +124,11 @@ class TestSchemaStructure:
 
     def test_snapshot_navigation_schemas(self) -> None:
         show = get_tool("snapshot_show")
+        actionable_tree = get_tool("snapshot_actionable_tree")
         search = get_tool("snapshot_search")
         refs = get_tool("snapshot_refs")
         assert show is not None
+        assert actionable_tree is not None
         assert search is not None
         assert refs is not None
         assert show.parameters["properties"]["artifact"]["enum"] == [
@@ -136,6 +138,9 @@ class TestSchemaStructure:
         assert refs.parameters["properties"]["role"]["type"] == "string"
         assert refs.parameters["properties"]["limit"]["default"] == 50
         assert refs.parameters["properties"]["offset"]["default"] == 0
+        assert actionable_tree.parameters["properties"] == {}
+        assert "operable-only UI hierarchy" in actionable_tree.description
+        assert "snapshot_actionable_tree" in search.description
         assert "tap_target_ref/action_target_ref" in search.description
         assert "role=button can hide tappable rows/tabs" in refs.description
 

@@ -98,6 +98,72 @@ def _install_snapshot_artifacts(monkeypatch, request, snapshot_id: str = "native
     return app_dir
 
 
+def _install_snapshot_artifacts_for(
+    monkeypatch,
+    request,
+    snapshot: NativeSnapshot,
+    snapshot_id: str = "native-fixed",
+) -> Path:
+    app_dir = Path.cwd() / f".appium-cli-test-{snapshot_id}"
+    shutil.rmtree(app_dir, ignore_errors=True)
+    request.addfinalizer(lambda: shutil.rmtree(app_dir, ignore_errors=True))
+    monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: app_dir)
+    bundle = create_snapshot_bundle_payload(snapshot, snapshot_id=snapshot_id)
+    observation._write_snapshot_bundle(bundle)
+    return app_dir
+
+
+def _build_duplicate_app_tabs_snapshot() -> NativeSnapshot:
+    main_tabs = NativeSnapshotNode(
+        role="list",
+        ref="rv_tab_menu",
+        scrollable=True,
+        scroll_direction="vertical",
+        bounds=(62, 82, 2012, 242),
+        children=[
+            NativeSnapshotNode(
+                role="row",
+                ref="tabbackground",
+                bounds=(62, 82, 362, 242),
+                children=[NativeSnapshotNode(role="text", name="ホーム", action_target_ref="tabbackground")],
+            ),
+            NativeSnapshotNode(
+                role="row",
+                ref="tabbackground_4",
+                bounds=(962, 82, 1262, 242),
+                children=[NativeSnapshotNode(role="text", name="アプリ", action_target_ref="tabbackground_4")],
+            ),
+            NativeSnapshotNode(
+                role="row",
+                ref="tabbackground_7",
+                bounds=(1862, 82, 2012, 242),
+                children=[NativeSnapshotNode(role="text", name="最近の項目", action_target_ref="tabbackground_7")],
+            ),
+        ],
+    )
+    sub_tabs = NativeSnapshotNode(
+        role="list",
+        bounds=(160, 378, 2400, 494),
+        children=[
+            NativeSnapshotNode(role="button", name="映画", ref="tabbtn"),
+            NativeSnapshotNode(role="button", name="アプリ", ref="tabbtn_2"),
+        ],
+    )
+    root = NativeSnapshotNode(
+        role="container",
+        bounds=(0, 0, 2560, 1600),
+        children=[
+            main_tabs,
+            NativeSnapshotNode(role="button", ref="ib_search"),
+            NativeSnapshotNode(role="button", ref="ib_settings"),
+            sub_tabs,
+            NativeSnapshotNode(role="button", name="編集", ref="btn_edit"),
+            NativeSnapshotNode(role="text", name="アプリはありません"),
+        ],
+    )
+    return NativeSnapshot.from_root(root=root, app_info="com.example/.Main")
+
+
 def test_snapshot_metadata_includes_stats(monkeypatch, tmp_path):
     monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: tmp_path)
     bundle = create_snapshot_bundle_payload(
@@ -339,6 +405,40 @@ def test_snapshot_show_can_return_ref_detail(monkeypatch, request):
     assert "id: com.x:id/ok" in out
 
 
+def test_snapshot_actionable_tree_distinguishes_duplicate_app_tabs():
+    state.current_snapshot = _build_duplicate_app_tabs_snapshot()
+
+    out = observation.snapshot_actionable_tree()
+
+    assert "container" in out
+    assert '  list [ref:rv_tab_menu] [scrollable:vertical]' in out
+    assert '    row [ref:tabbackground_4] "アプリ"' in out
+    assert '  list' in out
+    assert '    button [ref:tabbtn_2] "アプリ"' in out
+    assert "アプリはありません" not in out
+
+
+def test_snapshot_actionable_tree_requires_current_snapshot():
+    state.current_snapshot = None
+
+    out = observation.snapshot_actionable_tree()
+
+    assert out == "ERROR: No snapshot available. Run snapshot() first."
+
+
+def test_snapshot_actionable_tree_webview_message():
+    state.current_snapshot = WebSnapshot.from_root(
+        context="WEBVIEW_chrome",
+        title="Example",
+        url="https://example.com",
+        root=WebSnapshotNode(role="document", name="Example"),
+    )
+
+    out = observation.snapshot_actionable_tree()
+
+    assert "WebView snapshots use the DOM tree" in out
+
+
 def test_snapshot_search_uses_artifacts_without_current_snapshot(monkeypatch, request):
     _install_snapshot_artifacts(monkeypatch, request)
     state.current_snapshot = None
@@ -381,6 +481,20 @@ def test_snapshot_search_text_target_without_direct_ref(monkeypatch, request):
     assert payload[0]["action_target_ref"] == "storage_row"
     assert payload[0]["tap_target_ref"] == "storage_row"
     assert payload[0]["target_role"] == "row"
+
+
+def test_snapshot_search_duplicate_label_includes_paths_and_warning(monkeypatch, request):
+    snapshot = _build_duplicate_app_tabs_snapshot()
+    _install_snapshot_artifacts_for(monkeypatch, request, snapshot, "duplicate-tabs")
+    state.current_snapshot = snapshot
+    state.current_snapshot_id = "duplicate-tabs"
+
+    out = observation.snapshot_search("アプリ")
+
+    assert 'path="container > list[rv_tab_menu] > row[tabbackground_4]"' in out
+    assert 'path="container > list > button[tabbtn_2]"' in out
+    assert "Ambiguous native label" in out
+    assert "snapshot_actionable_tree()" in out
 
 
 def test_snapshot_search_webview_role_filter_remains_strict(monkeypatch, tmp_path):

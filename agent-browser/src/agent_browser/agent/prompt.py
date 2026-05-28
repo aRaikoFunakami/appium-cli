@@ -49,7 +49,8 @@ Ref rules:
 
 Native ref rules:
 - In native UI, do not assume tappable targets have role="button"; tabs and list items are often rows/layouts with child text.
-- Prefer snapshot_search(text="<visible label>") without a role filter, then tap the returned tap_target_ref/action_target_ref when present.
+- Prefer snapshot_actionable_tree() before tapping native tabs, menus, lists, duplicate labels, or ambiguous regions. Choose the ref by parent/child structure.
+- Use snapshot_search(text="<visible label>") as a targeted lookup after the hierarchy is understood. Tap returned tap_target_ref/action_target_ref only when it is unambiguous in snapshot_actionable_tree.
 - Avoid tapping unlabeled native refs unless the current snippet or nearby text confirms the user's intended target.
 
 Completion:
