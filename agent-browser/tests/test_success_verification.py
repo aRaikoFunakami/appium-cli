@@ -95,3 +95,28 @@ def test_text_present_criteria_fail_when_expected_text_is_missing() -> None:
 
     assert result.passed is False
     assert result.reason == "expected text not visible: アプリはありません"
+
+
+def test_text_present_criteria_uses_visible_texts_from_compact_snapshot() -> None:
+    plan = TaskCompiler().compile(
+        """\
+1. Tap the app sub-tab
+期待動作
+アプリ履歴のない場合、「アプリはありません」を表示する
+"""
+    )
+    world = WorldModel()
+    world.update(
+        Snapshot(
+            id="snapshot",
+            screen_id="screen",
+            context="NATIVE_APP",
+            refs={},
+            visible_texts=["アプリはありません"],
+        )
+    )
+
+    result = verify_success_criteria(plan, world)
+
+    assert result.passed is True
+    assert result.reason == "expected text visible: アプリはありません"

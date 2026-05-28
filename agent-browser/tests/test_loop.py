@@ -19,7 +19,7 @@ from agent_browser.agent.loop import (
 from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult
 from agent_browser.config import AgentBrowserConfig
 from agent_browser.memory import WorkingMemory
-from agent_browser.token_counter import CallUsage
+from agent_browser.token_counter import CallUsage, UsageTracker
 
 
 class DumpableItem:
@@ -236,7 +236,11 @@ async def test_run_react_loop_treats_action_text_without_tool_call_as_protocol_f
         usage = None
 
     class FakeResponsesClient:
-        def __init__(self, cfg: AgentBrowserConfig) -> None:
+        def __init__(
+            self,
+            cfg: AgentBrowserConfig,
+            usage_tracker: UsageTracker | None = None,
+        ) -> None:
             self.call_usages: list[CallUsage] = []
 
         async def create(self, **kwargs: Any) -> Any:

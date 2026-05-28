@@ -63,6 +63,7 @@ class Snapshot:
     context: str
     refs: dict[str, RefView]
     text_targets: list[TextTarget] = field(default_factory=list)
+    visible_texts: list[str] = field(default_factory=list)
     containers: list[str] = field(default_factory=list)
     screen_bounds: Bounds | None = None
     raw_artifact_paths: dict[str, Path] = field(default_factory=dict)

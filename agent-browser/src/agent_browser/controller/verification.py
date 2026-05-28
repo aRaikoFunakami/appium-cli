@@ -78,7 +78,7 @@ def _verify_recorded_content_visible(plan: TaskPlan, snapshot: Snapshot) -> Fina
     if not expected_texts:
         return FinalVerification(passed=False, reason="no interacted content identity recorded")
 
-    visible_texts = {target.text.strip() for target in snapshot.text_targets if target.text.strip()}
+    visible_texts = _visible_texts(snapshot)
     for expected in expected_texts:
         if expected in visible_texts:
             return FinalVerification(passed=True, reason=f"favorites content visible: {expected}")
@@ -97,6 +97,12 @@ def _recorded_content_texts(plan: TaskPlan) -> list[str]:
     return texts
 
 
+def _visible_texts(snapshot: Snapshot) -> set[str]:
+    texts = {target.text.strip() for target in snapshot.text_targets if target.text.strip()}
+    texts.update(text.strip() for text in snapshot.visible_texts if text.strip())
+    return texts
+
+
 def _verify_text_present_criteria(plan: TaskPlan, world: WorldModel) -> FinalVerification | None:
     criteria = [
         criterion
@@ -108,7 +114,7 @@ def _verify_text_present_criteria(plan: TaskPlan, world: WorldModel) -> FinalVer
     snapshot = world.current()
     if snapshot is None:
         return FinalVerification(passed=False, reason="no final snapshot for text verification")
-    visible_texts = {target.text.strip() for target in snapshot.text_targets if target.text.strip()}
+    visible_texts = _visible_texts(snapshot)
     for criterion in criteria:
         expected = criterion.args.get("text") or criterion.args.get("raw_text", "").strip()
         if expected not in visible_texts:

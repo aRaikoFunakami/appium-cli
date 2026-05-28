@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,7 @@ def load_snapshot(snapshot_ref: str | Path, snapshots_dir: Path | None = None) -
     refs = _build_refs(index_data=index_data, refs_data=refs_data)
     _assign_parent_child_refs(refs)
     text_targets = _build_text_targets(index_data)
+    visible_texts = _build_visible_texts(text_targets, artifacts.compact)
     screen_bounds = _screen_bounds(refs)
 
     return Snapshot(
@@ -61,6 +63,7 @@ def load_snapshot(snapshot_ref: str | Path, snapshots_dir: Path | None = None) -
         context=str(meta_data.get("context") or index_data.get("context") or ""),
         refs=refs,
         text_targets=text_targets,
+        visible_texts=visible_texts,
         containers=[
             item["ref"]
             for item in index_data.get("containers", [])
@@ -168,6 +171,38 @@ def _build_text_targets(index_data: dict[str, Any]) -> list[TextTarget]:
             )
         )
     return targets
+
+
+def _build_visible_texts(text_targets: list[TextTarget], compact_path: Path | None) -> list[str]:
+    texts: list[str] = []
+    seen: set[str] = set()
+
+    def add(text: str) -> None:
+        normalized = text.strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            texts.append(normalized)
+
+    for target in text_targets:
+        add(target.text)
+
+    if compact_path is not None:
+        for line in compact_path.read_text(encoding="utf-8").splitlines():
+            text = _compact_text_line_value(line)
+            if text is not None:
+                add(text)
+    return texts
+
+
+def _compact_text_line_value(line: str) -> str | None:
+    match = re.match(r"^\s*-\s+text\s+(?P<quoted>\".*\")\s*(?:\[|$)", line)
+    if not match:
+        return None
+    try:
+        value = json.loads(match.group("quoted"))
+    except json.JSONDecodeError:
+        return None
+    return str(value) if value is not None else None
 
 
 def _bounds(value: Any) -> Bounds | None:

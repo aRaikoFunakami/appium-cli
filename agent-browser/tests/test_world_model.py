@@ -41,6 +41,26 @@ def test_text_targets_preserve_tappable_tab_refs() -> None:
     assert favorite_targets[0].tap_target_ref == "tabbackground_6"
 
 
+def test_visible_texts_include_non_actionable_text_from_compact_artifact(tmp_path) -> None:
+    base = tmp_path / "recent_app_empty"
+    base.with_suffix(".index.json").write_text(
+        '{"refs": [], "containers": [], "text_targets": []}',
+        encoding="utf-8",
+    )
+    base.with_suffix(".meta.json").write_text(
+        '{"snapshot_id": "recent_app_empty", "screen_id": "0a72c8", "context": "NATIVE_APP"}',
+        encoding="utf-8",
+    )
+    base.with_suffix(".compact.yml").write_text(
+        'screen: example\n\n- container\n  - text "アプリはありません"\n',
+        encoding="utf-8",
+    )
+
+    snapshot = load_snapshot(base)
+
+    assert "アプリはありません" in snapshot.visible_texts
+
+
 def test_refs_within_main_movie_section_include_favorite_buttons() -> None:
     snapshot = load_snapshot(FIXTURE_DIR / "movie_tab_before_scroll")
 
