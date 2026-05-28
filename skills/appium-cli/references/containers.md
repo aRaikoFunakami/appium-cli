@@ -4,13 +4,13 @@ Containers are ref-bearing nodes in snapshot artifacts whose `container_kind` is
 
 ```bash
 appium-cli snapshot
-appium-cli snapshot_refs latest --role=list
+appium-cli web_refs latest --role=list
 appium-cli list_containers
 appium-cli within_container recycler --role=button
 appium-cli assert_visible --ref nav_home
 ```
 
-Prefer `snapshot_refs`, `snapshot_search`, and element-scoped snapshots for artifact-first inspection. Container commands are useful when duplicate labels appear in different screen regions.
+Prefer `web_refs`, `snapshot_search`, and element-scoped snapshots for artifact-first inspection. Container commands are useful when duplicate labels appear in different screen regions.
 
 ## list_containers
 
@@ -29,7 +29,7 @@ Scroll containers by ref, then observe/search again:
 ```bash
 appium-cli scroll_down recycler
 appium-cli snapshot_search "Target" --role=row
-appium-cli snapshot_refs latest --role=row
+appium-cli web_refs latest --role=row
 ```
 
 ## within_container

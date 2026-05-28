@@ -90,9 +90,9 @@ def test_system_prompt_warns_against_broad_query_absence_judgment() -> None:
     assert "a[href*='sports']" in prompt
 
 
-def test_system_prompt_mentions_snapshot_refs_pagination() -> None:
+def test_system_prompt_mentions_web_refs_pagination() -> None:
     prompt = build_system_prompt()
-    assert "snapshot_refs is paginated" in prompt
+    assert "web_refs is paginated" in prompt
     assert "offset=next_offset" in prompt
 
 

@@ -75,7 +75,7 @@ from appium_cli.cli.tools import (
     send_keys,
     snapshot,
     snapshot_actionable_tree,
-    snapshot_refs,
+    web_refs,
     snapshot_search,
     snapshot_show,
     switch_context,
@@ -194,7 +194,7 @@ app.command(name="snapshot")(snapshot)
 app.command(name="snapshot_show")(snapshot_show)
 app.command(name="snapshot_actionable_tree")(snapshot_actionable_tree)
 app.command(name="snapshot_search")(snapshot_search)
-app.command(name="snapshot_refs")(snapshot_refs)
+app.command(name="web_refs")(web_refs)
 app.command(name="generate_locator")(generate_locator)
 app.command(name="web_query")(web_query)
 app.command(name="web_text")(web_text)

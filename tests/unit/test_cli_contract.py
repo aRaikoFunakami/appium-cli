@@ -129,12 +129,12 @@ def test_snapshot_artifact_navigation_commands_route_to_daemon(monkeypatch) -> N
     assert runner.invoke(
         app, ["snapshot_search", "Storage", "--snapshot", "latest", "--role", "row"]
     ).exit_code == 0
-    assert runner.invoke(app, ["--raw", "snapshot_refs", "latest", "ok"]).exit_code == 0
+    assert runner.invoke(app, ["--raw", "web_refs", "latest", "ok"]).exit_code == 0
 
     assert calls == [
         ("snapshot_show", {"snapshot_id": "latest", "artifact": "refs", "ref": "ok"}, False),
         ("snapshot_search", {"text": "Storage", "snapshot_id": "latest", "role": "row"}, False),
-        ("snapshot_refs", {"snapshot_id": "latest", "ref": "ok", "role": "", "limit": 50, "offset": 0}, True),
+        ("web_refs", {"snapshot_id": "latest", "ref": "ok", "role": "", "limit": 50, "offset": 0}, True),
     ]
 
 
@@ -224,7 +224,7 @@ def test_all_top_level_commands_expose_json_option() -> None:
         "snapshot",
         "snapshot_show",
         "snapshot_search",
-        "snapshot_refs",
+        "web_refs",
         "generate_locator",
         "web_query",
         "web_form_url",

@@ -50,22 +50,22 @@ tool sequences when a workflow below applies.
 
 Core loop:
 1. Observe with the context-appropriate snapshot tool.
-2. Extract targeted candidates with snapshot_actionable_tree(), snapshot_search(), snapshot_refs(), snapshot_show(ref=...), or context-appropriate query tools. Use web_text() when the task requires reading/summarizing page text.
+2. Extract targeted candidates with snapshot_actionable_tree() (native), web_refs() (WebView), snapshot_search(), snapshot_show(ref=...), or context-appropriate query tools. Use web_text() when the task requires reading/summarizing page text.
 3. Act with refs/selectors using the context-appropriate action tools.
 4. Observe again after navigation, reload, scroll, click, fill+submit, dialog handling, or any action that may change the page.
 5. Use only refs from the latest observation/artifacts. Old refs can become stale.
 
 Targeting rules:
 - Snapshot refs are valid function-call arguments.
-- Normal snapshot outputs are metadata plus artifact paths, not full trees. Do not use raw/full snapshot output in agent loops; inspect saved artifacts with snapshot_search(), snapshot_show({"ref": "..."}), and paginated snapshot_refs(). For article/body/page text, use web_text().
-- snapshot_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call snapshot_refs(offset=next_offset).
-- If duplicate labels/refs appear in native UI, inspect with snapshot_actionable_tree() before acting. Use snapshot_refs(), snapshot_show({"ref": "..."}), list_containers(), or within_container() as follow-up detail tools.
+- Normal snapshot outputs are metadata plus artifact paths, not full trees. Do not use raw/full snapshot output in agent loops; inspect saved artifacts with snapshot_search(), snapshot_show({"ref": "..."}), and paginated web_refs() (WebView only). For article/body/page text, use web_text().
+- web_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call web_refs(offset=next_offset).
+- If duplicate labels/refs appear in native UI, inspect with snapshot_actionable_tree() before acting. Use snapshot_show({"ref": "..."}), list_containers(), or within_container() as follow-up detail tools.
 - If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control. For native snapshots, snapshot_search() may return tap_target_ref/action_target_ref for this exact purpose.
 - Use any_text for synonym/translation/variant labels (e.g. snapshot_search({"text": "ログイン", "any_text": ["Login", "Sign in"]})). Keep to 2-4 variants. Do not invent regex or AND syntax.
 
 Diagnostics and fallback order:
 1. If context/prerequisite behavior is unclear, call get_context({}), list_contexts({}), webview_status({}), or get_driver_status({}).
-2. If snapshot artifacts are insufficient, try targeted snapshot_search(), snapshot_refs(), web_text(), or snapshot_show({"ref": "..."}).
+2. If snapshot artifacts are insufficient, try targeted snapshot_search(), web_refs() (WebView), web_text(), or snapshot_show({"ref": "..."}).
 3. Use console_messages() for browser console logs; returned entries may be consumed by the call.
 4. Use network_requests() only when the session was started with network logging enabled.
 5. Use screenshot() only when visual pixels are necessary.
@@ -82,7 +82,7 @@ Responsibility boundary:
 - Tool calls require an active appium-cli session. When the caller owns lifecycle, use one fresh session per user task and stop it at task end; stale sessions can cause InvalidSessionIdException.
 - If refs/session state appear stale or the daemon loses WebDriver state, recover with session status, session stop, session start, then snapshot.
 - Do not call adb, appium, npm, or installer commands directly from an appium-cli tool-calling agent unless the user explicitly asked for prerequisite management outside appium-cli.
-- Do not use depth for normal full-page observations. Snapshots are saved as artifacts, so preserve the full tree and reduce tokens with snapshot_search(), snapshot_show({"ref": "..."}), and paginated snapshot_refs() instead.
+- Do not use depth for normal full-page observations. Snapshots are saved as artifacts, so preserve the full tree and reduce tokens with snapshot_search(), snapshot_show({"ref": "..."}), and paginated web_refs() (WebView) instead.
 - Use depth only for scoped/debug snapshots when you intentionally want a smaller subtree.
 """
 
@@ -107,13 +107,13 @@ Native targeting rules:
 
 Native UI: enter text:
 1. snapshot({})
-2. snapshot_refs({"snapshot_id": "latest", "role": "textbox"})
+2. snapshot_actionable_tree({}) to find textbox refs in the operable hierarchy
 3. type_text({"ref": "<input ref>", "text": "value", "submit": false})
 4. snapshot({})
 
 Native UI: scrolling and lists:
 1. snapshot({})
-2. list_containers({}) or snapshot_refs({"snapshot_id": "latest"}) when you need a scrollable/list ref.
+2. list_containers({}) to find scrollable/list refs.
 3. scroll_down({"ref": "<container ref>"}) to scroll inside a list; scroll_down({}) only for intentional full-screen scrolling.
 4. snapshot({})
 5. Repeat with a changed target/search. Do not loop on the same query if the screen did not change.
@@ -135,7 +135,7 @@ Open a URL and inspect the page:
 2. web_snapshot({})
 3. webview_url({}) and webview_title({}) when you only need quick URL/title confirmation.
 4. snapshot_search({"text": "target text"}) for text in the latest snapshot artifact.
-5. snapshot_refs({"snapshot_id": "latest", "role": "link"}) or web_query({"selector": "a", "attrs": "href,textContent,aria-label", "limit": 50}) for links.
+5. web_refs({"snapshot_id": "latest", "role": "link"}) or web_query({"selector": "a", "attrs": "href,textContent,aria-label", "limit": 50}) for links.
 
 Find a category or news page from a portal:
 1. goto({"url": "https://www.yahoo.co.jp/"})
@@ -156,7 +156,7 @@ Important portal-search rule:
 Click and read using refs:
 1. goto({"url": "https://example.com"})
 2. web_snapshot({})
-3. snapshot_refs({"snapshot_id": "latest", "role": "link"})
+3. web_refs({"snapshot_id": "latest", "role": "link"})
 4. click({"ref": "web_<ref>"})
 5. web_snapshot({})
 6. snapshot_search({"text": "expected text"}) or assert_visible({"text": "expected text"})
@@ -164,14 +164,14 @@ Click and read using refs:
 Search or submit a simple single-input form:
 1. goto({"url": "https://example.com"})
 2. web_snapshot({})
-3. snapshot_refs({"snapshot_id": "latest", "role": "textbox"}) or web_query({"selector": "input,textarea,button", "attrs": "name,type,placeholder,aria-label", "limit": 30})
+3. web_refs({"snapshot_id": "latest", "role": "textbox"}) or web_query({"selector": "input,textarea,button", "attrs": "name,type,placeholder,aria-label", "limit": 30})
 4. fill({"ref": "web_<search input ref>", "text": "query", "submit": true})
 5. web_snapshot({})
 6. snapshot_search({"text": "query"}) or web_query({"selector": "a,article,h1,h2,h3", "attrs": "href,textContent", "limit": 30})
 
 Multi-field station/address/location forms:
 1. web_snapshot({})
-2. snapshot_refs({"snapshot_id": "latest", "role": "textbox"})
+2. web_refs({"snapshot_id": "latest", "role": "textbox"})
 3. fill({"ref": "web_<first input ref>", "text": "first value", "submit": false})
 4. press_key({"key": "escape"}) to close any autocomplete/dropdown before the next field.
 5. web_snapshot({})

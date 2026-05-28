@@ -8,7 +8,7 @@ appium-cli tap btn_login
 appium-cli snapshot_search "Welcome"
 ```
 
-Use the newest snapshot as the next observation point. Inspect it with `snapshot_search`, paginated `snapshot_refs`, or targeted `snapshot_show latest --ref=<ref>` instead of reading a full tree.
+Use the newest snapshot as the next observation point. Inspect it with `snapshot_search`, paginated `web_refs`, or targeted `snapshot_show latest --ref=<ref>` instead of reading a full tree.
 
 ## Raw mode
 
@@ -40,7 +40,7 @@ Target decision tree:
 
 1. Use a visible ref from the latest snapshot or refs artifact.
 2. If the label is text-only, tap the actionable parent row/button/container.
-3. If there are duplicates, inspect `snapshot_show latest --ref=<ref>` or `snapshot_refs latest --role=<role>`.
+3. If there are duplicates, inspect `snapshot_show latest --ref=<ref>` or `web_refs latest --role=<role>`.
 4. After any action that may change the UI, observe again before acting again.
 
 ## Scrolling and swiping

@@ -6,7 +6,7 @@ Default loop: observe with artifact-first snapshot, inspect artifacts, act on re
 
 ```bash
 appium-cli snapshot
-appium-cli snapshot_refs latest --role=button
+appium-cli web_refs latest --role=button
 appium-cli tap btn_login
 appium-cli snapshot_search "Welcome"
 ```
@@ -52,18 +52,18 @@ diff before.yml after.yml
 appium-cli snapshot
 appium-cli snapshot_search "Storage"
 appium-cli snapshot_search "ログイン" --or-text Login --or-text "Sign in"  # OR search
-appium-cli snapshot_refs latest --role=row
+appium-cli web_refs latest --role=row
 appium-cli snapshot_show latest --ref=storage_row
 appium-cli tap storage_row
 ```
 
-`snapshot_search`, `snapshot_refs`, and `snapshot_show --ref` read persisted artifacts. They do not query the device. Prefer these targeted commands over reading the whole compact tree.
+`snapshot_search`, `web_refs`, and `snapshot_show --ref` read persisted artifacts. They do not query the device. Prefer these targeted commands over reading the whole compact tree.
 
 ## Navigate a scrollable list
 
 ```bash
 appium-cli snapshot
-appium-cli snapshot_refs latest --role=list
+appium-cli web_refs latest --role=list
 appium-cli scroll_down recycler_view
 appium-cli snapshot_search "Settings"
 appium-cli tap row_settings
@@ -75,7 +75,7 @@ Use scoped scrolling with the scrollable container ref. Omit the ref only for in
 
 ```bash
 appium-cli snapshot
-appium-cli snapshot_refs latest --role=textbox
+appium-cli web_refs latest --role=textbox
 appium-cli type_text input_search "hello" --submit
 appium-cli snapshot_search "hello"
 ```
@@ -176,7 +176,7 @@ appium-cli webview_url                      # quick check: current URL
 
 # Observe and interact
 appium-cli web_snapshot
-appium-cli snapshot_refs latest --role=textbox
+appium-cli web_refs latest --role=textbox
 appium-cli fill web_search "appium"
 appium-cli press_key Enter
 appium-cli web_snapshot
@@ -196,7 +196,7 @@ appium-cli snapshot
 | Goal | Native context | WebView context |
 |------|---------------|-----------------|
 | Observe screen | `snapshot` | `web_snapshot` |
-| Find elements | `snapshot_refs` | `snapshot_refs latest`, `snapshot_search`, or `web_query "input,button,a"` |
+| Find elements | `web_refs` | `web_refs latest`, `snapshot_search`, or `web_query "input,button,a"` |
 | Click | `tap <ref>` | Prefer `click web_<ref>` |
 | Type text | `type_text <ref> "text"` | `fill web_<ref> "text"` |
 | Navigate | — | `goto "https://..."` |
@@ -249,4 +249,4 @@ appium-cli snapshot
 
 If the UI is wrong, use `press_key back`, `activate_app`, or `restart_app`, then observe again. Avoid legacy locator fallbacks until snapshot refs, WebView refs, and CSS/locator discovery have failed.
 
-Do not loop on launcher snapshots to find an app icon. If `snapshot_refs` does not return an actionable ref for the app you want to start, switch to `activate_app <package>`.
+Do not loop on launcher snapshots to find an app icon. If `web_refs` does not return an actionable ref for the app you want to start, switch to `activate_app <package>`.

@@ -565,7 +565,7 @@ The tool registry is the source of truth for schemas and aliases:
 - `web_snapshot`
 - `snapshot_show`
 - `snapshot_search`
-- `snapshot_refs`
+- `web_refs`
 - `generate_locator`
 - `web_query`
 - `web_form_url`
@@ -790,7 +790,7 @@ def serialize_tool_response(
         return (
             head
             + f"\n\n... [truncated {len(text) - len(head)} chars. "
-            "Use snapshot_search(text=...) or snapshot_refs(role=...) for targeted extraction.]"
+            "Use snapshot_search(text=...) or web_refs(role=...) for targeted extraction.]"
         )
     if name in SNAPSHOT_TOOLS:
         return text
@@ -835,7 +835,7 @@ Useful rules:
 - Use only refs from the latest snapshot or web_snapshot.
 - After a new snapshot, old refs are stale.
 - For large trees, send only the first relevant lines to the next prompt and
-  rely on `snapshot_search`, `snapshot_refs`, `snapshot_show`, or `web_query`
+  rely on `snapshot_search`, `web_refs`, `snapshot_show`, or `web_query`
   for targeted extraction.
 
 `agent-browser` stores the first 80 lines of snapshot output as its observation
@@ -876,7 +876,7 @@ A practical default is:
 - successful non-snapshot tool result: 12,000 characters
 - errors: keep the beginning and end if truncated
 - `snapshot_show`: truncate and explicitly tell the model to use
-  `snapshot_search` or `snapshot_refs` for targeted extraction
+  `snapshot_search` or `web_refs` for targeted extraction
 - `working_state`: keep under a few thousand characters
 
 ## 10. Async use

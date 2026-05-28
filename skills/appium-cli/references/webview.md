@@ -11,8 +11,8 @@ Once `webview_switch` or `goto` succeeds, prefer these WebDriver/WebView command
 appium-cli web_snapshot                     # primary observation
 appium-cli webview_url                      # current URL (fast, no snapshot)
 appium-cli webview_title                    # page title (fast, no snapshot)
-appium-cli snapshot_refs latest             # refs from the latest web_snapshot, first page
-appium-cli snapshot_refs latest --offset=50 # next page when has_more=true
+appium-cli web_refs latest             # refs from the latest web_snapshot, first page
+appium-cli web_refs latest --offset=50 # next page when has_more=true
 appium-cli snapshot_search "Search"         # search the latest web_snapshot artifact
 appium-cli web_query "input,button,a" --attrs=name,type,placeholder,aria-label
 
@@ -91,7 +91,7 @@ appium-cli list_contexts
 appium-cli webview_switch
 appium-cli goto "https://example.com"
 appium-cli web_snapshot
-appium-cli snapshot_refs latest --role=textbox
+appium-cli web_refs latest --role=textbox
 appium-cli click web_btn_login
 appium-cli native_switch
 ```
@@ -103,14 +103,14 @@ appium-cli native_switch
 ```bash
 appium-cli web_snapshot
 appium-cli snapshot_search "Search" --role=textbox
-appium-cli snapshot_refs latest --role=textbox
+appium-cli web_refs latest --role=textbox
 appium-cli web_query "input,textarea,button,a" --attrs=name,type,placeholder,aria-label,data-testid
 appium-cli snapshot_show latest --ref=web_search
 appium-cli snapshot_show latest              # fallback; can be large
 appium-cli snapshot_show latest --artifact=full  # debugging only
 ```
 
-Do not read the full compact artifact just to find a DOM element. Use `web_query` for CSS/attribute extraction, `snapshot_search` for text, and `snapshot_refs` for ref indexes.
+Do not read the full compact artifact just to find a DOM element. Use `web_query` for CSS/attribute extraction, `snapshot_search` for text, and `web_refs` for ref indexes.
 
 Use scoped snapshots for large pages; avoid `--depth` unless you intentionally want a smaller debug subtree:
 
@@ -177,7 +177,7 @@ Use `web_eval` for diagnostics and attribute reads. Prefer ref actions for norma
 
 ## Targeting layers
 
-1. **Refs first**: use `web_...` refs from `web_snapshot`/`snapshot_refs` with `click`, `fill`, `select`, `select_option`, `set_date`, and `press_key`.
+1. **Refs first**: use `web_...` refs from `web_snapshot`/`web_refs` with `click`, `fill`, `select`, `select_option`, `set_date`, and `press_key`.
 2. **CSS/locator second**: use `css:` prefix (e.g. `appium-cli click "css:#submit"`) or `web_query` to discover CSS selectors and `generate_locator <ref>` to extract the best selector stored for a ref.
 3. **Legacy locators last**: use locator tools only for expert recovery or compatibility.
 

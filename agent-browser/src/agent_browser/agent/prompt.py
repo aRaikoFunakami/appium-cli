@@ -21,15 +21,15 @@ Memory rules:
 
 WebView observation rules:
 - After goto or webview_switch, take web_snapshot as the primary page observation before making page-structure judgments.
-- Do not pass depth for normal full-page web_snapshot calls. Full artifacts keep searchable targets; reduce tokens with snapshot_search, snapshot_show(ref), and paginated snapshot_refs instead.
+- Do not pass depth for normal full-page web_snapshot calls. Full artifacts keep searchable targets; reduce tokens with snapshot_search, snapshot_show(ref), and paginated web_refs instead.
 - Use depth only for scoped/debug snapshots when intentionally inspecting a smaller subtree.
-- Use snapshot_search, snapshot_refs, and web_query for targeted element/ref extraction from the observed page/artifacts.
+- Use snapshot_search, web_refs, and web_query for targeted element/ref extraction from the observed page/artifacts.
 - When the task requires reading or summarizing article/body/page text, use web_text or web_eval. Do not infer body content from web_snapshot metadata.
 - For ordered DOM extraction (article URLs, link lists, table data), prefer web_eval with a DOM query that returns JSON, not snapshot_search with keyword matching. Keyword search may match unrelated elements sharing the same text.
-- snapshot_refs is paginated. If has_more=true and the target is absent, refine the search/role or request the next page with offset=next_offset.
+- web_refs is paginated. If has_more=true and the target is absent, refine the search/role or request the next page with offset=next_offset.
 - Broad CSS discovery such as web_query(selector="a") may return many links. Do not conclude that a target is absent from one broad query alone.
 - When the user asks for a category, domain, keyword, or URL pattern, narrow the CSS selector or search text (for example, a[href*='sports'] or snapshot_search(text='スポーツ')) before deciding it is missing.
-- Before finishing with success or failure, base the result on an actual observation of the current page: web_snapshot, targeted web_query/snapshot_search/snapshot_refs, screenshot, or get_page_source.
+- Before finishing with success or failure, base the result on an actual observation of the current page: web_snapshot, targeted web_query/snapshot_search/web_refs, screenshot, or get_page_source.
 
 Form rules:
 - For simple single-input forms only (search bars, URL bars, filter boxes), use submit=true so the input is applied.

@@ -17,7 +17,7 @@ INFO_ONLY_TOOLS = frozenset({
     "snapshot_show",
     "snapshot_actionable_tree",
     "snapshot_search",
-    "snapshot_refs",
+    "web_refs",
     "web_query",
     "find_by_text",
     "describe",

@@ -5,7 +5,7 @@ Legacy locator tools are expert-only recovery and smartestiroid compatibility to
 Use this order first:
 
 1. Snapshot refs from `snapshot` / `web_snapshot`.
-2. Artifact inspection with `snapshot_refs`, `snapshot_search`, and `snapshot_show`.
+2. Artifact inspection with `web_refs`, `snapshot_search`, and `snapshot_show`.
 3. WebView CSS/locator discovery with `web_query` and `generate_locator`.
 4. Legacy locators only if the above cannot target the element.
 
@@ -39,5 +39,5 @@ When a legacy command succeeds, return to the artifact-first loop immediately:
 
 ```bash
 appium-cli snapshot
-appium-cli snapshot_refs latest
+appium-cli web_refs latest
 ```

@@ -28,8 +28,8 @@ Use artifact navigation commands to inspect without refreshing device state. Pre
 ```bash
 appium-cli snapshot_search "Storage" --role=row
 appium-cli snapshot_search "ログイン" --or-text Login --or-text "Sign in"  # OR search
-appium-cli snapshot_refs latest --role=button
-appium-cli snapshot_refs latest --role=button --offset=50
+appium-cli web_refs latest --role=button
+appium-cli web_refs latest --role=button --offset=50
 appium-cli snapshot_show latest --ref=btn_ok
 appium-cli snapshot_show latest --artifact=meta
 appium-cli snapshot_show latest              # fallback; can be large
@@ -45,9 +45,9 @@ appium-cli web_text --selector=article      # read a known content container
 appium-cli web_text --offset=6000           # continue truncated text
 ```
 
-`compact.yml` intentionally remains a tree artifact so UI hierarchy is available on disk. Do not paste/read the whole artifact by default. Search it with `snapshot_search`, inspect paginated ref indexes with `snapshot_refs`, inspect one element with `snapshot_show --ref`, or use local grep/rg-style file extraction when available.
+`compact.yml` intentionally remains a tree artifact so UI hierarchy is available on disk. Do not paste/read the whole artifact by default. Search it with `snapshot_search`, inspect paginated ref indexes with `web_refs`, inspect one element with `snapshot_show --ref`, or use local grep/rg-style file extraction when available.
 
-`snapshot_refs` returns 50 refs by default. If output says `has_more=true` or prints `next_offset=...`, narrow the role/search if possible or request the next page with `--offset=<next_offset>`.
+`web_refs` returns 50 refs by default. If output says `has_more=true` or prints `next_offset=...`, narrow the role/search if possible or request the next page with `--offset=<next_offset>`.
 
 ## Raw tree output
 
@@ -74,7 +74,7 @@ appium-cli snapshot dialog_root --filename=dialog.yml
 appium-cli web_snapshot web_results --filename=results.yml
 ```
 
-`--filename` saves the rendered tree to a file while normal stdout still prints metadata. Do not use `--depth` for normal observations; full artifacts keep targets searchable, and token control should use `snapshot_search`, `snapshot_show --ref`, and paginated `snapshot_refs`. `--depth` is only a scoped/debug escape hatch when you intentionally want a smaller subtree. `--max-nodes` and `--boxes` are available for larger/debug sessions.
+`--filename` saves the rendered tree to a file while normal stdout still prints metadata. Do not use `--depth` for normal observations; full artifacts keep targets searchable, and token control should use `snapshot_search`, `snapshot_show --ref`, and paginated `web_refs`. `--depth` is only a scoped/debug escape hatch when you intentionally want a smaller subtree. `--max-nodes` and `--boxes` are available for larger/debug sessions.
 
 ## Artifact types
 
@@ -84,13 +84,13 @@ appium-cli web_snapshot web_results --filename=results.yml
 - `index` - searchable compact index.
 - `meta` - snapshot id, source, context, screen id, and artifact paths.
 
-Use `snapshot_refs` before choosing targets in a large screen, and `snapshot_search` to find likely refs or text snippets without re-querying the device.
+Use `web_refs` before choosing targets in a large screen, and `snapshot_search` to find likely refs or text snippets without re-querying the device.
 
 ## Targeted artifact extraction
 
 ```bash
 appium-cli snapshot_search "Qiita"
-appium-cli snapshot_refs latest --role=link
+appium-cli web_refs latest --role=link
 appium-cli snapshot_show latest --ref=web_link_qiita
 ```
 
@@ -129,4 +129,4 @@ appium-cli --raw generate_locator btn_ok
 
 ## Screenshot and page source
 
-`snapshot` is primary for structure and refs. `web_text` is primary for WebView page/article text. `screenshot` is rarely needed; use it only when visual pixels are necessary. Session-backed screenshots return an artifact path under `.appium-cli/<session-id>/`; reuse that path and do not save a duplicate copy. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after targeted artifact extraction, `web_text`, `snapshot_search`, and `snapshot_refs` are insufficient.
+`snapshot` is primary for structure and refs. `web_text` is primary for WebView page/article text. `screenshot` is rarely needed; use it only when visual pixels are necessary. Session-backed screenshots return an artifact path under `.appium-cli/<session-id>/`; reuse that path and do not save a duplicate copy. `get_page_source` can be very large and token-heavy; treat it as a diagnostic escape hatch after targeted artifact extraction, `web_text`, `snapshot_search`, and `web_refs` are insufficient.

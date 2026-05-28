@@ -1037,7 +1037,7 @@ def snapshot_actionable_tree() -> str:
     if isinstance(snapshot_obj, WebSnapshot):
         return (
             "WebView snapshots use the DOM tree as structure; use web_snapshot, "
-            "snapshot_refs, or web_query for WebView refs."
+            "web_refs, or web_query for WebView refs."
         )
     if not isinstance(snapshot_obj, NativeSnapshot):
         return "ERROR: Current snapshot is not a native snapshot."
@@ -1219,7 +1219,7 @@ def snapshot_search(
     return "\n".join(lines)
 
 
-def snapshot_refs(
+def web_refs(
     snapshot_id: str = "latest",
     ref: str = "",
     role: str = "",
@@ -1227,7 +1227,19 @@ def snapshot_refs(
     offset: int = 0,
     raw: bool = False,
 ) -> str:
-    """List refs or show one ref from a persisted snapshot artifact."""
+    """List refs or show one ref from a persisted WebView snapshot artifact.
+
+    This tool is Web-only. For native snapshots, use snapshot_actionable_tree.
+    """
+    try:
+        index = _load_index(snapshot_id)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+        index = {}
+    if _is_native_index(index):
+        return (
+            "ERROR: web_refs is for WebView snapshots only. "
+            "Use snapshot_actionable_tree for native ref enumeration."
+        )
     try:
         refs = _load_refs(snapshot_id)
         index_items = _load_index_ref_items(snapshot_id)
@@ -1275,7 +1287,7 @@ def snapshot_refs(
             )
         return f"No refs found in snapshot '{snapshot_id}'{suffix}."
     lines = [
-        f"Snapshot refs for '{snapshot_id}' (total={total}, returned={len(page)}, offset={offset}, limit={limit}):"
+        f"Web refs for '{snapshot_id}' (total={total}, returned={len(page)}, offset={offset}, limit={limit}):"
     ]
     lines.extend(_compact_ref_line(ref_name, item, rich=True) for ref_name, item in page)
     if has_more:

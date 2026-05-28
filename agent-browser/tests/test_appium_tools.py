@@ -364,7 +364,7 @@ class TestObservationProducing:
     def test_targeted_extraction_tools_are_observation_producing(self) -> None:
         from agent_browser.appium_tools import _OBSERVATION_PRODUCING
 
-        for tool in ("snapshot_search", "snapshot_refs", "web_query", "web_text"):
+        for tool in ("snapshot_search", "web_refs", "web_query", "web_text"):
             assert tool in _OBSERVATION_PRODUCING, f"{tool} should be observation-producing"
 
 

@@ -58,13 +58,13 @@ def test_snapshot_artifact_handlers_pass_raw(monkeypatch) -> None:
         calls.append(("search", kwargs))
         return "found"
 
-    def fake_snapshot_refs(**kwargs):
+    def fake_web_refs(**kwargs):
         calls.append(("refs", kwargs))
         return "refs"
 
     monkeypatch.setattr(entry, "snapshot_show", fake_snapshot_show)
     monkeypatch.setattr(entry, "snapshot_search", fake_snapshot_search)
-    monkeypatch.setattr(entry, "snapshot_refs", fake_snapshot_refs)
+    monkeypatch.setattr(entry, "web_refs", fake_web_refs)
 
     assert entry._handler(
         {"tool": "snapshot_show", "args": {"snapshot_id": "latest"}, "raw": True}
@@ -73,7 +73,7 @@ def test_snapshot_artifact_handlers_pass_raw(monkeypatch) -> None:
         {"tool": "snapshot_search", "args": {"text": "OK"}, "raw": True}
     )["text"] == "found"
     assert entry._handler(
-        {"tool": "snapshot_refs", "args": {"snapshot_id": "latest"}, "raw": True}
+        {"tool": "web_refs", "args": {"snapshot_id": "latest"}, "raw": True}
     )["text"] == "refs"
 
     assert calls == [

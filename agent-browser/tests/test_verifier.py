@@ -150,7 +150,7 @@ class TestStructuralGuard:
         [
             "web_query",
             "snapshot_search",
-            "snapshot_refs",
+            "web_refs",
             "snapshot_show",
             "webview_url",
             "webview_title",

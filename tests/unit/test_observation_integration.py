@@ -113,6 +113,33 @@ def _install_snapshot_artifacts_for(
     return app_dir
 
 
+def _build_web_snapshot() -> WebSnapshot:
+    btn = WebSnapshotNode(
+        role="button",
+        name="OK",
+        ref="web_ok",
+        bounds=(100, 100, 300, 200),
+    )
+    link = WebSnapshotNode(
+        role="link",
+        name="Home",
+        ref="web_home_link",
+        bounds=(0, 0, 200, 40),
+    )
+    root = WebSnapshotNode(role="document", name="Test", children=[link, btn])
+    return WebSnapshot.from_root(root=root, context="WEBVIEW_chrome", title="Test", url="https://example.com")
+
+
+def _install_web_snapshot_artifacts(monkeypatch, request, snapshot_id: str = "web-fixed") -> Path:
+    app_dir = Path.cwd() / ".appium-cli-test-web-refs"
+    shutil.rmtree(app_dir, ignore_errors=True)
+    request.addfinalizer(lambda: shutil.rmtree(app_dir, ignore_errors=True))
+    monkeypatch.setattr("appium_cli.utils.paths.get_app_dir", lambda: app_dir)
+    bundle = create_snapshot_bundle_payload(_build_web_snapshot(), snapshot_id=snapshot_id)
+    observation._write_snapshot_bundle(bundle)
+    return app_dir
+
+
 def _build_duplicate_app_tabs_snapshot() -> NativeSnapshot:
     main_tabs = NativeSnapshotNode(
         role="list",
@@ -598,69 +625,69 @@ def test_find_by_text_or_label_in_header():
     assert '"OK" OR "Storage"' in out
 
 
-def test_snapshot_refs_lists_filters_and_returns_raw_json(monkeypatch, request):
+def test_web_refs_rejects_native_snapshot(monkeypatch, request):
     _install_snapshot_artifacts(monkeypatch, request)
 
-    listed = observation.snapshot_refs("latest", role="button")
-    assert "[ref:ok] button \"OK\"" in listed
-    assert "actionable=true" in listed
-    assert "editable=false" in listed
-    assert 'locator="id: com.x:id/ok"' in listed
-    assert "storage_row" not in listed
+    result = observation.web_refs("latest")
+    assert "ERROR" in result
+    assert "web_refs is for WebView snapshots only" in result
+    assert "snapshot_actionable_tree" in result
 
-    raw = observation.snapshot_refs("latest", raw=True)
+
+def test_web_refs_lists_filters_and_returns_raw_json(monkeypatch, request):
+    _install_web_snapshot_artifacts(monkeypatch, request)
+
+    listed = observation.web_refs("latest", role="button")
+    assert "web_ok" in listed
+    assert "web_home_link" not in listed
+
+    raw = observation.web_refs("latest", raw=True)
     payload = json.loads(raw)
     assert payload["offset"] == 0
     assert payload["limit"] == 50
     assert payload["returned"] == payload["total"]
     refs = payload["refs"]
-    assert {item["ref"] for item in refs} >= {"ok", "recycler", "storage_row"}
-    ok = next(item for item in refs if item["ref"] == "ok")
-    assert ok["actionable"] is True
-    assert ok["editable"] is False
-    assert ok["primary_strategy"] == {"by": "id", "value": "com.x:id/ok"}
+    assert {item["ref"] for item in refs} >= {"web_ok", "web_home_link"}
 
 
-def test_snapshot_refs_paginates_list_output(monkeypatch, request):
-    _install_snapshot_artifacts(monkeypatch, request)
+def test_web_refs_paginates_list_output(monkeypatch, request):
+    _install_web_snapshot_artifacts(monkeypatch, request)
 
-    first = observation.snapshot_refs("latest", limit=2)
+    first = observation.web_refs("latest", limit=1)
 
-    assert "total=3" in first
-    assert "returned=2" in first
+    assert "total=2" in first
+    assert "returned=1" in first
     assert "offset=0" in first
-    assert "limit=2" in first
-    assert "More refs available: next_offset=2." in first
+    assert "limit=1" in first
+    assert "More refs available: next_offset=1." in first
 
-    second = observation.snapshot_refs("latest", limit=2, offset=2)
+    second = observation.web_refs("latest", limit=1, offset=1)
 
     assert "returned=1" in second
-    assert "offset=2" in second
+    assert "offset=1" in second
     assert "More refs available" not in second
 
 
-def test_snapshot_refs_paginates_raw_json(monkeypatch, request):
-    _install_snapshot_artifacts(monkeypatch, request)
+def test_web_refs_paginates_raw_json(monkeypatch, request):
+    _install_web_snapshot_artifacts(monkeypatch, request)
 
-    payload = json.loads(observation.snapshot_refs("latest", limit=2, raw=True))
+    payload = json.loads(observation.web_refs("latest", limit=1, raw=True))
 
-    assert payload["total"] == 3
-    assert payload["returned"] == 2
+    assert payload["total"] == 2
+    assert payload["returned"] == 1
     assert payload["has_more"] is True
-    assert payload["next_offset"] == 2
-    assert len(payload["refs"]) == 2
+    assert payload["next_offset"] == 1
+    assert len(payload["refs"]) == 1
 
 
-def test_snapshot_refs_can_show_single_ref_as_raw_json(monkeypatch, request):
-    _install_snapshot_artifacts(monkeypatch, request)
+def test_web_refs_can_show_single_ref_as_raw_json(monkeypatch, request):
+    _install_web_snapshot_artifacts(monkeypatch, request)
 
-    raw = observation.snapshot_refs("latest", "ok", raw=True)
+    raw = observation.web_refs("latest", "web_ok", raw=True)
 
     payload = json.loads(raw)
-    assert payload["ref"] == "ok"
+    assert payload["ref"] == "web_ok"
     assert payload["role"] == "button"
-    assert payload["actionable"] is True
-    assert payload["primary_strategy"] == {"by": "id", "value": "com.x:id/ok"}
 
 
 def test_generate_locator_prefers_latest_artifact_strategy(monkeypatch, request):

@@ -19,7 +19,7 @@ appium-cli session start
 
 appium-cli snapshot
 appium-cli snapshot_actionable_tree
-appium-cli snapshot_refs
+appium-cli web_refs
 appium-cli tap btn_login
 appium-cli snapshot_search "Welcome"
 
@@ -39,7 +39,7 @@ appium-cli session start
 appium-cli session stop
 ```
 
-Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. For native screens with tabs, menus, lists, or duplicate labels, inspect the operable hierarchy with `snapshot_actionable_tree` before tapping. For other targeted lookups, use `snapshot_search`, paginated `snapshot_refs`, or `snapshot_show --ref`.
+Default `snapshot` and `web_snapshot` output is compact metadata plus artifact links. Full trees live in files under `.appium-cli/snapshots/`. For native screens with tabs, menus, lists, or duplicate labels, inspect the operable hierarchy with `snapshot_actionable_tree` before tapping. For other targeted lookups, use `snapshot_search`, paginated `web_refs`, or `snapshot_show --ref`.
 
 ## Core workflow
 
@@ -49,7 +49,7 @@ The command set you use depends on the current context. Always match commands to
 
 1. Observe: `appium-cli snapshot`.
 2. Understand operable structure: `snapshot_actionable_tree` when the screen has tabs, menus, lists, duplicate labels, or ambiguous regions.
-3. Extract detail if needed: `snapshot_search`, `snapshot_refs`, or `snapshot_show --ref`.
+3. Extract detail if needed: `snapshot_search`, `web_refs`, or `snapshot_show --ref`.
 4. Act: `tap <ref>`, `type_text <ref> <text>`, `scroll_down [ref]`.
 5. Observe again after actions that may change the screen.
 6. Use refs from the newest snapshot only.
@@ -62,7 +62,7 @@ Once in a WebView context, **prefer WebDriver/WebView commands** over native tou
 |------|----------------|
 | Navigate to URL | `appium-cli goto "https://..."` |
 | Observe page | `appium-cli web_snapshot` |
-| Find elements | `appium-cli snapshot_refs latest ...`, `snapshot_search ...`, or `web_query "input,button,a" --attrs=...` |
+| Find elements | `appium-cli web_refs latest ...`, `snapshot_search ...`, or `web_query "input,button,a" --attrs=...` |
 | Click element | `appium-cli click web_<ref>` |
 | Fill input | `appium-cli fill web_<ref> "text"` |
 | Check current URL | `appium-cli webview_url` |
@@ -73,7 +73,7 @@ Once in a WebView context, **prefer WebDriver/WebView commands** over native tou
 
 > **Rule**: After `webview_switch` succeeds, treat page-level work as web automation until `native_switch` is called. Refer to [WebView and Chrome](references/webview.md) for the full reference.
 
-Do not read whole snapshot artifacts by default. Treat `.compact.yml` as a file artifact that preserves UI hierarchy outside the prompt. Pull relevant fragments with `snapshot_search`, `snapshot_refs`, `web_query`, `snapshot_show --ref`, or local grep/rg-style extraction when available.
+Do not read whole snapshot artifacts by default. Treat `.compact.yml` as a file artifact that preserves UI hierarchy outside the prompt. Pull relevant fragments with `snapshot_search`, `web_refs`, `web_query`, `snapshot_show --ref`, or local grep/rg-style extraction when available.
 
 For piping, diffs, or full tree output, use global `--raw` before the command:
 
@@ -108,8 +108,8 @@ appium-cli snapshot --filename=screen.yml   # save tree while printing metadata
 appium-cli snapshot_actionable_tree         # native operable UI hierarchy
 appium-cli snapshot_search "Storage" --role=row      # search saved artifact/index
 appium-cli snapshot_search "ログイン" --or-text Login --or-text "Sign in"  # OR search
-appium-cli snapshot_refs latest --role=button        # list refs, paginated by default
-appium-cli snapshot_refs latest --role=button --offset=50  # next page when has_more=true
+appium-cli web_refs latest --role=button        # list refs, paginated by default
+appium-cli web_refs latest --role=button --offset=50  # next page when has_more=true
 appium-cli snapshot_show latest --ref=btn_login      # targeted ref detail
 appium-cli snapshot_show latest                      # targeted fallback; can be large
 appium-cli snapshot_show latest --artifact=full      # debugging only
@@ -122,7 +122,7 @@ appium-cli screenshot                       # rarely needed
 appium-cli get_page_source                  # token-heavy diagnostic escape hatch
 ```
 
-`snapshot` is primary for structure and refs. In native UI, `snapshot_actionable_tree` is the preferred low-token view for choosing what to operate because it preserves parent/child/sibling regions while showing only tappable/scrollable objects and required ancestors. Use `snapshot_search` as a targeted lookup after the hierarchy is understood; do not blindly tap the first search result when the same label appears in multiple containers. Use `web_text` when the task requires reading or summarizing WebView page/article/body text. Use `web_eval` for structured DOM extraction (ordered link lists, computed text, table data) — it works like Playwright's `browser_evaluate` and returns JSON for arrays/objects. Do not use `--depth` for normal full-page observations; snapshots are saved as artifacts, and depth can hide searchable targets. `snapshot_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary; reuse the returned artifact path and do not duplicate-save screenshots. Use `get_page_source` only for diagnostics when snapshot artifacts and `web_text` are insufficient.
+`snapshot` is primary for structure and refs. In native UI, `snapshot_actionable_tree` is the preferred low-token view for choosing what to operate because it preserves parent/child/sibling regions while showing only tappable/scrollable objects and required ancestors. Use `snapshot_search` as a targeted lookup after the hierarchy is understood; do not blindly tap the first search result when the same label appears in multiple containers. Use `web_text` when the task requires reading or summarizing WebView page/article/body text. Use `web_eval` for structured DOM extraction (ordered link lists, computed text, table data) — it works like Playwright's `browser_evaluate` and returns JSON for arrays/objects. Do not use `--depth` for normal full-page observations; snapshots are saved as artifacts, and depth can hide searchable targets. `web_refs` lists at most 50 refs by default and reports `has_more` / `next_offset`; request the next page or narrow the role/search instead of reading whole artifacts. Use `screenshot` only when visual pixels are necessary; reuse the returned artifact path and do not duplicate-save screenshots. Use `get_page_source` only for diagnostics when snapshot artifacts and `web_text` are insufficient.
 
 For duplicate native labels such as a main tab and sub-tab both named "アプリ":
 
@@ -146,7 +146,7 @@ appium-cli network_requests --filter "/api" # filter by URL
 
 `snapshot` and `web_snapshot` accept an optional `depth` parameter to limit the depth of the snapshot tree, but do not use it for normal full-page observations. By default, the full tree is saved to artifacts with no depth limit.
 
-Depth is only a scoped/debug escape hatch when you intentionally want a smaller subtree. Token control should normally use `snapshot_search`, `snapshot_show --ref`, and paginated `snapshot_refs`, not `depth`.
+Depth is only a scoped/debug escape hatch when you intentionally want a smaller subtree. Token control should normally use `snapshot_search`, `snapshot_show --ref`, and paginated `web_refs`, not `depth`.
 
 Depth counts only **semantic levels** (interactive elements, landmarks, headings, lists, tables) — layout wrappers like `<div>` and `<span>` are automatically flattened.
 
@@ -275,7 +275,7 @@ If the package id is unknown, use `appium-cli list_apps` to discover it (require
 ## Important rules
 
 - Keep `--raw` global: `appium-cli --raw snapshot`, not after the command.
-- Prefer targeted extraction over reading whole artifacts: `snapshot_search`, `snapshot_refs`, `web_query`, then `snapshot_show --ref`; whole `snapshot_show compact` is a fallback.
+- Prefer targeted extraction over reading whole artifacts: `snapshot_search`, `web_refs`, `web_query`, then `snapshot_show --ref`; whole `snapshot_show compact` is a fallback.
 - Do not call `adb`, `appium`, `npm`, or installer commands directly unless the user explicitly asks.
 - Prefer canonical snake_case tool names: `get_device_info`, `type_text`, `press_keycode`.
 - Do not edit installed skill copies under `.agents/` or `~/.copilot/`; edit `skills/appium-cli/` and run `appium-cli install --skills`.
@@ -284,7 +284,7 @@ If the package id is unknown, use `appium-cli list_apps` to discover it (require
 
 - **Use `goto` to navigate the current tab to a URL** — never tap the address bar, use `web_eval window.location.href`, or use `tabs new --url` as a workaround just to load a URL in the current tab.
 - **Use `web_snapshot`** to observe the page — not `snapshot`.
-- **Use `snapshot_refs` / `snapshot_search` for refs from the latest `web_snapshot`; use `web_query` for CSS/attribute discovery.**
+- **Use `web_refs` / `snapshot_search` for refs from the latest `web_snapshot`; use `web_query` for CSS/attribute discovery.**
 - **Use `fill`** to enter text in inputs — not `type_text` with a native ref.
 - **Prefer `click web_<ref>`** to click links and buttons; avoid native touch/tap workflows unless intentionally interacting outside the DOM.
 - **Use `webview_url` / `webview_title`** for quick URL/title checks before a full `web_snapshot`.

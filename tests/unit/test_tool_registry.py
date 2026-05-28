@@ -126,7 +126,7 @@ class TestSchemaStructure:
         show = get_tool("snapshot_show")
         actionable_tree = get_tool("snapshot_actionable_tree")
         search = get_tool("snapshot_search")
-        refs = get_tool("snapshot_refs")
+        refs = get_tool("web_refs")
         assert show is not None
         assert actionable_tree is not None
         assert search is not None
@@ -142,7 +142,7 @@ class TestSchemaStructure:
         assert "operable-only UI hierarchy" in actionable_tree.description
         assert "snapshot_actionable_tree" in search.description
         assert "tap_target_ref/action_target_ref" in search.description
-        assert "role=button can hide tappable rows/tabs" in refs.description
+        assert "Web-only" in refs.description
 
     def test_or_search_schemas(self) -> None:
         search = get_tool("snapshot_search")
@@ -199,7 +199,7 @@ class TestExpectedToolsCoverage:
 
     EXPECTED_DAEMON_TOOLS = {
         "snapshot", "describe", "find_by_text", "screenshot", "get_page_source",
-        "snapshot_show", "snapshot_search", "snapshot_refs", "generate_locator", "web_query", "web_text", "web_form_url",
+        "snapshot_show", "snapshot_search", "web_refs", "generate_locator", "web_query", "web_text", "web_form_url",
         "list_contexts", "get_context", "switch_context", "native_switch",
         "webview_switch", "webview_status", "web_snapshot", "webview_url", "webview_title",
         "goto", "go_back", "go_forward", "reload",

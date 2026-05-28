@@ -86,7 +86,7 @@ def _add(name: str, description: str, daemon_tool: str | None = None,
 # Observation
 # ============================================================
 
-_add("snapshot", "Get an accessibility snapshot with stable element refs. Returns metadata and artifact paths, not the full tree; use snapshot_search, snapshot_refs, or snapshot_show(ref=...) to inspect it.",
+_add("snapshot", "Get an accessibility snapshot with stable element refs. Returns metadata and artifact paths, not the full tree; use snapshot_search, web_refs, or snapshot_show(ref=...) to inspect it.",
      parameters=_schema({
          "scope": _str_param("Snapshot scope filter.", default="full"),
          "context": _str_param("Context: native, webview, auto, current, or exact name.", default="native",
@@ -96,7 +96,7 @@ _add("snapshot", "Get an accessibility snapshot with stable element refs. Return
          "filename": _str_param("Save snapshot to file."),
      }))
 
-_add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview). Returns metadata and artifact paths, not the full tree. Use snapshot_search/snapshot_refs for navigation targets, web_text for page/article text, or snapshot_show(ref=...) for one element.",
+_add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview). Returns metadata and artifact paths, not the full tree. Use snapshot_search/web_refs for navigation targets, web_text for page/article text, or snapshot_show(ref=...) for one element.",
      parameters=_schema({
          "scope": _str_param("Snapshot scope filter.", default="full"),
          "depth": _int_param("Limit the depth of the snapshot tree."),
@@ -107,7 +107,7 @@ _add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=
 _add("snapshot_show",
      "Show a persisted snapshot artifact. "
      "PREFER snapshot_actionable_tree for native operable hierarchy, or "
-     "snapshot_search(text=...) / snapshot_refs(role=...) for targeted element detail - "
+     "snapshot_search(text=...) / web_refs(role=...) for targeted element detail - "
      "they return compact targeted results. "
      "Use snapshot_show only with ref=<specific_ref> for one element's detail. "
      "artifact=compact returns the FULL tree (large) and wastes tokens in agent loops.",
@@ -139,12 +139,11 @@ _add("snapshot_search",
          "any_text": _str_array_param("Additional text variants to match (OR). Literal, case-insensitive. No regex."),
      }, required=["text"]))
 
-_add("snapshot_refs",
-     "List actionable refs from the latest snapshot with pagination. Fast, compact output. "
+_add("web_refs",
+     "List actionable refs from the latest WebView snapshot with pagination. Web-only. "
      "Defaults to limit=50; use next_offset when has_more=true. "
-     "Use this to discover available refs instead of reading the full tree. "
-     "For native UI, prefer snapshot_search(text=...) for visible labels; "
-     "role filters such as role=button can hide tappable rows/tabs/containers. "
+     "Use this to discover available refs from WebView/Chrome snapshots. "
+     "For native UI, use snapshot_actionable_tree instead. "
      "Not the right tool for launching apps: launcher app icons are often text-only "
      "and will not appear here. To start a known app, use activate_app <package> instead.",
      parameters=_schema({
@@ -168,7 +167,7 @@ _add("web_query", "Query the current WebView/Chrome DOM by CSS selector.",
      }, required=["selector"]))
 
 _add("web_text",
-     "Extract readable page text from the current WebView/Chrome DOM. Use this for article/body/page content to summarize; use web_snapshot/snapshot_refs for clickable refs.",
+     "Extract readable page text from the current WebView/Chrome DOM. Use this for article/body/page content to summarize; use web_snapshot/web_refs for clickable refs.",
      parameters=_schema({
          "selector": _str_param("Optional CSS selector. Empty auto-selects article, main, [role=main], then body.", default=""),
          "offset": _int_param("Character offset for continuation.", default=0),

@@ -114,7 +114,7 @@ def snapshot_search(
     _daemon_request("snapshot_search", json_output, args)
 
 
-def snapshot_refs(
+def web_refs(
     snapshot_id: Annotated[str, typer.Argument(help="Snapshot id or 'latest'.")] = "latest",
     ref: Annotated[str, typer.Argument(help="Optional ref to show in detail.")] = "",
     role: Annotated[str, typer.Option("--role", help="Filter listed refs by role.")] = "",
@@ -122,10 +122,10 @@ def snapshot_refs(
     offset: Annotated[int, typer.Option("--offset", help="Zero-based offset for paginated ref listings.")] = 0,
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
-    """List refs or show a single ref from a persisted snapshot artifact."""
+    """List refs from a persisted WebView snapshot artifact (web-only)."""
 
     _daemon_request(
-        "snapshot_refs",
+        "web_refs",
         json_output,
         {"snapshot_id": snapshot_id, "ref": ref, "role": role, "limit": limit, "offset": offset},
     )

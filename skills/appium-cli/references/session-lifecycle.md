@@ -51,7 +51,7 @@ appium-cli snapshot
 
 ## Artifact state
 
-Snapshots write artifacts under `.appium-cli/snapshots/` and update `latest.json`. Session-backed screenshots write PNG artifacts under `.appium-cli/<session-id>/`. Action commands refresh the snapshot automatically and print the new artifact links in normal output. Use `snapshot_search`, `snapshot_refs latest`, or targeted `snapshot_show latest --ref=<ref>` to inspect that state without another device query.
+Snapshots write artifacts under `.appium-cli/snapshots/` and update `latest.json`. Session-backed screenshots write PNG artifacts under `.appium-cli/<session-id>/`. Action commands refresh the snapshot automatically and print the new artifact links in normal output. Use `snapshot_search`, `web_refs latest`, or targeted `snapshot_show latest --ref=<ref>` to inspect that state without another device query.
 
 ## WebView lifecycle
 

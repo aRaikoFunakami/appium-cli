@@ -28,7 +28,7 @@ from appium_cli.tools.observation import (
     get_page_source,
     refresh_snapshot,
     screenshot,
-    snapshot_refs,
+    web_refs,
     snapshot_search,
     snapshot_show,
     web_query,
@@ -104,8 +104,8 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return {"text": snapshot_actionable_tree(), "data": {}}
     if tool == "snapshot_search":
         return {"text": snapshot_search(**args, raw=bool(request.get("raw"))), "data": {}}
-    if tool == "snapshot_refs":
-        return {"text": snapshot_refs(**args, raw=bool(request.get("raw"))), "data": {}}
+    if tool == "web_refs":
+        return {"text": web_refs(**args, raw=bool(request.get("raw"))), "data": {}}
     if tool == "generate_locator":
         return {"text": generate_locator(**args, raw=bool(request.get("raw"))), "data": {}}
     if tool == "web_query":
