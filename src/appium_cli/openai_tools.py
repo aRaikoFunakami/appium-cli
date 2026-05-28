@@ -120,6 +120,13 @@ Native UI: scrolling and lists:
 5. snapshot_actionable_tree({}) only renders the last snapshot; it does NOT refresh the device state. Call snapshot({}) first when you need a guaranteed fresh tree.
 6. Repeat with a changed target/search. Do not loop on the same query if the screen did not change.
 
+App management:
+1. activate_app({"app_id": "<package>"}) — launch or bring an app to foreground.
+2. terminate_app({"app_id": "<package>"}) — stop an app.
+3. restart_app({"app_id": "<package>"}) — terminate then activate (cold restart). Use when the task says "restart" or "relaunch" the app.
+4. get_current_app({}) — show current package and activity.
+- To restart the current app: get_current_app({}) to obtain the package, then restart_app({"app_id": "<package>"}).
+
 Starting WebView / Chrome work from native:
 1. If the task gives a URL, goto({"url": "https://example.com"}) is allowed; appium-cli will switch to WebView/Chrome if one is available, and future prompt guidance will become WebView.
 2. If you need an existing WebView without navigating, call webview_switch({}) first.

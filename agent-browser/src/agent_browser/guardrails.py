@@ -44,8 +44,6 @@ _OBSERVATION_TOOLS = frozenset({
 # Tools that are unconditionally blocked locally. We refuse to forward these
 # to the daemon regardless of any approval.
 BLOCKED_TOOLS: frozenset[str] = frozenset({
-    "terminate_app",
-    "restart_app",
     "set_orientation",
 })
 

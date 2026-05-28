@@ -19,6 +19,7 @@ _ACTIONABLE_ROLES = {
     "link",
     "menuitem",
     "textbox",
+    "select",
 }
 
 

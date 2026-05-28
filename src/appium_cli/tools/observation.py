@@ -761,42 +761,73 @@ def _is_operable_node(node: NativeSnapshotNode) -> bool:
     return node.actionable or node.scrollable
 
 
-def _direct_text_label(node: NativeSnapshotNode) -> str:
-    if node.name:
-        return node.name
+_CONTEXT_LABEL_KINDS = frozenset({"dialog", "overlay", "sheet", "topbar", "tabs", "selection"})
+
+
+def _own_text_label(node: NativeSnapshotNode) -> str:
+    value = node.name or node.text
+    return str(value).strip() if value is not None else ""
+
+
+def _own_context_label(node: NativeSnapshotNode) -> str:
+    value = node.name or node.text or node.value
+    return str(value).strip() if value is not None else ""
+
+
+def _dedupe_labels(labels: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for label in labels:
+        clean = str(label).strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        unique.append(clean)
+    return unique
+
+
+def _direct_child_text_labels(node: NativeSnapshotNode) -> list[str]:
     labels: list[str] = []
     for child in node.children:
-        if child.role == "text":
-            value = child.name or child.value or child.text
-            if value:
-                labels.append(str(value))
-    if labels:
-        return " / ".join(labels)
-    # Only recurse into non-text children for leaf-level actionable nodes
-    # (those that don't have operable children themselves, like tabs with
-    # nested TextViews inside intermediate layout containers).
-    if _has_operable_descendant(node):
-        return ""
-    for child in node.children:
         if child.role != "text":
-            nested = _collect_descendant_text(child, max_depth=3)
-            labels.extend(nested)
-    return " / ".join(labels)
+            continue
+        value = child.name or child.value or child.text
+        if value:
+            labels.append(str(value))
+    return _dedupe_labels(labels)
+
+
+def _is_context_label_node(node: NativeSnapshotNode) -> bool:
+    return bool(node.container_kind in _CONTEXT_LABEL_KINDS and _own_context_label(node))
+
+
+def _direct_text_label(node: NativeSnapshotNode) -> str:
+    own_label = _own_text_label(node)
+    if own_label:
+        return own_label
+    if not node.actionable:
+        return ""
+    labels = _direct_child_text_labels(node)
+    if not labels:
+        labels = _collect_descendant_text(node, max_depth=5)
+    return " / ".join(_dedupe_labels(labels))
 
 
 def _collect_descendant_text(node: NativeSnapshotNode, max_depth: int) -> list[str]:
-    """Collect text labels from descendants up to *max_depth* levels."""
+    """Collect descendant labels through non-operable wrapper branches."""
     if max_depth <= 0:
         return []
     labels: list[str] = []
     for child in node.children:
+        if _is_operable_node(child):
+            continue
         if child.role == "text":
             value = child.name or child.value or child.text
             if value:
                 labels.append(str(value))
         else:
             labels.extend(_collect_descendant_text(child, max_depth - 1))
-    return labels
+    return _dedupe_labels(labels)
 
 
 def _has_operable_descendant(node: NativeSnapshotNode) -> bool:
@@ -810,15 +841,25 @@ def _actionable_tree_line(node: NativeSnapshotNode) -> str:
     parts = [node.role]
     if node.ref:
         parts.append(f"[ref:{node.ref}]")
-    label = _direct_text_label(node) if _is_operable_node(node) else ""
+    if node.actionable:
+        label = _direct_text_label(node)
+    elif _is_context_label_node(node):
+        label = _own_context_label(node)
+    else:
+        label = ""
     if label:
         parts.append(json.dumps(label, ensure_ascii=False))
     visible_states = [item for item in node.state if item != "enabled"]
     if visible_states:
         parts.append(f"[{','.join(visible_states)}]")
+    metadata: list[str] = []
+    if node.container_kind:
+        metadata.append(f"kind:{node.container_kind}")
     if node.scrollable:
         direction = node.scroll_direction or "any"
-        parts.append(f"[scrollable:{direction}]")
+        metadata.append(f"scrollable:{direction}")
+    if metadata:
+        parts.append(f"[{','.join(metadata)}]")
     if node.value is not None and node.value != label:
         parts.append(f"value={json.dumps(str(node.value), ensure_ascii=False)}")
     return " ".join(parts)

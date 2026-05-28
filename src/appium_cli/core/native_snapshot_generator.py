@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from xml.etree import ElementTree as ET
 
-from .native_snapshot import NativeSnapshot, NativeSnapshotNode
+from .native_snapshot import _ACTIONABLE_ROLES, NativeSnapshot, NativeSnapshotNode
 from .snapshot import LocatorStrategy, parse_bounds
 
 
@@ -99,7 +99,6 @@ _SELECTION_CONTAINER_CLASSES = frozenset(
     _TAB_CLASSES
     | {
         "android.widget.RadioGroup",
-        "android.widget.Spinner",
         "com.google.android.material.button.MaterialButtonToggleGroup",
     }
 )
@@ -560,13 +559,7 @@ class NativeSnapshotGenerator:
         def walk(node: NativeSnapshotNode, depth: int) -> None:
             nonlocal best
             if node is not root and not node.omitted:
-                actionable = (
-                    node.role in {
-                        "button", "row", "tab", "checkbox", "radio",
-                        "switch", "link", "menuitem", "textbox",
-                    }
-                    or node.scrollable
-                )
+                actionable = node.role in _ACTIONABLE_ROLES or node.scrollable
                 if not actionable:
                     if best is None or depth > best[0]:
                         best = (depth, node)
@@ -626,12 +619,7 @@ class NativeSnapshotGenerator:
                 return True
             if node.container_kind:
                 return True
-            if node.role == "textbox":
-                return True
-            return node.role in {
-                "button", "row", "tab", "checkbox", "radio",
-                "switch", "link", "menuitem",
-            }
+            return node.role in _ACTIONABLE_ROLES
 
         def assign(node: NativeSnapshotNode) -> None:
             if needs_ref(node):

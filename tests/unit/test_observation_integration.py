@@ -457,6 +457,7 @@ def test_snapshot_actionable_tree_nested_text_labels():
                 children=[
                     NativeSnapshotNode(role="image"),
                     NativeSnapshotNode(role="text", name="ホーム"),
+                    NativeSnapshotNode(role="button", name="Favorite", ref="favorite_home"),
                 ],
             ),
         ],
@@ -471,6 +472,7 @@ def test_snapshot_actionable_tree_nested_text_labels():
                 children=[
                     NativeSnapshotNode(role="image"),
                     NativeSnapshotNode(role="text", name="映画"),
+                    NativeSnapshotNode(role="button", name="Favorite", ref="favorite_movie"),
                 ],
             ),
         ],
@@ -486,6 +488,56 @@ def test_snapshot_actionable_tree_nested_text_labels():
 
     assert 'row [ref:tabbackground] "ホーム"' in out
     assert 'row [ref:tabbackground_2] "映画"' in out
+
+
+def test_snapshot_actionable_tree_scroll_container_does_not_aggregate_labels():
+    items = NativeSnapshotNode(
+        role="list",
+        ref="items",
+        container_kind="list",
+        scrollable=True,
+        scroll_direction="vertical",
+        children=[
+            NativeSnapshotNode(role="text", name="おすすめ"),
+            NativeSnapshotNode(
+                role="row",
+                ref="item_1",
+                children=[NativeSnapshotNode(role="text", name="映画A")],
+            ),
+            NativeSnapshotNode(
+                role="row",
+                ref="item_2",
+                children=[NativeSnapshotNode(role="text", name="映画B")],
+            ),
+        ],
+    )
+    state.current_snapshot = NativeSnapshot.from_root(
+        root=NativeSnapshotNode(role="container", children=[items])
+    )
+
+    out = observation.snapshot_actionable_tree()
+
+    assert 'list [ref:items] [kind:list,scrollable:vertical]' in out
+    assert 'list [ref:items] "おすすめ' not in out
+    assert 'row [ref:item_1] "映画A"' in out
+    assert 'row [ref:item_2] "映画B"' in out
+
+
+def test_snapshot_actionable_tree_context_kind_shows_own_label():
+    dialog = NativeSnapshotNode(
+        role="container",
+        name="確認",
+        container_kind="dialog",
+        children=[NativeSnapshotNode(role="button", name="OK", ref="ok")],
+    )
+    state.current_snapshot = NativeSnapshot.from_root(
+        root=NativeSnapshotNode(role="container", children=[dialog])
+    )
+
+    out = observation.snapshot_actionable_tree()
+
+    assert 'container "確認" [kind:dialog]' in out
+    assert 'button [ref:ok] "OK"' in out
 
 
 def test_snapshot_actionable_tree_requires_current_snapshot():

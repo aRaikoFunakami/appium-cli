@@ -108,6 +108,32 @@ def test_descriptive_refs_truncate_at_128_chars_without_changing_resource_ids():
     assert len(resource_ref) > 128
 
 
+def test_spinner_select_gets_ref_and_is_actionable():
+    xml = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.LinearLayout" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[0,0][1080,1920]" displayed="true">
+    <node index="0" text="ジャンル" resource-id="com.example.app:id/genreSpinner" class="android.widget.Spinner" package="com.example.app" content-desc="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[100,100][500,200]" displayed="true"/>
+  </node>
+</hierarchy>
+"""
+    snap = NativeSnapshotGenerator().generate(xml)
+    select_nodes = [n for n in _walk(snap.root) if n.role == "select"]
+
+    assert len(select_nodes) == 1
+    assert select_nodes[0].ref == "genrespinner"
+    assert select_nodes[0].actionable is True
+
+
+def test_select_is_not_deepest_omittable():
+    select = NativeSnapshotNode(role="select", ref="sort", name="並び替え")
+    filler = NativeSnapshotNode(role="container", name="補足")
+    root = NativeSnapshotNode(role="container", children=[select, filler])
+
+    target = NativeSnapshotGenerator._deepest_omittable(root)
+
+    assert target is filler
+
+
 def test_recycler_view_rows_get_refs_text_does_not():
     snap = NativeSnapshotGenerator().generate(load("recycler_view.xml"))
     rows = [n for n in _walk(snap.root) if n.role == "row"]
