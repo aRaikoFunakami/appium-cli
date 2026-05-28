@@ -445,12 +445,56 @@ def test_snapshot_actionable_tree_distinguishes_duplicate_app_tabs():
     assert "アプリはありません" not in out
 
 
+def test_snapshot_actionable_tree_nested_text_labels():
+    """Tabs with text nested inside intermediate layout containers show labels."""
+    tab_home = NativeSnapshotNode(
+        role="row",
+        ref="tabbackground",
+        bounds=(0, 0, 270, 168),
+        children=[
+            NativeSnapshotNode(
+                role="container",
+                children=[
+                    NativeSnapshotNode(role="image"),
+                    NativeSnapshotNode(role="text", name="ホーム"),
+                ],
+            ),
+        ],
+    )
+    tab_movie = NativeSnapshotNode(
+        role="row",
+        ref="tabbackground_2",
+        bounds=(270, 0, 540, 168),
+        children=[
+            NativeSnapshotNode(
+                role="container",
+                children=[
+                    NativeSnapshotNode(role="image"),
+                    NativeSnapshotNode(role="text", name="映画"),
+                ],
+            ),
+        ],
+    )
+    root = NativeSnapshotNode(
+        role="container",
+        bounds=(0, 0, 1080, 1920),
+        children=[tab_home, tab_movie],
+    )
+    state.current_snapshot = NativeSnapshot.from_root(root=root, app_info="com.example/.Main")
+
+    out = observation.snapshot_actionable_tree()
+
+    assert 'row [ref:tabbackground] "ホーム"' in out
+    assert 'row [ref:tabbackground_2] "映画"' in out
+
+
 def test_snapshot_actionable_tree_requires_current_snapshot():
     state.current_snapshot = None
 
     out = observation.snapshot_actionable_tree()
 
-    assert out == "ERROR: No snapshot available. Run snapshot() first."
+    assert out.startswith("ERROR:")
+    assert "auto-refresh" in out or "Driver is not initialized" in out
 
 
 def test_snapshot_actionable_tree_webview_message():

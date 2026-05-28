@@ -766,12 +766,37 @@ def _direct_text_label(node: NativeSnapshotNode) -> str:
         return node.name
     labels: list[str] = []
     for child in node.children:
+        if child.role == "text":
+            value = child.name or child.value or child.text
+            if value:
+                labels.append(str(value))
+    if labels:
+        return " / ".join(labels)
+    # Only recurse into non-text children for leaf-level actionable nodes
+    # (those that don't have operable children themselves, like tabs with
+    # nested TextViews inside intermediate layout containers).
+    if _has_operable_descendant(node):
+        return ""
+    for child in node.children:
         if child.role != "text":
-            continue
-        value = child.name or child.value or child.text
-        if value:
-            labels.append(str(value))
+            nested = _collect_descendant_text(child, max_depth=3)
+            labels.extend(nested)
     return " / ".join(labels)
+
+
+def _collect_descendant_text(node: NativeSnapshotNode, max_depth: int) -> list[str]:
+    """Collect text labels from descendants up to *max_depth* levels."""
+    if max_depth <= 0:
+        return []
+    labels: list[str] = []
+    for child in node.children:
+        if child.role == "text":
+            value = child.name or child.value or child.text
+            if value:
+                labels.append(str(value))
+        else:
+            labels.extend(_collect_descendant_text(child, max_depth - 1))
+    return labels
 
 
 def _has_operable_descendant(node: NativeSnapshotNode) -> bool:
@@ -1050,6 +1075,14 @@ def snapshot_show(
 def snapshot_actionable_tree() -> str:
     """Render the current native snapshot as an operable-only hierarchy."""
     snapshot_obj = state.current_snapshot
+    if snapshot_obj is None:
+        # Auto-refresh: take a native snapshot so the caller doesn't need
+        # to invoke snapshot() separately before snapshot_actionable_tree().
+        try:
+            refresh_snapshot(scope="full", context="native")
+        except Exception as exc:
+            return f"ERROR: Failed to auto-refresh snapshot: {exc}"
+        snapshot_obj = state.current_snapshot
     if snapshot_obj is None:
         return "ERROR: No snapshot available. Run snapshot() first."
     if isinstance(snapshot_obj, WebSnapshot):
