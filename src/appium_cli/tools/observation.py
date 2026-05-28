@@ -914,6 +914,21 @@ def _map_web_query_ref(item: dict[str, Any], refs: dict[str, dict[str, Any]]) ->
     return ""
 
 
+def _render_actionable_tree_block(snapshot_obj: NativeSnapshot) -> str:
+    """Render the operable-only hierarchy for a freshly captured native snapshot.
+
+    Used to inline the actionable tree into the default `snapshot` output so
+    LLM agents do not need a follow-up `snapshot_actionable_tree` round-trip.
+    No stale warning is needed because this is called immediately after capture.
+    """
+    lines: list[str] = []
+    _render_actionable_tree_node(snapshot_obj.root, lines, indent=0)
+    if not lines:
+        return "actionable_tree:\n  (no operable elements)"
+    body = "\n".join("  " + line for line in lines)
+    return "actionable_tree:\n" + body
+
+
 def _snapshot_result(
     snapshot_obj: NativeSnapshot | WebSnapshot,
     *,
@@ -923,6 +938,7 @@ def _snapshot_result(
     boxes: bool,
     filename: str,
     raw: bool,
+    include_tree: bool = True,
 ) -> SnapshotResult:
     render_scope = _render_scope(snapshot_obj, scope=scope, target=target, depth=depth)
     bundle = create_snapshot_bundle_payload(snapshot_obj, scope=render_scope if render_scope != "full" else None)
@@ -933,7 +949,12 @@ def _snapshot_result(
     raw_text = _snapshot_text(snapshot_obj, render_scope, boxes=boxes)
     if filename:
         Path(filename).write_text(raw_text, encoding="utf-8")
-    text = raw_text if raw else _format_artifact_metadata(bundle)
+    if raw:
+        text = raw_text
+    else:
+        text = _format_artifact_metadata(bundle)
+        if include_tree and isinstance(snapshot_obj, NativeSnapshot):
+            text = text + "\n" + _render_actionable_tree_block(snapshot_obj)
     return SnapshotResult(text=text, data=bundle.meta_json, raw_text=raw_text, bundle=bundle)
 
 
@@ -947,6 +968,7 @@ def refresh_snapshot(
     boxes: bool = False,
     filename: str = "",
     raw: bool = False,
+    no_tree: bool = False,
 ) -> SnapshotResult:
     """Take a snapshot in the requested context.
 
@@ -958,6 +980,7 @@ def refresh_snapshot(
         max_nodes: max nodes for web snapshots
         boxes: include bounding boxes (web snapshots)
         filename: save output to file
+        no_tree: when True, skip the inlined actionable_tree (native default output)
     """
     driver = _require_driver()
     resolved_context = resolve_context(context, driver)
@@ -977,6 +1000,7 @@ def refresh_snapshot(
         boxes=boxes,
         filename=filename,
         raw=raw,
+        include_tree=not no_tree,
     )
 
 
@@ -989,6 +1013,7 @@ def snapshot(
     boxes: bool = False,
     filename: str = "",
     raw: bool = False,
+    no_tree: bool = False,
 ) -> str:
     """Public snapshot entry point."""
     result = refresh_snapshot(
@@ -1000,6 +1025,7 @@ def snapshot(
         boxes=boxes,
         filename=filename,
         raw=raw,
+        no_tree=no_tree,
     )
     return result.text
 

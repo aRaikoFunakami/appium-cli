@@ -86,7 +86,7 @@ def _add(name: str, description: str, daemon_tool: str | None = None,
 # Observation
 # ============================================================
 
-_add("snapshot", "Get an accessibility snapshot with stable element refs. Returns metadata and artifact paths, not the full tree; use snapshot_search, web_refs, or snapshot_show(ref=...) to inspect it.",
+_add("snapshot", "Get an accessibility snapshot with stable element refs. For native context, the default output appends an operable-only actionable_tree block so a follow-up snapshot_actionable_tree call is usually unnecessary. Full trees stay in artifacts; use snapshot_search, web_refs, or snapshot_show(ref=...) for detail.",
      parameters=_schema({
          "scope": _str_param("Snapshot scope filter.", default="full"),
          "context": _str_param("Context: native, webview, auto, current, or exact name.", default="native",
@@ -94,6 +94,7 @@ _add("snapshot", "Get an accessibility snapshot with stable element refs. Return
          "depth": _int_param("Limit the depth of the snapshot tree."),
          "boxes": _bool_param("Include element bounding boxes in output."),
          "filename": _str_param("Save snapshot to file."),
+         "no_tree": _bool_param("Skip the inlined actionable_tree appended to native snapshot metadata."),
      }))
 
 _add("web_snapshot", "Take a WebView DOM snapshot (alias for snapshot --context=webview). Returns metadata and artifact paths, not the full tree. Use snapshot_search/web_refs for navigation targets, web_text for page/article text, or snapshot_show(ref=...) for one element.",

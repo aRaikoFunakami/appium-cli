@@ -58,6 +58,7 @@ def snapshot(
     max_nodes: Annotated[int | None, typer.Option("--max-nodes", help="Limit snapshot tree to N nodes (applies to both native and web).")] = None,
     boxes: Annotated[bool, typer.Option("--boxes", help="Include element bounding boxes in output (native and web).")] = False,
     filename: Annotated[str, typer.Option("--filename", help="Save snapshot to file.")] = "",
+    no_tree: Annotated[bool, typer.Option("--no-tree", help="Skip the inlined actionable_tree appended to native snapshot metadata.")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Wrap the result in JSON.")] = False,
 ) -> None:
     """Get an accessibility snapshot with refs."""
@@ -73,6 +74,8 @@ def snapshot(
         args["boxes"] = boxes
     if filename:
         args["filename"] = filename
+    if no_tree:
+        args["no_tree"] = no_tree
     _daemon_request("snapshot", json_output, args)
 
 
