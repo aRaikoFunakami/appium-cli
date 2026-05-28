@@ -82,11 +82,6 @@ class AgentBrowserConfig:
     artifacts_dir: Path = field(default_factory=lambda: Path(".appium-cli/agent-browser/artifacts"))
     memory_path: Path = field(default_factory=lambda: Path(".agent-browser-memory.jsonl"))
     log_level: str = "INFO"
-    scroll_main_content_bias: float = 1.0
-    scroll_header_penalty: float = 1.0
-    scroll_verify_required: bool = True
-    step_block_strict: bool = True
-    llm_assist_budget_per_step: int = 2
     # --- Completion verification ---
     max_verification_retries: int = 2
     max_wall_seconds: float = 300.0
@@ -133,11 +128,6 @@ class AgentBrowserConfig:
             artifacts_dir=artifacts,
             memory_path=memory,
             log_level=_env_str("AGENT_BROWSER_LOG_LEVEL", "INFO") or "INFO",
-            scroll_main_content_bias=_env_float("AGENT_BROWSER_SCROLL_MAIN_CONTENT_BIAS", 1.0),
-            scroll_header_penalty=_env_float("AGENT_BROWSER_SCROLL_HEADER_PENALTY", 1.0),
-            scroll_verify_required=_env_bool("AGENT_BROWSER_SCROLL_VERIFY_REQUIRED", True),
-            step_block_strict=_env_bool("AGENT_BROWSER_STEP_BLOCK_STRICT", True),
-            llm_assist_budget_per_step=_env_int("AGENT_BROWSER_LLM_ASSIST_BUDGET_PER_STEP", 2),
             max_verification_retries=_env_int("AGENT_BROWSER_MAX_VERIFICATION_RETRIES", 2),
             max_wall_seconds=_env_float("AGENT_BROWSER_MAX_WALL_SECONDS", 300.0),
             max_no_progress_steps=_env_int("AGENT_BROWSER_MAX_NO_PROGRESS_STEPS", 8),
