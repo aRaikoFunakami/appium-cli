@@ -762,6 +762,18 @@ def _is_operable_node(node: NativeSnapshotNode) -> bool:
 
 
 _CONTEXT_LABEL_KINDS = frozenset({"dialog", "overlay", "sheet", "topbar", "tabs", "selection"})
+_MAX_DUPLICATE_LABEL_GROUPS = 5
+_MAX_DUPLICATE_REFS_PER_LABEL = 4
+_MAX_SELECTED_TARGETS = 8
+
+
+@dataclass(frozen=True)
+class _ActionableTreeRecord:
+    ref: str
+    role: str
+    label: str
+    path: str
+    state: tuple[str, ...]
 
 
 def _own_text_label(node: NativeSnapshotNode) -> str:
@@ -813,6 +825,14 @@ def _direct_text_label(node: NativeSnapshotNode) -> str:
     return " / ".join(_dedupe_labels(labels))
 
 
+def _actionable_tree_label(node: NativeSnapshotNode) -> str:
+    if node.actionable:
+        return _direct_text_label(node)
+    if _is_context_label_node(node):
+        return _own_context_label(node)
+    return ""
+
+
 def _collect_descendant_text(node: NativeSnapshotNode, max_depth: int) -> list[str]:
     """Collect descendant labels through non-operable wrapper branches."""
     if max_depth <= 0:
@@ -841,12 +861,7 @@ def _actionable_tree_line(node: NativeSnapshotNode) -> str:
     parts = [node.role]
     if node.ref:
         parts.append(f"[ref:{node.ref}]")
-    if node.actionable:
-        label = _direct_text_label(node)
-    elif _is_context_label_node(node):
-        label = _own_context_label(node)
-    else:
-        label = ""
+    label = _actionable_tree_label(node)
     if label:
         parts.append(json.dumps(label, ensure_ascii=False))
     visible_states = [item for item in node.state if item != "enabled"]
@@ -863,6 +878,101 @@ def _actionable_tree_line(node: NativeSnapshotNode) -> str:
     if node.value is not None and node.value != label:
         parts.append(f"value={json.dumps(str(node.value), ensure_ascii=False)}")
     return " ".join(parts)
+
+
+def _note_path_segment(node: NativeSnapshotNode) -> str:
+    segment = node.role
+    if node.ref:
+        segment += f"[{node.ref}]"
+    label = _actionable_tree_label(node)
+    if label:
+        segment += f" {json.dumps(label, ensure_ascii=False)}"
+    return segment
+
+
+def _collect_actionable_tree_records(root: NativeSnapshotNode) -> list[_ActionableTreeRecord]:
+    records: list[_ActionableTreeRecord] = []
+
+    def walk(node: NativeSnapshotNode, ancestors: list[str]) -> None:
+        current = [*ancestors, _note_path_segment(node)]
+        label = _actionable_tree_label(node)
+        if node.actionable and node.ref:
+            records.append(
+                _ActionableTreeRecord(
+                    ref=node.ref,
+                    role=node.role,
+                    label=label,
+                    path=" > ".join(current),
+                    state=tuple(node.state),
+                )
+            )
+        for child in node.children:
+            walk(child, current)
+
+    walk(root, [])
+    return records
+
+
+def _normalize_note_label(label: str) -> str:
+    return " ".join(label.split())
+
+
+def _trim_note_text(text: str, limit: int = 180) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 12].rstrip() + "...[trimmed]"
+
+
+def _format_record_ref_path(record: _ActionableTreeRecord) -> str:
+    return f"[ref:{record.ref}] path={_trim_note_text(record.path)}"
+
+
+def _duplicate_label_notes(records: list[_ActionableTreeRecord]) -> list[str]:
+    grouped: dict[str, list[_ActionableTreeRecord]] = {}
+    for record in records:
+        label = _normalize_note_label(record.label)
+        if not label:
+            continue
+        grouped.setdefault(label, []).append(record)
+
+    duplicates = [(label, items) for label, items in grouped.items() if len(items) > 1]
+    if not duplicates:
+        return []
+
+    lines = ["- Duplicate actionable labels detected; choose carefully by ref and parent context before tapping."]
+    shown_groups = duplicates[:_MAX_DUPLICATE_LABEL_GROUPS]
+    for label, items in shown_groups:
+        shown_items = items[:_MAX_DUPLICATE_REFS_PER_LABEL]
+        refs = "; ".join(_format_record_ref_path(item) for item in shown_items)
+        if len(items) > len(shown_items):
+            refs += f"; ... +{len(items) - len(shown_items)} more"
+        lines.append(f"  - {json.dumps(label, ensure_ascii=False)}: {refs}")
+    if len(duplicates) > len(shown_groups):
+        lines.append(f"  - ... {len(duplicates) - len(shown_groups)} more duplicate labels not shown.")
+    return lines
+
+
+def _selected_target_notes(records: list[_ActionableTreeRecord]) -> list[str]:
+    selected = [record for record in records if "selected" in record.state]
+    if not selected:
+        return []
+
+    shown = selected[:_MAX_SELECTED_TARGETS]
+    targets: list[str] = []
+    for record in shown:
+        label = f" {json.dumps(record.label, ensure_ascii=False)}" if record.label else ""
+        targets.append(f"[ref:{record.ref}]{label} path={_trim_note_text(record.path)}")
+    if len(selected) > len(shown):
+        targets.append(f"... +{len(selected) - len(shown)} more")
+    return ["- Selected targets: " + "; ".join(targets)]
+
+
+def _actionable_tree_notes(snapshot_obj: NativeSnapshot) -> list[str]:
+    records = _collect_actionable_tree_records(snapshot_obj.root)
+    notes = [*_duplicate_label_notes(records), *_selected_target_notes(records)]
+    if not notes:
+        return []
+    return ["Notes:", *notes]
 
 
 def _render_actionable_tree_node(
@@ -1148,6 +1258,9 @@ def snapshot_actionable_tree() -> str:
         if lines:
             return lines[0] + "\nNo operable elements found in current snapshot."
         return "No operable elements found in current snapshot."
+    notes = _actionable_tree_notes(snapshot_obj)
+    if notes:
+        lines.extend(["", *notes])
     return "\n".join(lines)
 
 

@@ -442,6 +442,10 @@ def test_snapshot_actionable_tree_distinguishes_duplicate_app_tabs():
     assert '    row [ref:tabbackground_4] "アプリ"' in out
     assert '  list' in out
     assert '    button [ref:tabbtn_2] "アプリ"' in out
+    assert "Duplicate actionable labels detected" in out
+    assert '"アプリ":' in out
+    assert "[ref:tabbackground_4]" in out
+    assert "[ref:tabbtn_2]" in out
     assert "アプリはありません" not in out
 
 
@@ -538,6 +542,45 @@ def test_snapshot_actionable_tree_context_kind_shows_own_label():
 
     assert 'container "確認" [kind:dialog]' in out
     assert 'button [ref:ok] "OK"' in out
+
+
+def test_snapshot_actionable_tree_duplicate_notes_are_capped():
+    buttons = [
+        NativeSnapshotNode(role="button", name="Favorite Icon", ref=f"favorite_{index}")
+        for index in range(6)
+    ]
+    state.current_snapshot = NativeSnapshot.from_root(
+        root=NativeSnapshotNode(role="container", children=buttons)
+    )
+
+    out = observation.snapshot_actionable_tree()
+    note_line = next(line for line in out.splitlines() if '"Favorite Icon":' in line)
+
+    assert '"Favorite Icon":' in out
+    assert "[ref:favorite_0]" in note_line
+    assert "[ref:favorite_3]" in note_line
+    assert "[ref:favorite_4]" not in note_line
+    assert "... +2 more" in note_line
+
+
+def test_snapshot_actionable_tree_selected_targets_are_summarized():
+    tabs = NativeSnapshotNode(
+        role="list",
+        ref="tabs",
+        children=[
+            NativeSnapshotNode(role="tab", name="ホーム", ref="tab_home"),
+            NativeSnapshotNode(role="tab", name="映画", ref="tab_movie", state=["selected"]),
+        ],
+    )
+    state.current_snapshot = NativeSnapshot.from_root(
+        root=NativeSnapshotNode(role="container", children=[tabs])
+    )
+
+    out = observation.snapshot_actionable_tree()
+
+    assert 'tab [ref:tab_movie] "映画" [selected]' in out
+    assert "Selected targets:" in out
+    assert '[ref:tab_movie] "映画" path=' in out
 
 
 def test_snapshot_actionable_tree_requires_current_snapshot():
