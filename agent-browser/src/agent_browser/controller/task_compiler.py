@@ -55,7 +55,7 @@ class TaskCompiler:
                 id=f"criterion-{index}",
                 description=text,
                 method=self._criterion_method(text),
-                args={"raw_text": text},
+                args=self._criterion_args(text),
             )
             for index, text in enumerate(criterion_lines, start=1)
         ]
@@ -191,6 +191,13 @@ class TaskCompiler:
         if self._contains_any(text, "表示", "確認", "visible", "shown", "appears"):
             return "text_present"
         return "llm_judge"
+
+    def _criterion_args(self, text: str) -> dict[str, str]:
+        args = {"raw_text": text}
+        quoted = _QUOTED_RE.search(text)
+        if quoted:
+            args["text"] = quoted.group("text")
+        return args
 
     def _contains_any(self, text: str, *needles: str) -> bool:
         return any(needle in text for needle in needles)

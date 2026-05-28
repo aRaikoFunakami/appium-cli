@@ -31,6 +31,10 @@ def verify_success_criteria(plan: TaskPlan, world: WorldModel) -> FinalVerificat
             return FinalVerification(passed=False, reason="no final snapshot for favorites verification")
         return _verify_recorded_content_visible(plan, snapshot)
 
+    text_result = _verify_text_present_criteria(plan, world)
+    if text_result is not None:
+        return text_result
+
     return FinalVerification(passed=True, reason="no deterministic criteria matched")
 
 
@@ -91,6 +95,34 @@ def _recorded_content_texts(plan: TaskPlan) -> list[str]:
             if item.startswith("content_text:"):
                 texts.append(item.removeprefix("content_text:"))
     return texts
+
+
+def _verify_text_present_criteria(plan: TaskPlan, world: WorldModel) -> FinalVerification | None:
+    criteria = [
+        criterion
+        for criterion in plan.success_criteria
+        if criterion.method == "text_present"
+    ]
+    if not criteria:
+        return None
+    snapshot = world.current()
+    if snapshot is None:
+        return FinalVerification(passed=False, reason="no final snapshot for text verification")
+    visible_texts = {target.text.strip() for target in snapshot.text_targets if target.text.strip()}
+    for criterion in criteria:
+        expected = criterion.args.get("text") or criterion.args.get("raw_text", "").strip()
+        if expected not in visible_texts:
+            return FinalVerification(
+                passed=False,
+                reason=f"expected text not visible: {expected}",
+            )
+    return FinalVerification(
+        passed=True,
+        reason="expected text visible: " + ", ".join(
+            criterion.args.get("text") or criterion.args.get("raw_text", "").strip()
+            for criterion in criteria
+        ),
+    )
 
 
 def _content_text_candidates(plan: TaskPlan, snapshot: Snapshot) -> list[TextTarget]:

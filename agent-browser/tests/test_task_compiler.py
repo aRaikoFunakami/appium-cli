@@ -78,4 +78,17 @@ A. The content is visible in Favorites
         StepKind.NAVIGATE,
     ]
     assert plan.steps[2].arguments["direction"] == "up"
+
+
+def test_display_expectation_extracts_quoted_text() -> None:
+    goal = """\
+1. Tap the Recent tab
+期待動作
+アプリ履歴のない場合、「アプリはありません」を表示する
+"""
+
+    plan = TaskCompiler().compile(goal)
+
+    assert len(plan.success_criteria) == 1
     assert plan.success_criteria[0].method == "text_present"
+    assert plan.success_criteria[0].args["text"] == "アプリはありません"
