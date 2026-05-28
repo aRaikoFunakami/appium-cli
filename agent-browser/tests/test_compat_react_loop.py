@@ -55,6 +55,7 @@ async def test_react_controller_dispatch_uses_legacy_loop(tmp_path) -> None:
         result = await run_browser_task("goal", cfg)
 
     assert result is expected
+    assert result.billing is not None
     react_loop.assert_awaited_once()
     structured.assert_not_awaited()
 
@@ -79,6 +80,7 @@ async def test_structured_controller_dispatch_uses_structured_loop(tmp_path) -> 
         result = await run_browser_task("goal", cfg)
 
     assert result is expected
+    assert result.billing is not None
     structured.assert_awaited_once()
     react_loop.assert_not_awaited()
 
@@ -93,7 +95,10 @@ def test_cli_allows_default_structured_without_openai_key(monkeypatch, capsys) -
 
     assert exit_code == 0
     runner.assert_awaited_once()
-    assert "[OK] structured" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "[OK] structured" in out
+    assert "billing: model=" in out
+    assert "calls=0" in out
 
 
 def test_cli_requires_openai_key_for_react_controller(monkeypatch, capsys) -> None:

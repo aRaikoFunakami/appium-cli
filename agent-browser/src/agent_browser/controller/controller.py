@@ -14,6 +14,7 @@ from agent_browser.controller.task_compiler import TaskCompiler
 from agent_browser.controller.task_plan import StepKind
 from agent_browser.controller.verification import infer_content_identity, verify_success_criteria
 from agent_browser.schemas import TaskResult
+from agent_browser.token_counter import UsageTracker
 from agent_browser.world.model import WorldModel
 
 logger = logging.getLogger(__name__)
@@ -23,8 +24,10 @@ async def run_structured_controller(
     goal: str,
     cfg: AgentBrowserConfig,
     context: BrowserAgentContext,
+    usage_tracker: UsageTracker | None = None,
 ) -> TaskResult:
     """Run a task through the structured controller."""
+    tracker = usage_tracker or UsageTracker(primary_model=cfg.model)
     plan = TaskCompiler().compile(goal)
     world = WorldModel()
     executor = Executor(context=context, world=world)
@@ -92,6 +95,7 @@ async def run_structured_controller(
         retries=context.memory.total_retries(),
         artifacts=list(context.memory.artifacts),
         failures=failures + list(context.memory.failures),
+        billing=tracker.to_billing_info(),
     )
 
 

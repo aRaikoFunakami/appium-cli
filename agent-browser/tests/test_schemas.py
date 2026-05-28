@@ -88,17 +88,31 @@ class TestBillingInfo:
                 BillingInfo.BillingCall(
                     index=1,
                     call_type="action",
+                    model="gpt-5.4",
                     input_tokens=10,
                     cached_tokens=2,
+                    uncached_input_tokens=8,
                     output_tokens=3,
+                    reasoning_tokens=1,
                     total_tokens=13,
                     cost_usd=0.0001,
+                    tool_token_estimates=[
+                        BillingInfo.ToolTokenEstimate(
+                            tool_name="web_text",
+                            output_chars=100,
+                            estimated_input_tokens=25,
+                            attributed_input_tokens=20,
+                            clamped=True,
+                        )
+                    ],
                 )
             ],
         )
         data = json.loads(b.model_dump_json())
         assert data["call_breakdown"][0]["index"] == 1
         assert data["call_breakdown"][0]["call_type"] == "action"
+        assert data["call_breakdown"][0]["model"] == "gpt-5.4"
+        assert data["call_breakdown"][0]["tool_token_estimates"][0]["tool_name"] == "web_text"
 
 
 class TestMemoryEvent:

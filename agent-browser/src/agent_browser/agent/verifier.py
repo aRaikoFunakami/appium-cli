@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from agent_browser.token_counter import UsageTracker
+
 if TYPE_CHECKING:
     from agent_browser.agent.brain import AgentBrain
     from agent_browser.memory import WorkingMemory
@@ -263,11 +265,13 @@ class LLMJudge:
         model: str = "gpt-4.1",
         max_tokens: int = 512,
         fail_open: bool = True,
+        usage_tracker: UsageTracker | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
         self._max_tokens = max_tokens
         self._fail_open = fail_open
+        self._usage_tracker = usage_tracker
 
     async def verify(
         self,
@@ -298,6 +302,13 @@ class LLMJudge:
                 temperature=0.0,
                 response_format={"type": "json_object"},
             )
+            if self._usage_tracker is not None:
+                self._usage_tracker.record_chat_completion_response(
+                    response,
+                    model=self._model,
+                    call_type="judge",
+                    phase="verification",
+                )
             raw = (response.choices[0].message.content or "").strip()
             verdict = _json.loads(raw)
         except Exception as exc:

@@ -17,6 +17,7 @@ from agent_browser.agent.verifier import (
 )
 from agent_browser.memory import WorkingMemory
 from agent_browser.schemas import ToolCallRecord
+from agent_browser.token_counter import UsageTracker
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +327,37 @@ class TestLLMJudge:
         assert "issue 5" in vr.missing
         assert "Fix only clear unmet explicit requirements" in vr.feedback
         assert "do not repeat it solely to satisfy verification" in vr.feedback
+
+    def test_records_judge_usage_when_tracker_is_provided(self) -> None:
+        tracker = UsageTracker(primary_model="gpt-4.1-mini")
+        judge = LLMJudge(api_key="test-key", model="gpt-4.1", usage_tracker=tracker)
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = '{"satisfied": true, "reason": "ok", "missing": []}'
+        mock_response.usage = MagicMock()
+        mock_response.usage.prompt_tokens = 123
+        mock_response.usage.completion_tokens = 12
+        mock_response.usage.prompt_tokens_details = MagicMock()
+        mock_response.usage.prompt_tokens_details.cached_tokens = 3
+        mock_response.usage.completion_tokens_details = MagicMock()
+        mock_response.usage.completion_tokens_details.reasoning_tokens = 4
+
+        with patch("openai.AsyncOpenAI") as MockClient:
+            instance = MockClient.return_value
+            instance.chat.completions.create = AsyncMock(return_value=mock_response)
+            vr = asyncio.get_event_loop().run_until_complete(
+                judge.verify("goal", "complete result", "1. snapshot {} -> ok")
+            )
+
+        assert vr.passed
+        assert len(tracker.calls) == 1
+        assert tracker.calls[0].call_type == "judge"
+        assert tracker.calls[0].model == "gpt-4.1"
+        assert tracker.calls[0].input_tokens == 123
+        assert tracker.calls[0].cached_tokens == 3
+        assert tracker.calls[0].output_tokens == 12
+        assert tracker.calls[0].reasoning_tokens == 4
 
     def test_api_error_fail_open(self) -> None:
         judge = LLMJudge(api_key="test-key", fail_open=True)

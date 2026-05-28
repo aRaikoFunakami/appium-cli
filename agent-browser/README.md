@@ -80,6 +80,12 @@ uv run agent-browser --json "Open https://example.com and report the page title"
 The CLI prints structured progress logs to stderr (tool calls, durations,
 guardrail decisions, retries, screenshots). Use `--log-level DEBUG` for more.
 
+The final result always includes billing visibility. Structured runs that make
+no LLM calls report `calls=0`, `tokens=0`, and `$0.000000`. LLM-backed runs show
+each model invocation and the final total. Per-tool token rows are estimates of
+how much tool payload text was included in a later LLM input; the API-provided
+per-call totals remain the source of truth for billable usage.
+
 ## Safety policy
 
 - Sensitive actions (login, password entry, payment, purchase, reservation

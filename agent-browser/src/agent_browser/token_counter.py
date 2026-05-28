@@ -10,8 +10,8 @@ Pricing is in USD per 1K tokens.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Any, Iterable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 
 class OpenAIPricingCalculator:
@@ -205,6 +205,20 @@ class OpenAIPricingCalculator:
 
 
 @dataclass
+class ToolTokenAttribution:
+    """Estimated tool payload contribution to one LLM input."""
+
+    tool_name: str
+    args_summary: str = "{}"
+    output_chars: int = 0
+    estimated_input_tokens: int = 0
+    attributed_input_tokens: int = 0
+    tokenizer: str = "heuristic"
+    clamped: bool = False
+    share_of_uncached_input: float | None = None
+
+
+@dataclass
 class CallUsage:
     """Per-request usage extracted from an OpenAI usage object."""
 
@@ -212,10 +226,260 @@ class CallUsage:
     cached_tokens: int
     output_tokens: int
     call_type: str = "unknown"
+    model: str | None = None
+    reasoning_tokens: int = 0
+    step_index: int | None = None
+    phase: str | None = None
+    tool_attributions: list[ToolTokenAttribution] = field(default_factory=list)
 
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
+
+    @property
+    def uncached_input_tokens(self) -> int:
+        return max(self.input_tokens - self.cached_tokens, 0)
+
+
+def estimate_text_tokens(text: str) -> tuple[int, str]:
+    """Estimate token count for a text payload.
+
+    OpenAI usage is authoritative only at the request level. This helper is used
+    for local attribution of prompt components such as tool outputs.
+    """
+
+    if not text:
+        return 0, "heuristic"
+    try:
+        import tiktoken
+
+        encoding = tiktoken.get_encoding("o200k_base")
+        return len(encoding.encode(text)), "tiktoken:o200k_base"
+    except (ImportError, KeyError, ValueError):
+        return max(1, (len(text) + 3) // 4), "heuristic"
+
+
+def estimate_tool_attribution(
+    *,
+    tool_name: str,
+    args_summary: str,
+    output_text: str,
+    payload_text: str | None = None,
+) -> ToolTokenAttribution:
+    """Estimate the input tokens contributed by a tool payload."""
+
+    text = payload_text if payload_text is not None else output_text
+    tokens, tokenizer = estimate_text_tokens(text)
+    return ToolTokenAttribution(
+        tool_name=tool_name,
+        args_summary=args_summary,
+        output_chars=len(output_text),
+        estimated_input_tokens=tokens,
+        attributed_input_tokens=tokens,
+        tokenizer=tokenizer,
+    )
+
+
+def _clamp_tool_attributions(
+    attributions: list[ToolTokenAttribution],
+    uncached_input_tokens: int,
+) -> list[ToolTokenAttribution]:
+    """Clamp estimated tool contribution to the uncached input token budget."""
+
+    if not attributions:
+        return []
+
+    total_estimated = sum(max(item.estimated_input_tokens, 0) for item in attributions)
+    if total_estimated <= 0:
+        return attributions
+
+    if total_estimated <= uncached_input_tokens:
+        for item in attributions:
+            item.attributed_input_tokens = item.estimated_input_tokens
+            item.clamped = False
+            item.share_of_uncached_input = (
+                round(item.attributed_input_tokens / uncached_input_tokens, 4)
+                if uncached_input_tokens > 0
+                else None
+            )
+        return attributions
+
+    remaining = max(uncached_input_tokens, 0)
+    for index, item in enumerate(attributions):
+        if index == len(attributions) - 1:
+            attributed = remaining
+        else:
+            attributed = int(item.estimated_input_tokens * uncached_input_tokens / total_estimated)
+            attributed = min(attributed, remaining)
+        item.attributed_input_tokens = attributed
+        item.clamped = True
+        item.share_of_uncached_input = (
+            round(attributed / uncached_input_tokens, 4)
+            if uncached_input_tokens > 0
+            else None
+        )
+        remaining -= attributed
+    return attributions
+
+
+def _usage_attr(usage: Any, name: str) -> int:
+    return int(getattr(usage, name, 0) or 0)
+
+
+def _details_attr(usage: Any, details_name: str, attr_name: str) -> int:
+    details = getattr(usage, details_name, None)
+    return int(getattr(details, attr_name, 0) or 0) if details else 0
+
+
+class UsageTracker:
+    """Per-task LLM usage recorder."""
+
+    def __init__(self, primary_model: str) -> None:
+        self.primary_model = primary_model
+        self.calls: list[CallUsage] = []
+
+    def record_responses_response(
+        self,
+        response: Any,
+        *,
+        model: str,
+        call_type: str,
+        step_index: int | None = None,
+        phase: str | None = None,
+        tool_attributions: list[ToolTokenAttribution] | None = None,
+    ) -> CallUsage | None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None
+        call = CallUsage(
+            input_tokens=_usage_attr(usage, "input_tokens"),
+            cached_tokens=_details_attr(usage, "input_tokens_details", "cached_tokens"),
+            output_tokens=_usage_attr(usage, "output_tokens"),
+            call_type=call_type,
+            model=model,
+            reasoning_tokens=_details_attr(usage, "output_tokens_details", "reasoning_tokens"),
+            step_index=step_index,
+            phase=phase,
+            tool_attributions=_clamp_tool_attributions(
+                list(tool_attributions or []),
+                max(_usage_attr(usage, "input_tokens") - _details_attr(usage, "input_tokens_details", "cached_tokens"), 0),
+            ),
+        )
+        self.calls.append(call)
+        return call
+
+    def record_chat_completion_response(
+        self,
+        response: Any,
+        *,
+        model: str,
+        call_type: str = "judge",
+        step_index: int | None = None,
+        phase: str | None = None,
+    ) -> CallUsage | None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None
+        call = CallUsage(
+            input_tokens=_usage_attr(usage, "prompt_tokens"),
+            cached_tokens=_details_attr(usage, "prompt_tokens_details", "cached_tokens"),
+            output_tokens=_usage_attr(usage, "completion_tokens"),
+            call_type=call_type,
+            model=model,
+            reasoning_tokens=_details_attr(usage, "completion_tokens_details", "reasoning_tokens"),
+            step_index=step_index,
+            phase=phase,
+        )
+        self.calls.append(call)
+        return call
+
+    def to_billing_info(self):
+        return build_billing_info(self.calls, self.primary_model)
+
+
+def build_billing_info(call_usages: list[CallUsage], model: str):
+    """Aggregate per-call usages into a BillingInfo summary."""
+
+    from agent_browser.schemas import BillingInfo
+
+    total_in = sum(c.input_tokens for c in call_usages)
+    total_cached = sum(c.cached_tokens for c in call_usages)
+    total_out = sum(c.output_tokens for c in call_usages)
+    total_reasoning = sum(c.reasoning_tokens for c in call_usages)
+    total_cost = 0.0
+    billing_status = "ok"
+    uncomputable_reason = None
+    call_breakdown: list[BillingInfo.BillingCall] = []
+    models = sorted({c.model or model for c in call_usages})
+
+    for idx, call in enumerate(call_usages, start=1):
+        per_call_model = call.model or model
+        per_call_status = "ok"
+        per_call_reason = None
+        per_call_cost: float | None = None
+        try:
+            cost = OpenAIPricingCalculator.cost_for(
+                per_call_model, call.input_tokens, call.cached_tokens, call.output_tokens
+            )
+            total_cost += cost["total_cost"]
+            per_call_cost = cost["total_cost"]
+        except ValueError as exc:
+            billing_status = "uncomputable"
+            if uncomputable_reason is None:
+                uncomputable_reason = str(exc)
+            per_call_status = "uncomputable"
+            per_call_reason = str(exc)
+
+        tool_estimates = [
+            BillingInfo.ToolTokenEstimate(
+                tool_name=item.tool_name,
+                args_summary=item.args_summary,
+                output_chars=item.output_chars,
+                estimated_input_tokens=item.estimated_input_tokens,
+                attributed_input_tokens=item.attributed_input_tokens,
+                tokenizer=item.tokenizer,
+                clamped=item.clamped,
+                share_of_uncached_input=item.share_of_uncached_input,
+            )
+            for item in call.tool_attributions
+        ]
+        call_breakdown.append(
+            BillingInfo.BillingCall(
+                index=idx,
+                call_type=call.call_type
+                if call.call_type in {"action", "brain", "judge", "llm_assist"}
+                else "unknown",
+                model=per_call_model,
+                step_index=call.step_index,
+                phase=call.phase,
+                input_tokens=call.input_tokens,
+                cached_tokens=call.cached_tokens,
+                uncached_input_tokens=call.uncached_input_tokens,
+                output_tokens=call.output_tokens,
+                reasoning_tokens=call.reasoning_tokens,
+                total_tokens=call.total_tokens,
+                cost_usd=round(per_call_cost, 6) if per_call_cost is not None else None,
+                billing_status=per_call_status,
+                uncomputable_reason=per_call_reason,
+                tool_token_estimates=tool_estimates,
+            )
+        )
+
+    return BillingInfo(
+        model=model,
+        models=models or ([model] if model else []),
+        api_calls=len(call_usages),
+        input_tokens=total_in,
+        cached_tokens=total_cached,
+        uncached_input_tokens=max(total_in - total_cached, 0),
+        output_tokens=total_out,
+        reasoning_tokens=total_reasoning,
+        total_tokens=total_in + total_out,
+        total_cost_usd=round(total_cost, 6) if billing_status == "ok" else None,
+        billing_status=billing_status,
+        uncomputable_reason=uncomputable_reason,
+        call_breakdown=call_breakdown,
+    )
 
 
 def _extract_call_usages(usage: Any) -> list[CallUsage]:
@@ -362,5 +626,10 @@ def log_usage_report(
 __all__ = [
     "OpenAIPricingCalculator",
     "CallUsage",
+    "ToolTokenAttribution",
+    "UsageTracker",
+    "build_billing_info",
+    "estimate_text_tokens",
+    "estimate_tool_attribution",
     "log_usage_report",
 ]

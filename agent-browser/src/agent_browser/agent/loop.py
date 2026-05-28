@@ -20,7 +20,12 @@ from agent_browser.appium_tools import BrowserAgentContext, ToolExecutionResult,
 from agent_browser.appium_tools import _summarize_args as _args_summary
 from agent_browser.config import AgentBrowserConfig
 from agent_browser.schemas import BillingInfo, MemoryEvent, TaskResult
-from agent_browser.token_counter import CallUsage, OpenAIPricingCalculator
+from agent_browser.token_counter import (
+    CallUsage,
+    UsageTracker,
+    build_billing_info,
+    estimate_tool_attribution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,59 +143,10 @@ def _latest_observation_from_result(result: ToolExecutionResult, cfg: AgentBrows
 
 def _build_billing_info(call_usages: list[CallUsage], model: str) -> BillingInfo:
     """Aggregate per-call usages into a BillingInfo summary."""
-    total_in = sum(c.input_tokens for c in call_usages)
-    total_cached = sum(c.cached_tokens for c in call_usages)
-    total_out = sum(c.output_tokens for c in call_usages)
-    total_cost = 0.0
-    billing_status = "ok"
-    uncomputable_reason = None
-    call_breakdown: list[BillingInfo.BillingCall] = []
-
-    for idx, call in enumerate(call_usages, start=1):
-        per_call_status = "ok"
-        per_call_reason = None
-        per_call_cost: float | None = None
-        try:
-            cost = OpenAIPricingCalculator.cost_for(
-                model, call.input_tokens, call.cached_tokens, call.output_tokens
-            )
-            total_cost += cost["total_cost"]
-            per_call_cost = round(cost["total_cost"], 6)
-        except ValueError as exc:
-            billing_status = "uncomputable"
-            if uncomputable_reason is None:
-                uncomputable_reason = str(exc)
-            per_call_status = "uncomputable"
-            per_call_reason = str(exc)
-        call_breakdown.append(
-            BillingInfo.BillingCall(
-                index=idx,
-                call_type=call.call_type if call.call_type in {"action", "brain"} else "unknown",
-                input_tokens=call.input_tokens,
-                cached_tokens=call.cached_tokens,
-                output_tokens=call.output_tokens,
-                total_tokens=call.total_tokens,
-                cost_usd=per_call_cost,
-                billing_status=per_call_status,
-                uncomputable_reason=per_call_reason,
-            )
-        )
-
-    return BillingInfo(
-        model=model,
-        api_calls=len(call_usages),
-        input_tokens=total_in,
-        cached_tokens=total_cached,
-        output_tokens=total_out,
-        total_tokens=total_in + total_out,
-        total_cost_usd=round(total_cost, 6) if billing_status == "ok" else None,
-        billing_status=billing_status,
-        uncomputable_reason=uncomputable_reason,
-        call_breakdown=call_breakdown,
-    )
+    return build_billing_info(call_usages, model)
 
 
-def _build_verifier(cfg: AgentBrowserConfig) -> CompletionVerifier:
+def _build_verifier(cfg: AgentBrowserConfig, usage_tracker: UsageTracker | None = None) -> CompletionVerifier:
     """Construct the completion gate from config."""
     guard = StructuralGuard(min_result_chars=cfg.min_result_chars)
     judge: LLMJudge | None = None
@@ -199,6 +155,7 @@ def _build_verifier(cfg: AgentBrowserConfig) -> CompletionVerifier:
             api_key=cfg.openai_api_key,
             model=cfg.judge_model,
             fail_open=cfg.judge_fail_open,
+            usage_tracker=usage_tracker,
         )
     return CompletionVerifier(guard=guard, judge=judge)
 
@@ -208,15 +165,17 @@ async def run_react_loop(
     goal: str,
     cfg: AgentBrowserConfig,
     context: BrowserAgentContext,
+    usage_tracker: UsageTracker | None = None,
 ) -> TaskResult:
     """Run one browser task using a token-bounded custom ReAct loop."""
 
-    client = ResponsesClient(cfg)
+    tracker = usage_tracker or UsageTracker(primary_model=cfg.model)
+    client = ResponsesClient(cfg, usage_tracker=tracker)
     tools = get_response_tool_schemas()
     state = BrowserOperationState(goal=goal, working_state="No browser actions completed yet.")
     history = OperationHistory(recent_steps=cfg.recent_steps)
     loop_detector = LoopDetector()
-    verifier = _build_verifier(cfg)
+    verifier = _build_verifier(cfg, tracker)
 
     verification_attempts = 0
     start_time = time.monotonic()
@@ -285,6 +244,8 @@ async def run_react_loop(
             instructions=build_system_prompt(),
             tools=tools,
             call_type="action",
+            step_index=step,
+            phase="action",
         )
         calls = _function_calls(response)
         tool_results: list[ToolExecutionResult] = []
@@ -340,6 +301,7 @@ async def run_react_loop(
 
         # parallel_tool_calls=False, but execute defensively in returned order.
         output_items: list[dict[str, Any]] = []
+        tool_attributions = []
         for call in calls:
             name = str(call.get("name") or "")
             args = _parse_args(call.get("arguments"))
@@ -366,7 +328,25 @@ async def run_react_loop(
                     )
 
             tool_results.append(result)
-            output_items.append(_tool_output_item(call, result, cfg))
+            output_item = _tool_output_item(call, result, cfg)
+            output_items.append(output_item)
+            normalized_call = _items_to_input([call])
+            payload_text = json.dumps(
+                {
+                    "function_call": normalized_call[0] if normalized_call else call,
+                    "function_call_output": output_item,
+                },
+                ensure_ascii=False,
+                default=str,
+            )
+            tool_attributions.append(
+                estimate_tool_attribution(
+                    tool_name=result.name,
+                    args_summary=result.args_summary,
+                    output_text=str(output_item.get("output", "")),
+                    payload_text=payload_text,
+                )
+            )
 
         continuation_input = input_items + _items_to_input(getattr(response, "output", []) or []) + output_items
         response = await client.create(
@@ -374,6 +354,9 @@ async def run_react_loop(
             instructions=build_system_prompt(),
             tools=None,
             call_type="brain",
+            step_index=step,
+            phase="brain",
+            tool_attributions=tool_attributions,
         )
 
         text = _extract_text_with_diagnostics(response, logger)

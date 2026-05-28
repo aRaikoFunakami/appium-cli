@@ -90,22 +90,41 @@ class MemoryEvent(_BaseModel):
 class BillingInfo(_BaseModel):
     """Token usage and cost summary for a task run."""
 
+    class ToolTokenEstimate(_BaseModel):
+        tool_name: str
+        args_summary: str = "{}"
+        output_chars: int = 0
+        estimated_input_tokens: int = 0
+        attributed_input_tokens: int = 0
+        tokenizer: str = "heuristic"
+        clamped: bool = False
+        share_of_uncached_input: float | None = None
+
     class BillingCall(_BaseModel):
         index: int
-        call_type: Literal["action", "brain", "unknown"] = "unknown"
+        call_type: Literal["action", "brain", "judge", "llm_assist", "unknown"] = "unknown"
+        model: str | None = None
+        step_index: int | None = None
+        phase: str | None = None
         input_tokens: int = 0
         cached_tokens: int = 0
+        uncached_input_tokens: int = 0
         output_tokens: int = 0
+        reasoning_tokens: int = 0
         total_tokens: int = 0
         cost_usd: float | None = None
         billing_status: Literal["ok", "uncomputable"] = "ok"
         uncomputable_reason: str | None = None
+        tool_token_estimates: list["BillingInfo.ToolTokenEstimate"] = Field(default_factory=list)
 
     model: str
+    models: list[str] = Field(default_factory=list)
     api_calls: int = 0
     input_tokens: int = 0
     cached_tokens: int = 0
+    uncached_input_tokens: int = 0
     output_tokens: int = 0
+    reasoning_tokens: int = 0
     total_tokens: int = 0
     total_cost_usd: float | None = None
     billing_status: Literal["ok", "uncomputable"] = "ok"

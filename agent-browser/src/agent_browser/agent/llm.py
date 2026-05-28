@@ -9,7 +9,12 @@ from openai import AsyncOpenAI
 
 from agent_browser.agent.brain import build_agent_brain_schema
 from agent_browser.config import AgentBrowserConfig
-from agent_browser.token_counter import CallUsage, OpenAIPricingCalculator
+from agent_browser.token_counter import (
+    CallUsage,
+    OpenAIPricingCalculator,
+    ToolTokenAttribution,
+    UsageTracker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,25 +31,35 @@ def _agent_brain_text_config() -> dict[str, Any]:
 
 
 class ResponsesClient:
-    def __init__(self, cfg: AgentBrowserConfig) -> None:
+    def __init__(self, cfg: AgentBrowserConfig, usage_tracker: UsageTracker | None = None) -> None:
         self._cfg = cfg
         self._client = AsyncOpenAI(api_key=cfg.openai_api_key)
-        self.call_usages: list[CallUsage] = []
+        self._usage_tracker = usage_tracker or UsageTracker(primary_model=cfg.model)
 
-    def _record_usage(self, response: Any, *, call_type: str) -> None:
+    @property
+    def call_usages(self) -> list[CallUsage]:
+        return self._usage_tracker.calls
+
+    def _record_usage(
+        self,
+        response: Any,
+        *,
+        call_type: str,
+        step_index: int | None = None,
+        phase: str | None = None,
+        tool_attributions: list[ToolTokenAttribution] | None = None,
+    ) -> None:
         """Extract and accumulate usage from a Responses API response."""
-        usage = getattr(response, "usage", None)
-        if usage is None:
-            return
-        details = getattr(usage, "input_tokens_details", None)
-        cached = getattr(details, "cached_tokens", 0) if details else 0
-        call = CallUsage(
-            input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
-            cached_tokens=int(cached or 0),
-            output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+        call = self._usage_tracker.record_responses_response(
+            response,
+            model=self._cfg.model,
             call_type=call_type,
+            step_index=step_index,
+            phase=phase,
+            tool_attributions=tool_attributions,
         )
-        self.call_usages.append(call)
+        if call is None:
+            return
         call_idx = len(self.call_usages)
 
         try:
@@ -56,13 +71,15 @@ class ResponsesClient:
             cost_str = f"uncomputable ({exc})"
 
         logger.info(
-            "[token] call #%d type=%s model=%s in=%d cached=%d out=%d total=%d cost=%s",
+            "[token] call #%d type=%s model=%s step=%s in=%d cached=%d out=%d reasoning=%d total=%d cost=%s",
             call_idx,
             call_type,
             self._cfg.model,
+            step_index,
             call.input_tokens,
             call.cached_tokens,
             call.output_tokens,
+            call.reasoning_tokens,
             call.total_tokens,
             cost_str,
         )
@@ -74,6 +91,9 @@ class ResponsesClient:
         instructions: str,
         tools: list[dict[str, Any]] | None = None,
         call_type: str = "unknown",
+        step_index: int | None = None,
+        phase: str | None = None,
+        tool_attributions: list[ToolTokenAttribution] | None = None,
     ) -> Any:
         request: dict[str, Any] = {
             "model": self._cfg.model,
@@ -93,5 +113,11 @@ class ResponsesClient:
         if not self._cfg.model.startswith("gpt-5"):
             request["temperature"] = self._cfg.temperature
         response = await self._client.responses.create(**request)
-        self._record_usage(response, call_type=call_type)
+        self._record_usage(
+            response,
+            call_type=call_type,
+            step_index=step_index,
+            phase=phase,
+            tool_attributions=tool_attributions,
+        )
         return response

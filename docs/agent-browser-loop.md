@@ -421,6 +421,21 @@ the same form:
 - response diagnostics for invalid brain JSON
 - token usage and billing summaries
 
+## Billing and token attribution
+
+`agent-browser` tracks LLM usage per task run. The default structured controller
+usually performs no LLM calls, so it reports an explicit zero-usage billing block
+instead of omitting billing. The ReAct controller records each Responses API
+action/brain call, and optional semantic verification records LLM judge calls.
+
+OpenAI API usage is authoritative at the model-request level: input, cached
+input, output, reasoning output, and cost are computed per LLM invocation and
+summed for the final total. The API does not expose token usage per individual
+tool result, so tool-token rows are local estimates of the tool payload text that
+was included in the following model input. They are displayed as an attribution
+breakdown of that call's input, never as extra billable tokens, and are capped to
+the call's uncached input token count.
+
 Use the ReAct path when model flexibility matters more than deterministic step
 coverage. Use the structured controller when a task can be represented as
 ordered steps over snapshot-backed UI state.

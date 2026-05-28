@@ -86,3 +86,6 @@ async def test_twine4car_structured_controller_scrolls_before_tapping_favorite(t
         ("tap", {"ref": "iv_favorite_icon"})
     )
     assert result.verification_passed is True
+    assert result.billing is not None
+    assert result.billing.api_calls == 0
+    assert result.billing.total_tokens == 0

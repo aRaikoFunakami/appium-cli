@@ -14,6 +14,7 @@ from agent_browser.controller.controller import run_structured_controller
 from agent_browser.memory import EpisodicMemory, JsonlMemoryStore, WorkingMemory
 from agent_browser.schemas import MemoryEvent, TaskResult
 from agent_browser.session import AppiumSessionManager
+from agent_browser.token_counter import UsageTracker
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def run_browser_task(
     episodic = EpisodicMemory(JsonlMemoryStore(cfg.memory_path))
     memory = WorkingMemory(goal=goal)
     context = BrowserAgentContext(config=cfg, memory=memory, episodic=episodic)
+    usage_tracker = UsageTracker(primary_model=cfg.model)
 
     logger.info("[run] goal: %s", goal)
     logger.info("[run] config: %s", cfg.public_dict())
@@ -64,9 +66,19 @@ async def run_browser_task(
         )
         try:
             if cfg.controller == "structured":
-                result = await run_structured_controller(goal=goal, cfg=cfg, context=context)
+                result = await run_structured_controller(
+                    goal=goal,
+                    cfg=cfg,
+                    context=context,
+                    usage_tracker=usage_tracker,
+                )
             else:
-                result = await run_react_loop(goal=goal, cfg=cfg, context=context)
+                result = await run_react_loop(
+                    goal=goal,
+                    cfg=cfg,
+                    context=context,
+                    usage_tracker=usage_tracker,
+                )
         except Exception as exc:
             logger.exception("[run] runner failed")
             memory.record_failure(f"runner_error: {type(exc).__name__}: {exc}")
@@ -77,6 +89,9 @@ async def run_browser_task(
                 )
             )
             result = _build_task_result(goal, memory)
+
+    if result.billing is None:
+        result.billing = usage_tracker.to_billing_info()
 
     logger.info(
         "[run] done: success=%s tool_calls=%d retries=%d artifacts=%d failures=%d",
@@ -93,12 +108,14 @@ async def run_browser_task(
         else:
             cost_str = f"uncomputable ({b.uncomputable_reason})"
         logger.info(
-            "[token] summary model=%s calls=%d in=%d cached=%d out=%d total=%d cost=%s",
+            "[token] summary model=%s calls=%d in=%d cached=%d uncached=%d out=%d reasoning=%d total=%d cost=%s",
             b.model,
             b.api_calls,
             b.input_tokens,
             b.cached_tokens,
+            b.uncached_input_tokens,
             b.output_tokens,
+            b.reasoning_tokens,
             b.total_tokens,
             cost_str,
         )
@@ -155,6 +172,9 @@ def cli_main(argv: list[str] | None = None) -> int:
         print("Interrupted by user.", file=sys.stderr)
         return 130
 
+    if result.billing is None:
+        result.billing = UsageTracker(primary_model=cfg.model).to_billing_info()
+
     if args.json:
         print(result.model_dump_json(indent=2))
     else:
@@ -173,13 +193,18 @@ def cli_main(argv: list[str] | None = None) -> int:
             print(f"  verification: {v_status}")
             if result.verification_attempts > 0:
                 print(f"  verification_attempts: {result.verification_attempts}")
-        if result.billing:
-            b = result.billing
+        b = result.billing
+        if b is not None:
             if b.billing_status == "ok":
                 cost = f"${b.total_cost_usd:.6f}" if b.total_cost_usd is not None else "$0.000000"
             else:
                 cost = f"uncomputable ({b.uncomputable_reason})"
-            print(f"  billing: model={b.model} calls={b.api_calls} tokens={b.total_tokens} cost={cost}")
+            print(
+                f"  billing: model={b.model} calls={b.api_calls} "
+                f"in={b.input_tokens} cached={b.cached_tokens} uncached={b.uncached_input_tokens} "
+                f"out={b.output_tokens} "
+                f"reasoning={b.reasoning_tokens} tokens={b.total_tokens} cost={cost}"
+            )
             if b.call_breakdown:
                 print("  billing_calls:")
                 for call in b.call_breakdown:
@@ -187,12 +212,28 @@ def cli_main(argv: list[str] | None = None) -> int:
                         call_cost = f"${call.cost_usd:.6f}" if call.cost_usd is not None else "$0.000000"
                     else:
                         call_cost = f"uncomputable ({call.uncomputable_reason})"
+                    step = f" step={call.step_index}" if call.step_index is not None else ""
+                    model = f" model={call.model}" if call.model else ""
                     print(
                         "    - "
-                        f"#{call.index} type={call.call_type} in={call.input_tokens} "
-                        f"cached={call.cached_tokens} out={call.output_tokens} "
+                        f"#{call.index}{model} type={call.call_type}{step} "
+                        f"in={call.input_tokens} cached={call.cached_tokens} uncached={call.uncached_input_tokens} "
+                        f"out={call.output_tokens} reasoning={call.reasoning_tokens} "
                         f"total={call.total_tokens} cost={call_cost}"
                     )
+                    for estimate in call.tool_token_estimates:
+                        share = (
+                            f" share={estimate.share_of_uncached_input:.1%}"
+                            if estimate.share_of_uncached_input is not None
+                            else ""
+                        )
+                        clamp = " clamped=true" if estimate.clamped else ""
+                        print(
+                            "      tool_tokens: "
+                            f"{estimate.tool_name} estimated={estimate.estimated_input_tokens} "
+                            f"attributed={estimate.attributed_input_tokens}{share}{clamp} "
+                            f"output_chars={estimate.output_chars} tokenizer={estimate.tokenizer}"
+                        )
         if result.failures:
             print("  failures:")
             for failure in result.failures[-5:]:
