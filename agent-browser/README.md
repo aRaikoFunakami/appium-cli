@@ -7,40 +7,35 @@ tool surface, with an optional OpenAI-backed legacy ReAct controller.
 
 `agent-browser` defaults to a **structured Appium controller** that compiles the
 user goal into ordered mandatory steps, keeps a snapshot-backed world model, and
-uses deterministic policy/planning/recovery before falling back to the legacy
-OpenAI ReAct loop via `--controller=react`.
+uses deterministic policy/planning/recovery. The legacy OpenAI ReAct loop is
+still available via `--controller=react`.
 
-```
-User goal
-  │
-  ▼
-load config (.env -> env vars override)
-  │
-  ▼
-load JSONL episodic memory (hints from past runs)
-  │
-  ▼
-ensure appium-cli session daemon is healthy (reuse or start)
-  │
-  ▼
-structured controller
-  ├─ TaskCompiler preserves explicit numbered steps
-  ├─ WorldModel loads appium-cli snapshot artifacts
-  ├─ PolicyEngine blocks out-of-order actions
-  ├─ Planner scores targets/scroll containers deterministically
-  ├─ Executor calls appium-cli tools and verifies effects
-  └─ RecoveryManager handles stale refs and no-effect actions
-  │
-  ▼
-TaskResult { success, title, url, summary, tool_calls, retries, artifacts }
+See [agent-browser loop architecture](../docs/agent-browser-loop.md) for the
+full module diagram, data flow, sequence diagrams, design trade-offs, and
+implementation map.
+
+```mermaid
+flowchart TD
+    Goal["User goal"] --> Config["load config"]
+    Config --> Memory["load JSONL episodic memory"]
+    Memory --> Session["start fresh appium-cli session"]
+    Session --> Controller["structured controller"]
+    Controller --> Compiler["TaskCompiler"]
+    Controller --> World["WorldModel"]
+    Controller --> Policy["PolicyEngine"]
+    Controller --> Planner["Planner"]
+    Controller --> Executor["Executor"]
+    Controller --> Recovery["RecoveryManager"]
+    Controller --> Result["TaskResult"]
 ```
 
 ### Why single-agent?
 
 A previous multi-agent prototype required 6-8 LLM API calls per browser step
-because of orchestrator/handoff overhead. The v2 design folds planning,
-observation and verification into a custom ReAct loop while avoiding SDK
-history accumulation. Only browser-operation state is sent to the model.
+because of orchestrator/handoff overhead. The current default folds planning,
+observation, policy, recovery, and verification into a deterministic structured
+controller, while the legacy OpenAI ReAct loop remains available with
+`--controller=react`.
 
 ## Prerequisites
 
