@@ -33,6 +33,22 @@ def _default_handler(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _response(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
+    explicit_ok = result.get("ok")
+    if explicit_ok is False:
+        response = {
+            "id": request_id,
+            "ok": False,
+            "error": result.get("error") or result.get("text", ""),
+            "exit_code": result.get("exit_code", exit_codes.GENERAL_ERROR),
+        }
+        if "detail" in result:
+            response["detail"] = result["detail"]
+        if "data" in result:
+            response["data"] = result["data"]
+        if "text" in result:
+            response["text"] = result["text"]
+        return response
+
     text = result.get("text", "")
     if isinstance(text, str) and text.startswith("FAILED:"):
         return {"id": request_id, "ok": False, "error": text, "exit_code": exit_codes.GENERAL_ERROR}

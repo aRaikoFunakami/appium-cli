@@ -17,6 +17,10 @@ def _require_driver():
     return state.driver
 
 
+def _mark_current_context_stale(action: str) -> None:
+    state.ref_resolver.mark_stale(state.current_context, action)
+
+
 def _strategy(by: str):
     mapping = {
         "xpath": AppiumBy.XPATH,
@@ -53,6 +57,7 @@ def click_element(by: str, value: str) -> str:
         return error
     element.click()
     time.sleep(1)
+    _mark_current_context_stale("click_element")
     return f"Successfully clicked element by {by} with value {value}"
 
 
@@ -66,6 +71,7 @@ def get_text(by: str, value: str) -> str:
 def press_keycode(keycode: int) -> str:
     _require_driver().press_keycode(keycode)
     time.sleep(1)
+    _mark_current_context_stale("press_keycode")
     return f"Successfully pressed keycode {keycode}"
 
 
@@ -77,6 +83,7 @@ def double_tap(by: str, value: str) -> str:
     time.sleep(0.1)
     element.click()
     time.sleep(1)
+    _mark_current_context_stale("double_tap")
     return f"Successfully double tapped element by {by} with value {value}"
 
 
@@ -87,6 +94,7 @@ def send_keys(by: str, value: str, text: str) -> str:
     element.click()
     element.send_keys(text)
     time.sleep(1)
+    _mark_current_context_stale("send_keys")
     return f"Successfully sent keys '{text}' to element"
 
 
@@ -117,6 +125,7 @@ def _window_swipe(direction: str) -> None:
         driver.swipe(int(width * 0.25), mid_y, int(width * 0.75), mid_y, 700)
     else:
         raise ValueError("direction must be one of: up, down, left, right")
+    _mark_current_context_stale("swipe")
 
 
 def scroll_element(by: str, value: str, direction: str = "up") -> str:
@@ -141,6 +150,7 @@ def scroll_element(by: str, value: str, direction: str = "up") -> str:
     else:
         return "❌ Invalid direction. Use 'up', 'down', 'left', or 'right'."
     time.sleep(1)
+    _mark_current_context_stale("scroll_element")
     return f"Successfully scrolled element by {by} with value {value} in {direction} direction"
 
 

@@ -105,10 +105,10 @@ class TestGetToolSkillPrompt:
     def test_documents_snapshot_required_after_positional_gestures(self) -> None:
         prompt = get_tool_skill_prompt()
 
-        # Agents must refresh snapshot before next ref action after gestures
-        assert "scroll/swipe/fling/drag do not refresh the snapshot" in prompt
+        # Agents should prefer explicit refresh, while daemon recovery handles stale refs safely.
+        assert "auto-refresh/retry once" in prompt
         assert "snapshot_actionable_tree({}) only renders the last snapshot" in prompt
-        assert "does NOT refresh the device state" in prompt
+        assert "Call snapshot({}) first when you need a guaranteed fresh tree" in prompt
 
     def test_includes_ordered_webview_workflow_examples(self) -> None:
         self._mock_successful_call("goto", {"url": "https://example.com"})

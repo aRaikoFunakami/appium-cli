@@ -40,6 +40,68 @@ class TestInvokeAppiumTool:
         assert ctx.memory.tool_calls[0].ok is True
 
     @pytest.mark.asyncio
+    async def test_auto_refreshed_ref_missing_updates_observation_without_retry(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {
+                "ok": False,
+                "text": "AUTO_REFRESHED_REF_MISSING: ref 'rv_popups' is not present after refreshing the current screen. Choose a ref from the fresh snapshot.",
+                "error": "AUTO_REFRESHED_REF_MISSING: ref 'rv_popups' is not present after refreshing the current screen. Choose a ref from the fresh snapshot.",
+                "data": {
+                    "auto_refreshed": True,
+                    "action_executed": False,
+                    "missing_ref": "rv_popups",
+                    "snapshot": {
+                        "text": "snapshot_id: fresh\nartifacts:\n  compact: /tmp/fresh.compact.yml\n",
+                        "data": {
+                            "snapshot_id": "fresh",
+                            "artifacts": {"compact": "/tmp/fresh.compact.yml"},
+                        },
+                    },
+                },
+            }
+
+            result = await execute_appium_tool("scroll_up", {"ref": "rv_popups", "percent": 0.8}, ctx)
+
+        assert result.ok is False
+        assert result.name == "scroll_up"
+        assert "AUTO_REFRESHED_REF_MISSING" in result.output
+        assert "Fresh snapshot" in result.output
+        mock_call.assert_called_once_with("scroll_up", {"ref": "rv_popups", "percent": 0.8})
+        assert [record.tool_name for record in ctx.memory.tool_calls] == ["scroll_up"]
+        assert ctx.memory.retry_counts == {}
+        assert ctx.memory.artifacts == ["/tmp/fresh.compact.yml"]
+        assert ctx.memory.latest_observation is not None
+        assert "snapshot_id: fresh" in (ctx.memory.latest_observation.summary or "")
+
+    @pytest.mark.asyncio
+    async def test_auto_refreshed_success_records_artifacts_without_observation(self, tmp_path) -> None:
+        ctx = _ctx(tmp_path)
+        with patch("agent_browser.appium_tools.call_tool") as mock_call:
+            mock_call.return_value = {
+                "ok": True,
+                "text": "OK",
+                "data": {
+                    "auto_refreshed": True,
+                    "action_executed": True,
+                    "snapshot": {
+                        "text": "snapshot_id: before-action\n",
+                        "data": {
+                            "snapshot_id": "before-action",
+                            "artifacts": {"compact": "/tmp/before.compact.yml"},
+                        },
+                    },
+                },
+            }
+
+            result = await execute_appium_tool("tap", {"ref": "favoriteicon"}, ctx)
+
+        assert result.ok is True
+        assert result.output == "OK"
+        assert ctx.memory.artifacts == ["/tmp/before.compact.yml"]
+        assert ctx.memory.latest_observation is None
+
+    @pytest.mark.asyncio
     async def test_full_web_snapshot_depth_and_filename_stripped(self, tmp_path) -> None:
         ctx = _ctx(tmp_path)
         with patch("agent_browser.appium_tools.call_tool") as mock_call:

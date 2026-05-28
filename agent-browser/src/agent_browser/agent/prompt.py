@@ -45,7 +45,7 @@ Ref rules:
 - Refs from snapshot (web_firstname, web_usernumber) are used with fill/click/tap.
 - CSS selectors from web_query (#firstName, input[name=q]) cannot be used as refs.
 - If the ref you need is not in the current snapshot, take a fresh web_snapshot first.
-- After fill/click/tap, refs remain valid until the next snapshot replaces the ref map.
+- After fill/click/tap/scroll, old refs may be stale. appium-cli may auto-refresh and retry once; if the tool says the ref disappeared, choose a new ref from the returned fresh snapshot.
 
 Native ref rules:
 - In native UI, do not assume tappable targets have role="button"; tabs and list items are often rows/layouts with child text.

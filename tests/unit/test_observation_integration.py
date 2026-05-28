@@ -993,6 +993,19 @@ def test_list_containers_lists_known_container():
     assert "scrollable: yes (vertical)" in out
 
 
+def test_list_containers_warns_when_stale():
+    state.current_snapshot = _build_native_snapshot()
+    state.ref_resolver.mark_stale(
+        getattr(state.current_snapshot, "context", state.current_context),
+        "tap",
+        ref="tab",
+    )
+    out = container.list_containers()
+    assert "WARNING:" in out
+    assert "tap(tab)" in out
+    assert "snapshot()" in out
+
+
 def test_list_containers_empty():
     root = NativeSnapshotNode(role="container", bounds=(0, 0, 100, 100))
     state.current_snapshot = NativeSnapshot.from_root(root=root)
@@ -1037,6 +1050,18 @@ def test_find_container_match():
     assert "list" in out
 
 
+def test_find_container_warns_when_stale():
+    state.current_snapshot = _build_native_snapshot()
+    state.ref_resolver.mark_stale(
+        getattr(state.current_snapshot, "context", state.current_context),
+        "scroll",
+        ref="recycler",
+    )
+    out = container.find_container("Storage")
+    assert "WARNING:" in out
+    assert "scroll(recycler)" in out
+
+
 def test_find_container_no_match():
     state.current_snapshot = _build_native_snapshot()
     out = container.find_container("nonexistent")
@@ -1062,6 +1087,18 @@ def test_within_container_no_snapshot():
 def test_within_container_returns_children():
     state.current_snapshot = _build_native_snapshot()
     out = container.within_container("recycler")
+    assert "storage_row" in out
+
+
+def test_within_container_warns_when_stale():
+    state.current_snapshot = _build_native_snapshot()
+    state.ref_resolver.mark_stale(
+        getattr(state.current_snapshot, "context", state.current_context),
+        "tap",
+        ref="tab",
+    )
+    out = container.within_container("recycler")
+    assert "WARNING:" in out
     assert "storage_row" in out
 
 
@@ -1126,6 +1163,18 @@ def test_assert_visible_by_ref_found():
     out = container.assert_visible(ref="ok")
     assert out.startswith("visible=true")
     assert "[ref:ok]" in out
+
+
+def test_assert_visible_warns_when_stale():
+    state.current_snapshot = _build_native_snapshot()
+    state.ref_resolver.mark_stale(
+        getattr(state.current_snapshot, "context", state.current_context),
+        "tap",
+        ref="tab",
+    )
+    out = container.assert_visible(ref="ok")
+    assert "WARNING:" in out
+    assert "visible=true" in out
 
 
 def test_assert_visible_by_ref_not_found():

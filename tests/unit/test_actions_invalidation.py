@@ -9,6 +9,7 @@ import pytest
 from appium_cli.core.snapshot import LocatorStrategy, RefEntry
 from appium_cli.daemon import state
 from appium_cli.tools import actions
+from appium_cli.utils.errors import AppiumCliError
 
 
 def _make_native_entry(ref_id: str = "container") -> RefEntry:
@@ -25,12 +26,29 @@ def _make_native_entry(ref_id: str = "container") -> RefEntry:
     )
 
 
+def _make_coordinate_only_entry(ref_id: str = "container") -> RefEntry:
+    return RefEntry(
+        strategies=[LocatorStrategy(by="coordinates", value="500,500")],
+        expected_bounds=(100, 200, 900, 1000),
+        role="list",
+        name="Scrollable Container",
+        context="NATIVE_APP",
+        source_type="native",
+    )
+
+
 def _setup_native_driver(monkeypatch, gesture_returns=True) -> MagicMock:
     """Wire a fake native driver into state. Returns the mock."""
     driver = MagicMock()
     driver.current_context = "NATIVE_APP"
     driver.execute_script.return_value = gesture_returns
     driver.get_window_size.return_value = {"width": 1080, "height": 1920}
+    fake_el = MagicMock()
+    fake_el.id = "element-1"
+    fake_el.location = {"x": 100, "y": 200}
+    fake_el.size = {"width": 800, "height": 800}
+    driver.find_elements.return_value = [fake_el]
+    driver.find_element.return_value = fake_el
     state.driver = driver
     state.current_context = "NATIVE_APP"
     state.ref_resolver.clear()
@@ -80,40 +98,56 @@ class TestPositionalGesturesMarkStale:
         assert "can_scroll_more:" in out
 
     def test_drag_marks_stale_and_returns_hint(self, monkeypatch):
-        driver = _setup_native_driver(monkeypatch)
+        _setup_native_driver(monkeypatch)
         state.ref_resolver.register_all({"container": _make_native_entry()})
-        # Make _resolve_element return a coordinate-like element by stubbing
-        # _gesture_target which is what drag actually uses.
-        monkeypatch.setattr(
-            actions, "_gesture_target", lambda ref: {"left": 100, "top": 200, "width": 800, "height": 800}
-        )
         out = actions.drag("container", end_x=500, end_y=500)
         assert state.ref_resolver.is_stale("NATIVE_APP") is True
         assert "snapshot_stale: true" in out
 
 
-class TestNonGesturesDoNotMarkStale:
-    def test_tap_does_not_mark_stale(self, monkeypatch):
+class TestStateChangingActionsMarkStale:
+    def test_tap_marks_stale_after_success(self, monkeypatch):
         driver = _setup_native_driver(monkeypatch)
         entry = _make_native_entry("btn")
         state.ref_resolver.register_all({"btn": entry})
 
-        fake_el = MagicMock()
-        fake_el.location = {"x": 100, "y": 200}
-        fake_el.size = {"width": 800, "height": 800}
-        driver.find_elements.return_value = [fake_el]
-        driver.find_element.return_value = fake_el
-
         actions.tap("btn")
-        assert state.ref_resolver.is_stale("NATIVE_APP") is False
+        assert state.ref_resolver.is_stale("NATIVE_APP") is True
 
-    def test_press_key_does_not_mark_stale(self, monkeypatch):
+    def test_press_key_marks_current_context_stale_after_success(self, monkeypatch):
         _setup_native_driver(monkeypatch)
-        try:
-            actions.press_key("back")
-        except Exception:
-            pass  # we only care about stale state
-        assert state.ref_resolver.is_stale("NATIVE_APP") is False
+        actions.press_key("back")
+        assert state.ref_resolver.is_stale("NATIVE_APP") is True
+
+    def test_press_key_allowed_when_context_is_already_stale(self, monkeypatch):
+        _setup_native_driver(monkeypatch)
+        state.ref_resolver.mark_stale("NATIVE_APP", "type_text", ref="field")
+        actions.press_key("back")
+        assert state.ref_resolver.is_stale("NATIVE_APP") is True
+        assert "press_key" in state.ref_resolver.stale_reason("NATIVE_APP")
+
+    def test_tap_then_ref_action_requires_snapshot(self, monkeypatch):
+        _setup_native_driver(monkeypatch)
+        state.ref_resolver.register_all({
+            "tab": _make_native_entry("tab"),
+            "list": _make_native_entry("list"),
+        })
+
+        actions.tap("tab")
+        with pytest.raises(AppiumCliError) as exc:
+            actions.scroll("up", ref="list")
+
+        assert "snapshot_required" in str(exc.value)
+
+    def test_coordinate_only_ref_rejected_for_scroll(self, monkeypatch):
+        driver = _setup_native_driver(monkeypatch)
+        state.ref_resolver.register_all({"container": _make_coordinate_only_entry()})
+
+        with pytest.raises(AppiumCliError) as exc:
+            actions.scroll("up", ref="container")
+
+        assert "coordinates only" in str(exc.value)
+        driver.execute_script.assert_not_called()
 
 
 class TestScrollRegressionGuard:

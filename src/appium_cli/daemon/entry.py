@@ -11,6 +11,7 @@ from appium import webdriver
 from appium.options.android import UiAutomator2Options
 from selenium.common.exceptions import InvalidSessionIdException, WebDriverException
 
+from appium_cli.core.ref_resolver import ElementNotFoundError, StaleSnapshotError
 from appium_cli.daemon import state
 from appium_cli.daemon.server import serve
 from appium_cli.tools import actions
@@ -41,6 +42,29 @@ from appium_cli.tools.observation import (
     snapshot_actionable_tree,
 )
 from appium_cli.tools.session import format_driver_status, is_driver_alive
+from appium_cli.utils.errors import AppiumCliError
+
+
+_AUTO_REFRESH_ACTION_TOOLS = frozenset({
+    "tap",
+    "click",
+    "type_text",
+    "fill",
+    "select",
+    "select_option",
+    "set_date",
+    "scroll",
+    "swipe",
+    "fling",
+    "drag",
+    "long_press",
+    "double_tap",
+    "pinch_open",
+    "pinch_close",
+    "file_upload",
+    "wait_for",
+    "web_eval",
+})
 
 
 def _create_driver(server_url: str, udid: str | None, *, enable_network_log: bool = False):
@@ -84,6 +108,13 @@ def _handler(request: dict[str, Any]) -> dict[str, Any]:
 
 def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
     tool = request.get("tool")
+    args = request.get("args") or {}
+    if _is_auto_refresh_eligible(str(tool), args):
+        return _invoke_with_auto_refresh(str(tool), args, request)
+    return _invoke_tool(str(tool), args, request)
+
+
+def _invoke_tool(tool: str, args: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     if tool == "ping":
         return {"text": "pong", "data": state.session_metadata}
     if tool == "get_driver_status":
@@ -94,7 +125,6 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
         }
     if tool == "get_device_info":
         return {"text": get_device_info(), "data": {}}
-    args = request.get("args") or {}
     if tool == "snapshot":
         result = refresh_snapshot(**args, raw=bool(request.get("raw")))
         return {"text": result.text, "data": result.data}
@@ -185,6 +215,130 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any]:
     if hasattr(interaction, str(tool)):
         return {"text": getattr(interaction, str(tool))(**args), "data": {}}
     raise KeyError(f"Unknown tool: {tool}")
+
+
+def _is_auto_refresh_eligible(tool: str, args: dict[str, Any]) -> bool:
+    if tool not in _AUTO_REFRESH_ACTION_TOOLS:
+        return False
+    return hasattr(actions, tool) and _ref_arg(args) != ""
+
+
+def _ref_arg(args: dict[str, Any]) -> str:
+    for key in ("ref", "target", "container_ref"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _stale_error_from(exc: BaseException) -> StaleSnapshotError | None:
+    if isinstance(exc, StaleSnapshotError):
+        return exc
+    cause = getattr(exc, "__cause__", None)
+    if isinstance(cause, StaleSnapshotError):
+        return cause
+    return None
+
+
+def _element_error_from(exc: BaseException) -> ElementNotFoundError | None:
+    if isinstance(exc, ElementNotFoundError):
+        return exc
+    cause = getattr(exc, "__cause__", None)
+    if isinstance(cause, ElementNotFoundError):
+        return cause
+    return None
+
+
+def _refresh_context_for_stale_ref(args: dict[str, Any], stale: StaleSnapshotError) -> str:
+    if stale.context:
+        context = stale.context
+    else:
+        ref = _ref_arg(args)
+        entry = state.ref_resolver.get_entry(ref) if ref else None
+        if entry is None:
+            raise stale
+        context = entry.context
+    return context if contexts.is_web_context(context) else "native"
+
+
+def _snapshot_metadata(snapshot_result: Any) -> dict[str, Any]:
+    return {
+        "text": snapshot_result.text,
+        "data": snapshot_result.data,
+    }
+
+
+def _with_auto_refresh_success(
+    result: dict[str, Any],
+    *,
+    stale: StaleSnapshotError,
+    snapshot_result: Any,
+) -> dict[str, Any]:
+    data = dict(result.get("data") or {})
+    data.update({
+        "auto_refreshed": True,
+        "auto_refresh_reason": str(stale),
+        "action_executed": True,
+        "snapshot": _snapshot_metadata(snapshot_result),
+    })
+    return {**result, "data": data}
+
+
+def _auto_refresh_ref_missing_response(
+    tool: str,
+    args: dict[str, Any],
+    *,
+    stale: StaleSnapshotError,
+    retry_error: ElementNotFoundError,
+    snapshot_result: Any,
+) -> dict[str, Any]:
+    missing_ref = _ref_arg(args) or retry_error.ref or stale.ref
+    text = (
+        f"AUTO_REFRESHED_REF_MISSING: ref '{missing_ref}' is not present after refreshing "
+        "the current screen. Choose a ref from the fresh snapshot."
+    )
+    return {
+        "ok": False,
+        "text": text,
+        "error": text,
+        "data": {
+            "auto_refreshed": True,
+            "auto_refresh_reason": str(stale),
+            "action_executed": False,
+            "tool": tool,
+            "missing_ref": missing_ref,
+            "retry_error": str(retry_error),
+            "snapshot": _snapshot_metadata(snapshot_result),
+        },
+    }
+
+
+def _invoke_with_auto_refresh(tool: str, args: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return _invoke_tool(tool, args, request)
+    except Exception as exc:
+        stale = _stale_error_from(exc)
+        if stale is None:
+            raise
+
+    refresh_context = _refresh_context_for_stale_ref(args, stale)
+    snapshot_result = refresh_snapshot(scope="full", context=refresh_context, boxes=False, raw=bool(request.get("raw")))
+
+    try:
+        result = _invoke_tool(tool, args, request)
+    except Exception as retry_exc:
+        retry_element_error = _element_error_from(retry_exc)
+        if retry_element_error is not None:
+            return _auto_refresh_ref_missing_response(
+                tool,
+                args,
+                stale=stale,
+                retry_error=retry_element_error,
+                snapshot_result=snapshot_result,
+            )
+        raise
+
+    return _with_auto_refresh_success(result, stale=stale, snapshot_result=snapshot_result)
 
 
 def main() -> None:

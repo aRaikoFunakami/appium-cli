@@ -192,8 +192,28 @@ def _record_artifacts_from_data(data: dict[str, Any] | None, memory: WorkingMemo
                 memory.record_artifact(path)
 
 
+def _auto_refresh_data(response: dict[str, Any]) -> dict[str, Any] | None:
+    data = response.get("data")
+    if not isinstance(data, dict) or not data.get("auto_refreshed"):
+        return None
+    return data
+
+
+def _snapshot_payload_from_auto_refresh(data: dict[str, Any]) -> dict[str, Any] | None:
+    snapshot = data.get("snapshot")
+    return snapshot if isinstance(snapshot, dict) else None
+
+
 def _serialize_response(name: str, response: dict[str, Any]) -> str:
     if not response.get("ok"):
+        data = _auto_refresh_data(response)
+        if data is not None and data.get("action_executed") is False:
+            message = str(response.get("text") or response.get("error") or "tool failed")
+            snapshot = _snapshot_payload_from_auto_refresh(data)
+            snapshot_text = str((snapshot or {}).get("text") or "")
+            if snapshot_text:
+                return f"{message}\nFresh snapshot:\n{snapshot_text}"
+            return message
         error = response.get("error") or "tool failed"
         detail = response.get("detail")
         rendered = f"ERROR: {error}"
@@ -255,6 +275,21 @@ async def execute_appium_tool(
     if ok and raw_text.lstrip().startswith(_FAILED_PREFIX):
         ok = False
 
+    auto_refresh = _auto_refresh_data(response)
+    action_executed = None if auto_refresh is None else auto_refresh.get("action_executed")
+    if auto_refresh is not None:
+        snapshot = _snapshot_payload_from_auto_refresh(auto_refresh)
+        if snapshot is not None:
+            snapshot_data = snapshot.get("data")
+            if isinstance(snapshot_data, dict):
+                _record_artifacts_from_data(snapshot_data, memory)
+            if action_executed is False:
+                observation = _extract_observation("snapshot", str(snapshot.get("text") or ""))
+                if observation is not None:
+                    memory.latest_observation = observation
+                    if observation.url:
+                        memory.current_url = observation.url
+
     artifact_path: str | None = None
     if ok and name == "screenshot":
         screenshot_result = _prepare_screenshot_result(response.get("text") or "", cfg.artifacts_dir)
@@ -277,8 +312,9 @@ async def execute_appium_tool(
         )
     )
     if not ok:
-        memory.record_failure(f"{name}: {rendered[:160]}")
-        memory.increment_retry(name)
+        if not (auto_refresh is not None and action_executed is False):
+            memory.record_failure(f"{name}: {rendered[:160]}")
+            memory.increment_retry(name)
 
     if ok and name in _OBSERVATION_PRODUCING:
         observation = _extract_observation(name, response.get("text") or "")

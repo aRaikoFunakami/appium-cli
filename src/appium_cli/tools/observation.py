@@ -307,7 +307,8 @@ def _register_snapshot(
     state.current_ref_map = ref_map
     state.snapshots_by_context[context] = snapshot_obj
     state.ref_maps_by_context[context] = ref_map
-    state.ref_resolver.register_all(ref_map)
+    state.ref_resolver.register_all(ref_map, clear_stale=False)
+    state.ref_resolver.clear_stale(context)
 
 
 def _refresh_native_snapshot(
@@ -494,6 +495,16 @@ def _load_refs(snapshot_id_or_latest: str) -> dict[str, Any]:
         return {}
     refs = refs_payload.get("refs", {})
     return refs if isinstance(refs, dict) else {}
+
+
+def _stale_snapshot_warning(context: str) -> str:
+    if not state.ref_resolver.is_stale(context):
+        return ""
+    reason = state.ref_resolver.stale_reason(context) or "a previous action"
+    return (
+        f"WARNING: snapshot is stale after {reason}; "
+        "call snapshot() before using refs from this output."
+    )
 
 
 def _load_index(snapshot_id_or_latest: str) -> dict[str, Any]:
@@ -1018,8 +1029,15 @@ def snapshot_show(
             item = refs.get(normalized_ref)
             if not isinstance(item, dict):
                 return f"ERROR: ref '{normalized_ref}' not found in snapshot '{snapshot_id}'."
+            context = str(item.get("context") or getattr(state.current_snapshot, "context", state.current_context))
+            warning = _stale_snapshot_warning(context)
             payload = {"ref": normalized_ref, **item}
-            return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) if raw else _ref_detail(normalized_ref, item)
+            if raw:
+                if warning:
+                    payload["warning"] = warning
+                return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+            detail = _ref_detail(normalized_ref, item)
+            return "\n".join(part for part in [warning, detail] if part)
 
         text, data = _read_artifact(snapshot_id, artifact)
         if raw or artifact in {"compact", "full"}:
@@ -1048,12 +1066,9 @@ def snapshot_actionable_tree() -> str:
     # longer match on-screen positions. This tool only renders cached state;
     # it does not refresh the device snapshot.
     snapshot_context = getattr(snapshot_obj, "context", state.current_context)
-    if state.ref_resolver.is_stale(snapshot_context):
-        reason = state.ref_resolver.stale_reason(snapshot_context) or "a positional gesture"
-        lines.append(
-            f"WARNING: snapshot is stale after {reason};"
-            " ref positions may be wrong. Call snapshot() before ref-based actions."
-        )
+    warning = _stale_snapshot_warning(snapshot_context)
+    if warning:
+        lines.append(warning)
     _render_actionable_tree_node(snapshot_obj.root, lines, indent=0)
     if not lines or (len(lines) == 1 and lines[0].startswith("WARNING:")):
         if lines:

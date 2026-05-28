@@ -18,6 +18,21 @@ def _snapshot_or_error():
     return state.current_snapshot, ""
 
 
+def _stale_warning(snapshot: NativeSnapshot | WebSnapshot) -> str:
+    context = getattr(snapshot, "context", state.current_context)
+    if not state.ref_resolver.is_stale(context):
+        return ""
+    reason = state.ref_resolver.stale_reason(context) or "a previous action"
+    return (
+        f"WARNING: snapshot is stale after {reason}; "
+        "call snapshot() before using refs from this output."
+    )
+
+
+def _with_warning(warning: str, text: str) -> str:
+    return "\n".join(item for item in [warning, text] if item)
+
+
 def _iter_containers(snapshot: NativeSnapshot) -> list[NativeSnapshotNode]:
     """All nodes with non-empty container_kind."""
     return [n for n in snapshot.iter_nodes() if n.container_kind]
@@ -43,9 +58,10 @@ def list_containers() -> str:
     if isinstance(snapshot, WebSnapshot):
         return "WebView snapshots use the DOM tree as structure; container commands are native-only."
     containers = _iter_containers(snapshot)
+    warning = _stale_warning(snapshot)
     if not containers:
-        return "コンテナが検出されませんでした。"
-    lines = [f"Containers on screen ({len(containers)} total):", ""]
+        return _with_warning(warning, "コンテナが検出されませんでした。")
+    lines = [item for item in [warning, f"Containers on screen ({len(containers)} total):", ""] if item]
     for index, container in enumerate(containers, 1):
         ref_display = container.ref or "-"
         name_display = f' "{container.name}"' if container.name else ""
@@ -78,6 +94,7 @@ def find_container(text: str, role_hint: str = "") -> str:
         return error
     if isinstance(snapshot, WebSnapshot):
         return "WebView snapshots use the DOM tree as structure; find_container is native-only."
+    warning = _stale_warning(snapshot)
     search = text.lower()
     matched: list[NativeSnapshotNode] = []
     for container in _iter_containers(snapshot):
@@ -88,8 +105,8 @@ def find_container(text: str, role_hint: str = "") -> str:
                 matched.append(container)
                 break
     if not matched:
-        return f"'{text}' を含むコンテナが見つかりません。"
-    lines: list[str] = []
+        return _with_warning(warning, f"'{text}' を含むコンテナが見つかりません。")
+    lines: list[str] = [warning] if warning else []
     for container in matched:
         ref_display = container.ref or "-"
         lines.append(f"container [ref:{ref_display}] {container.container_kind}")
@@ -109,24 +126,28 @@ def within_container(container_ref: str, role: str = "", position: str = "first"
         return error
     if isinstance(snapshot, WebSnapshot):
         return "WebView snapshots use the DOM tree as structure; within_container is native-only."
+    warning = _stale_warning(snapshot)
     normalized = container_ref.strip().strip("[]").removeprefix("ref:")
     container = snapshot.find_ref(normalized)
     if container is None or container.container_kind == "":
-        return f"ERROR: container_ref '{normalized}' が見つかりません。"
+        return _with_warning(warning, f"ERROR: container_ref '{normalized}' が見つかりません。")
     elements = _container_children(container)
     if role:
         elements = [item for item in elements if item.role == role]
     if not elements:
-        return "条件に一致する要素が見つかりません。"
+        return _with_warning(warning, "条件に一致する要素が見つかりません。")
     if position == "last":
-        return elements[-1].to_line()
+        line = elements[-1].to_line()
+        return _with_warning(warning, line)
     if position in {"right_most", "left_most"}:
         reverse = position == "right_most"
         elements = sorted(elements, key=lambda item: item.bounds[0] if item.bounds else 0, reverse=reverse)
-        return elements[0].to_line()
+        line = elements[0].to_line()
+        return _with_warning(warning, line)
     if len(elements) == 1:
-        return elements[0].to_line()
-    lines = [f"{len(elements)} 件の候補:"]
+        line = elements[0].to_line()
+        return _with_warning(warning, line)
+    lines = [item for item in [warning, f"{len(elements)} 件の候補:"] if item]
     shown_elements = min(len(elements), WITHIN_CONTAINER_CANDIDATE_LIMIT)
     lines.extend(
         f"  {item.to_line()}" for item in elements[:WITHIN_CONTAINER_CANDIDATE_LIMIT]
@@ -141,23 +162,24 @@ def assert_visible(text: str = "", ref: str = "") -> str:
     snapshot, error = _snapshot_or_error()
     if error:
         return error
+    warning = _stale_warning(snapshot)
     if not text and not ref:
-        return "ERROR: text または ref のいずれかを指定してください。"
+        return _with_warning(warning, "ERROR: text または ref のいずれかを指定してください。")
     if ref:
         normalized = ref.strip().strip("[]").removeprefix("ref:")
         if isinstance(snapshot, WebSnapshot):
             node = snapshot.find_ref(normalized)
             if node:
-                return f"visible=true\n{node.to_text()}"
-            return f"visible=false\nref '{normalized}' が見つかりません。"
+                return _with_warning(warning, f"visible=true\n{node.to_text()}")
+            return _with_warning(warning, f"visible=false\nref '{normalized}' が見つかりません。")
         node = snapshot.find_ref(normalized)
         if node:
-            return f"visible=true\n{node.to_line()}"
-        return f"visible=false\nref '{normalized}' が見つかりません。"
+            return _with_warning(warning, f"visible=true\n{node.to_line()}")
+        return _with_warning(warning, f"visible=false\nref '{normalized}' が見つかりません。")
     if isinstance(snapshot, WebSnapshot):
         matches = snapshot.find_text(text)
         if not matches:
-            return f"visible=false\n'{text}' が見つかりません。"
+            return _with_warning(warning, f"visible=false\n'{text}' が見つかりません。")
         lines = [f"visible=true ({len(matches)} 件)"]
         shown_matches = min(len(matches), ASSERT_VISIBLE_MATCH_LIMIT)
         for match in matches[:ASSERT_VISIBLE_MATCH_LIMIT]:
@@ -166,10 +188,10 @@ def assert_visible(text: str = "", ref: str = "") -> str:
             lines.append(f"  {match.node.to_text()}{suffix}")
         if len(matches) > shown_matches:
             lines.append(_remaining_line(len(matches), shown_matches, "matches"))
-        return "\n".join(lines)
+        return _with_warning(warning, "\n".join(lines))
     matches = snapshot.find_text(text)
     if not matches:
-        return f"visible=false\n'{text}' が見つかりません。"
+        return _with_warning(warning, f"visible=false\n'{text}' が見つかりません。")
     lines = [f"visible=true ({len(matches)} 件)"]
     shown_matches = min(len(matches), ASSERT_VISIBLE_MATCH_LIMIT)
     for match in matches[:ASSERT_VISIBLE_MATCH_LIMIT]:
@@ -178,4 +200,4 @@ def assert_visible(text: str = "", ref: str = "") -> str:
         lines.append(f"  {match.node.to_line()}{suffix}")
     if len(matches) > shown_matches:
         lines.append(_remaining_line(len(matches), shown_matches, "matches"))
-    return "\n".join(lines)
+    return _with_warning(warning, "\n".join(lines))

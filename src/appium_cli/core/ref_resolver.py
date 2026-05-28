@@ -43,6 +43,22 @@ class ElementNotFoundError(Exception):
         )
 
 
+class StaleSnapshotError(ElementNotFoundError):
+    """Raised when a ref is used after its snapshot context became stale."""
+
+    def __init__(
+        self,
+        ref: str,
+        details: str = "",
+        *,
+        context: str = "",
+        reason: str = "",
+    ) -> None:
+        self.context = context
+        self.reason = reason
+        super().__init__(ref, details)
+
+
 @dataclass(frozen=True)
 class ParsedRef:
     """A normalized ref, optionally qualified by snapshot id."""
@@ -110,14 +126,16 @@ class RefResolver:
         *,
         snapshot_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        clear_stale: bool = True,
     ) -> None:
         """Replace the entire ref map."""
         self._ref_map = dict(ref_map)
         if snapshot_id is not None:
             self.mark_current_snapshot(snapshot_id, metadata)
-        # A fresh full ref map clears all per-context stale flags because
-        # callers register everything they currently know about.
-        self._stale_contexts.clear()
+        if clear_stale:
+            # A fresh full ref map clears all per-context stale flags because
+            # callers register everything they currently know about.
+            self._stale_contexts.clear()
 
     def mark_current_snapshot(
         self,
@@ -148,9 +166,9 @@ class RefResolver:
     ) -> None:
         """Mark a context's ref map as positionally stale.
 
-        Called by gesture tools (scroll/swipe/fling/drag) that move elements
-        relative to the viewport without updating the snapshot. While stale,
-        resolve() refuses to fall back to the recorded coordinates strategy.
+        Called by tools that can change the visible UI without updating the
+        snapshot. While stale, resolve() refuses ref-based actions until a
+        fresh snapshot refreshes the affected context.
         """
         import time as _time
 
@@ -222,10 +240,20 @@ class RefResolver:
         if not driver:
             raise ElementNotFoundError(parsed.display, "Driver is not initialized.")
 
+        if self.is_stale(entry.context):
+            reason = self.stale_reason(entry.context) or "a previous action"
+            raise StaleSnapshotError(
+                parsed.display,
+                f"snapshot_required: snapshot is stale after {reason}. "
+                "Call snapshot() before using refs.",
+                context=entry.context,
+                reason=reason,
+            )
+
         # Switch to the ref's context if needed
         self._ensure_context(driver, entry.context)
 
-        stale = self.is_stale(entry.context)
+        stale = False
 
         errors: list[str] = []
 

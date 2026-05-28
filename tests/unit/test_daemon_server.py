@@ -88,6 +88,23 @@ def test_response_passes_success_as_ok():
     assert resp["text"] == "OK"
 
 
+def test_response_preserves_explicit_failure_data():
+    from appium_cli.daemon.server import _response
+    resp = _response(
+        "req-3",
+        {
+            "ok": False,
+            "text": "AUTO_REFRESHED_REF_MISSING: choose a new ref",
+            "error": "AUTO_REFRESHED_REF_MISSING: choose a new ref",
+            "data": {"auto_refreshed": True, "action_executed": False},
+        },
+    )
+    assert resp["ok"] is False
+    assert resp["error"].startswith("AUTO_REFRESHED_REF_MISSING")
+    assert resp["text"].startswith("AUTO_REFRESHED_REF_MISSING")
+    assert resp["data"] == {"auto_refreshed": True, "action_executed": False}
+
+
 def test_serve_raises_clear_error_when_bind_fails(monkeypatch, tmp_path) -> None:
     """Bind failure surfaces the attempted socket path and underlying error."""
     import socket as socket_module

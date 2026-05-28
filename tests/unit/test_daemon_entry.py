@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 from selenium.common.exceptions import InvalidSessionIdException
 
+from appium_cli.core.ref_resolver import ElementNotFoundError, StaleSnapshotError
 from appium_cli.daemon import entry, state
+from appium_cli.utils.errors import AppiumCliError
 
 
 class DriverWithInvalidQuit:
@@ -128,3 +130,126 @@ def test_action_handler_delegates_to_handle_request(monkeypatch) -> None:
     response = entry._handler({"tool": "wait", "args": {"seconds": 0.0}})
 
     assert response == {"text": "seconds=0.0", "data": {}}
+
+
+def _raise_wrapped_stale(
+    ref: str = "rv_popups",
+    *,
+    context: str = "NATIVE_APP",
+    reason: str = "tap(tabbackground_2)",
+) -> None:
+    stale = StaleSnapshotError(
+        ref,
+        f"snapshot_required: snapshot is stale after {reason}. Call snapshot() before using refs.",
+        context=context,
+        reason=reason,
+    )
+    try:
+        raise stale
+    except StaleSnapshotError as exc:
+        raise AppiumCliError(str(exc)) from exc
+
+
+def _raise_wrapped_missing(ref: str = "rv_popups") -> None:
+    missing = ElementNotFoundError(ref, "Not registered in the current in-memory snapshot.")
+    try:
+        raise missing
+    except ElementNotFoundError as exc:
+        raise AppiumCliError(str(exc)) from exc
+
+
+def test_stale_action_auto_refreshes_and_retries_once(monkeypatch) -> None:
+    calls: list[str] = []
+    refresh_calls: list[dict] = []
+
+    def fake_tap(ref: str) -> str:
+        calls.append(ref)
+        if len(calls) == 1:
+            _raise_wrapped_stale(ref)
+        return "OK"
+
+    def fake_refresh_snapshot(**kwargs):
+        refresh_calls.append(kwargs)
+        return SimpleNamespace(text="snapshot_id: fresh\n", data={"snapshot_id": "fresh"})
+
+    monkeypatch.setattr(entry.actions, "tap", fake_tap)
+    monkeypatch.setattr(entry, "refresh_snapshot", fake_refresh_snapshot)
+
+    response = entry._handler({"tool": "tap", "args": {"ref": "rv_popups"}})
+
+    assert response["text"] == "OK"
+    assert response["data"]["auto_refreshed"] is True
+    assert response["data"]["action_executed"] is True
+    assert response["data"]["snapshot"]["data"] == {"snapshot_id": "fresh"}
+    assert calls == ["rv_popups", "rv_popups"]
+    assert refresh_calls == [{"scope": "full", "context": "native", "boxes": False, "raw": False}]
+
+
+def test_stale_action_refreshes_web_context(monkeypatch) -> None:
+    refresh_calls: list[dict] = []
+
+    def fake_click(ref: str) -> str:
+        if not refresh_calls:
+            _raise_wrapped_stale(ref, context="WEBVIEW_com.example", reason="tap(web_button)")
+        return "OK"
+
+    def fake_refresh_snapshot(**kwargs):
+        refresh_calls.append(kwargs)
+        return SimpleNamespace(text="snapshot_id: web-fresh\n", data={"snapshot_id": "web-fresh"})
+
+    monkeypatch.setattr(entry.actions, "click", fake_click)
+    monkeypatch.setattr(entry, "refresh_snapshot", fake_refresh_snapshot)
+
+    response = entry._handler({"tool": "click", "args": {"ref": "web_button"}})
+
+    assert response["data"]["auto_refreshed"] is True
+    assert refresh_calls[0]["context"] == "WEBVIEW_com.example"
+
+
+def test_stale_action_returns_ref_missing_after_refresh(monkeypatch) -> None:
+    calls = 0
+
+    def fake_scroll(direction: str, ref: str, percent: float = 0.8) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            _raise_wrapped_stale(ref)
+        _raise_wrapped_missing(ref)
+
+    def fake_refresh_snapshot(**_kwargs):
+        return SimpleNamespace(text="snapshot_id: fresh\n", data={"snapshot_id": "fresh"})
+
+    monkeypatch.setattr(entry.actions, "scroll", fake_scroll)
+    monkeypatch.setattr(entry, "refresh_snapshot", fake_refresh_snapshot)
+
+    response = entry._handler(
+        {"tool": "scroll", "args": {"direction": "up", "ref": "rv_popups", "percent": 0.8}}
+    )
+
+    assert response["ok"] is False
+    assert response["data"]["auto_refreshed"] is True
+    assert response["data"]["action_executed"] is False
+    assert response["data"]["missing_ref"] == "rv_popups"
+    assert calls == 2
+
+
+def test_non_stale_action_error_does_not_auto_refresh(monkeypatch) -> None:
+    refresh_calls: list[dict] = []
+
+    def fake_scroll(direction: str, ref: str, percent: float = 0.8) -> str:
+        raise AppiumCliError("ref 'container' resolved to coordinates only; scroll requires a real element")
+
+    def fake_refresh_snapshot(**kwargs):
+        refresh_calls.append(kwargs)
+        return SimpleNamespace(text="", data={})
+
+    monkeypatch.setattr(entry.actions, "scroll", fake_scroll)
+    monkeypatch.setattr(entry, "refresh_snapshot", fake_refresh_snapshot)
+
+    try:
+        entry._handler({"tool": "scroll", "args": {"direction": "up", "ref": "container"}})
+    except AppiumCliError as exc:
+        assert "coordinates only" in str(exc)
+    else:
+        raise AssertionError("expected AppiumCliError")
+    assert refresh_calls == []

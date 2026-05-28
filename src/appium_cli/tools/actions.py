@@ -14,7 +14,7 @@ import re
 import time
 from typing import Any
 
-from appium_cli.core.ref_resolver import ElementNotFoundError, _CoordinateElement
+from appium_cli.core.ref_resolver import ElementNotFoundError, StaleSnapshotError, _CoordinateElement
 from appium_cli.daemon import state
 from appium_cli.tools.contexts import is_web_context
 from appium_cli.utils.errors import AppiumCliError
@@ -24,8 +24,8 @@ from appium_cli.utils.exit_codes import FEATURE_NOT_ENABLED
 _STALE_HINT = "snapshot_stale: true (call snapshot() before ref-based actions)"
 
 
-def _mark_positional_stale(action: str, ref: str, ref_context_used: bool) -> None:
-    """Mark the appropriate context as positionally stale after a gesture.
+def _mark_context_stale(action: str, ref: str = "", ref_context_used: bool = False) -> None:
+    """Mark the appropriate context stale after an action that may change UI.
 
     If the gesture targeted a specific ref, the ref's context is invalidated;
     otherwise the driver's current context is invalidated.
@@ -35,6 +35,11 @@ def _mark_positional_stale(action: str, ref: str, ref_context_used: bool) -> Non
     else:
         context = state.current_context
     state.ref_resolver.mark_stale(context, action, ref=ref)
+
+
+def _mark_positional_stale(action: str, ref: str, ref_context_used: bool) -> None:
+    """Backward-compatible alias for gesture invalidation."""
+    _mark_context_stale(action, ref, ref_context_used)
 
 
 _SCROLL_DIRECTION_REVERSE = {"up": "down", "down": "up", "left": "right", "right": "left"}
@@ -136,6 +141,17 @@ def _gesture_target(ref: str) -> dict[str, Any]:
     return {"elementId": element.id}
 
 
+def _gesture_element_target(ref: str, action: str) -> dict[str, Any]:
+    """Resolve ref to a real element target for gestures that cannot use x/y."""
+    element = _resolve_element(ref)
+    if isinstance(element, _CoordinateElement):
+        raise AppiumCliError(
+            f"ref '{ref}' resolved to coordinates only; {action} requires a real element or scroll area. "
+            "Call snapshot() and choose a fresh scrollable/container ref."
+        )
+    return {"elementId": element.id}
+
+
 def _screen_rect() -> dict[str, int]:
     size = _require_driver().get_window_size()
     return {"left": 0, "top": 0, "width": int(size["width"]), "height": int(size["height"])}
@@ -170,6 +186,7 @@ def tap(ref: str) -> str:
                     element.y,
                 )
                 time.sleep(0.5)
+                _mark_context_stale("tap", ref, ref_context_used=True)
                 return _ok()
             try:
                 element.click()
@@ -204,9 +221,11 @@ def tap(ref: str) -> str:
                     msg += ". Try closing overlays or scrolling."
                     raise AppiumCliError(msg) from retry_exc
             time.sleep(0.5)
+            _mark_context_stale("tap", ref, ref_context_used=True)
             return _ok()
         _require_driver().execute_script("mobile: clickGesture", _gesture_target(ref))
         time.sleep(0.5)
+        _mark_context_stale("tap", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -255,6 +274,7 @@ def type_text(ref: str, text: str, submit: bool = False, slowly: bool = False) -
             if submit:
                 _require_driver().press_keycode(66)
         time.sleep(0.5)
+        _mark_context_stale("type_text", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -288,6 +308,7 @@ def select(ref: str, value: str, by: str = "value") -> str:
             raise AppiumCliError(f"Unknown select method: '{by}'. Use value, label, or index.")
 
         time.sleep(0.3)
+        _mark_context_stale("select", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -314,6 +335,7 @@ def select_option(ref: str, text: str, timeout: float = 3.0, exact: bool = True)
             except Exception:
                 Select(element).select_by_value(text)
             time.sleep(0.3)
+            _mark_context_stale("select_option", ref, ref_context_used=True)
             return _ok()
 
         # Custom dropdown: click to open
@@ -352,6 +374,7 @@ def select_option(ref: str, text: str, timeout: float = 3.0, exact: bool = True)
 
             if found and found.get("found"):
                 time.sleep(0.3)
+                _mark_context_stale("select_option", ref, ref_context_used=True)
                 return _ok()
 
             if time.monotonic() >= deadline:
@@ -442,6 +465,7 @@ def set_date(ref: str, date: str) -> str:
             """, element, display)
 
         time.sleep(0.3)
+        _mark_context_stale("set_date", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -462,7 +486,7 @@ def scroll(direction: str, ref: str = "", percent: float = 0.8) -> str:
 
         params: dict[str, Any] = {"direction": _SCROLL_DIRECTION_REVERSE[direction], "percent": percent}
         if ref:
-            params.update(_gesture_target(ref))
+            params.update(_gesture_element_target(ref, "scroll"))
         else:
             params.update(_screen_rect())
         can_scroll_more = _require_driver().execute_script("mobile: scrollGesture", params)
@@ -514,7 +538,7 @@ def swipe(direction: str, ref: str = "", percent: float = 0.8) -> str:
             _require_native_context("swipe")
         params: dict[str, Any] = {"direction": direction, "percent": min(percent, 1.0)}
         if ref:
-            params.update(_gesture_target(ref))
+            params.update(_gesture_element_target(ref, "swipe"))
         else:
             params.update(_screen_rect())
         _require_driver().execute_script("mobile: swipeGesture", params)
@@ -538,6 +562,7 @@ def press_key(key: str) -> str:
     try:
         _require_driver().press_keycode(_KEYCODE_MAP[key])
         time.sleep(0.5)
+        _mark_context_stale("press_key")
         return _ok()
     except Exception as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -566,6 +591,7 @@ def _web_press_key(key: str) -> str:
         from selenium.webdriver.common.action_chains import ActionChains
         ActionChains(driver).send_keys(w3c_val).perform()
         time.sleep(0.5)
+        _mark_context_stale("press_key")
         return _ok()
     except Exception as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -583,10 +609,11 @@ def long_press(ref: str, duration: int = 500) -> str:
                 "long_press is not supported in WebView context.",
                 exit_code=FEATURE_NOT_ENABLED,
             )
-        params = _gesture_target(ref)
+        params = _gesture_element_target(ref, "long_press")
         params["duration"] = duration
         _require_driver().execute_script("mobile: longClickGesture", params)
         time.sleep(0.5)
+        _mark_context_stale("long_press", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -603,8 +630,9 @@ def double_tap(ref: str) -> str:
                 "double_tap is not supported in WebView context.",
                 exit_code=FEATURE_NOT_ENABLED,
             )
-        _require_driver().execute_script("mobile: doubleClickGesture", _gesture_target(ref))
+        _require_driver().execute_script("mobile: doubleClickGesture", _gesture_element_target(ref, "double_tap"))
         time.sleep(0.5)
+        _mark_context_stale("double_tap", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -621,7 +649,7 @@ def drag(ref: str, end_x: int, end_y: int, speed: int | None = None) -> str:
                 "drag is not supported in WebView context.",
                 exit_code=FEATURE_NOT_ENABLED,
             )
-        params = _gesture_target(ref)
+        params = _gesture_element_target(ref, "drag")
         params.update({"endX": end_x, "endY": end_y})
         if speed is not None:
             params["speed"] = speed
@@ -648,7 +676,7 @@ def fling(direction: str, ref: str = "", speed: int | None = None) -> str:
         if speed is not None:
             params["speed"] = speed
         if ref:
-            params.update(_gesture_target(ref))
+            params.update(_gesture_element_target(ref, "fling"))
         else:
             params.update(_screen_rect())
         can_scroll_more = _require_driver().execute_script("mobile: flingGesture", params)
@@ -683,12 +711,13 @@ def pinch_close(ref: str, percent: float = 0.5, speed: int | None = None) -> str
 
 def _pinch(script: str, ref: str, percent: float, speed: int | None) -> str:
     try:
-        params = _gesture_target(ref)
+        params = _gesture_element_target(ref, "pinch")
         params["percent"] = percent
         if speed is not None:
             params["speed"] = speed
         _require_driver().execute_script(script, params)
         time.sleep(0.5)
+        _mark_context_stale("pinch", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -779,6 +808,7 @@ def file_upload(ref: str, path: str) -> str:
             element.send_keys(path)
 
         time.sleep(0.3)
+        _mark_context_stale("file_upload", ref, ref_context_used=True)
         return _ok()
     except ElementNotFoundError as exc:
         raise AppiumCliError(str(exc)) from exc
@@ -857,5 +887,7 @@ def _try_resolve_visible(ref: str, driver: Any) -> bool:
         if isinstance(element, _CoordinateElement):
             return True
         return element.is_displayed()
+    except StaleSnapshotError:
+        raise
     except Exception:
         return False

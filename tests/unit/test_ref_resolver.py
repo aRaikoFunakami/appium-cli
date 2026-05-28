@@ -5,7 +5,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from appium_cli.core.ref_resolver import ElementNotFoundError, RefResolver, _CoordinateElement, parse_ref
+from appium_cli.core.ref_resolver import (
+    ElementNotFoundError,
+    RefResolver,
+    StaleSnapshotError,
+    _CoordinateElement,
+    parse_ref,
+)
 from appium_cli.core.snapshot import LocatorStrategy, RefEntry
 from appium_cli.utils.paths import latest_snapshot_path, snapshot_artifact_path
 
@@ -474,6 +480,12 @@ class TestRefResolverStaleBehavior:
         resolver.register_all({"btn": _make_entry()})
         assert not resolver.is_stale("NATIVE_APP")
 
+    def test_register_all_can_preserve_stale_for_context_scoped_refresh(self):
+        resolver = RefResolver()
+        resolver.mark_stale("NATIVE_APP", "scroll_up")
+        resolver.register_all({"btn": _make_entry()}, clear_stale=False)
+        assert resolver.is_stale("NATIVE_APP")
+
     def test_register_context_clears_only_that_context(self):
         resolver = RefResolver()
         resolver.mark_stale("NATIVE_APP", "scroll_up")
@@ -488,7 +500,7 @@ class TestRefResolverStaleBehavior:
         resolver.clear()
         assert not resolver.is_stale("NATIVE_APP")
 
-    def test_resolve_skips_coordinates_when_stale(self):
+    def test_resolve_requires_snapshot_when_stale(self):
         resolver = RefResolver()
         entry = self._make_native_entry_with_id()
         resolver.register_all({"favoriteicon": entry})
@@ -501,15 +513,16 @@ class TestRefResolverStaleBehavior:
         driver.find_elements.return_value = [wrong]
         driver.find_element.return_value = wrong
 
-        with pytest.raises(ElementNotFoundError) as exc:
+        with pytest.raises(StaleSnapshotError) as exc:
             resolver.resolve("favoriteicon", driver)
 
         msg = str(exc.value)
-        assert "stale" in msg.lower()
-        assert "snapshot()" in msg
+        assert "snapshot_required" in msg
         assert "scroll_up" in msg
-        # coordinates strategy must have been skipped explicitly
-        assert "skipped (snapshot is stale)" in msg
+        assert exc.value.ref == "favoriteicon"
+        assert exc.value.context == "NATIVE_APP"
+        assert exc.value.reason == "scroll_up(movies_section)"
+        driver.find_elements.assert_not_called()
 
     def test_verify_bounds_rejects_coordinate_element_when_stale(self):
         resolver = RefResolver()

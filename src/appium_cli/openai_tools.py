@@ -58,6 +58,7 @@ Core loop:
 Targeting rules:
 - Snapshot refs are valid function-call arguments.
 - Normal snapshot outputs are metadata plus artifact paths, not full trees. Do not use raw/full snapshot output in agent loops; inspect saved artifacts with snapshot_search(), snapshot_show({"ref": "..."}), and paginated web_refs() (WebView only). For article/body/page text, use web_text().
+- If a stale ref is used, appium-cli may refresh the affected context and retry the action once. If the ref disappeared, choose a new ref from the fresh snapshot metadata returned by the tool.
 - web_refs() is paginated by default (limit=50). If has_more=true and the target is not listed, refine the role/search if possible or call web_refs(offset=next_offset).
 - If duplicate labels/refs appear in native UI, inspect with snapshot_actionable_tree() before acting. Use snapshot_show({"ref": "..."}), list_containers(), or within_container() as follow-up detail tools.
 - If visible text has no ref, target the nearest actionable parent row, button, link, container, or form control. For native snapshots, snapshot_search() may return tap_target_ref/action_target_ref for this exact purpose.
@@ -115,8 +116,8 @@ Native UI: scrolling and lists:
 1. snapshot({})
 2. list_containers({}) to find scrollable/list refs.
 3. scroll_down({"ref": "<container ref>"}) to scroll inside a list; scroll_down({}) only for intentional full-screen scrolling.
-4. snapshot({}) — REQUIRED before the next ref-based action. scroll/swipe/fling/drag do not refresh the snapshot; cached refs use OLD coordinates and may tap the wrong widget.
-5. snapshot_actionable_tree({}) only renders the last snapshot; it does NOT refresh the device state. Always call snapshot({}) first after any positional gesture.
+4. snapshot({}) before the next ref-based action is recommended. If omitted, appium-cli will reject stale refs or auto-refresh/retry once; if the old ref disappeared, use the returned fresh snapshot to choose a new ref.
+5. snapshot_actionable_tree({}) only renders the last snapshot; it does NOT refresh the device state. Call snapshot({}) first when you need a guaranteed fresh tree.
 6. Repeat with a changed target/search. Do not loop on the same query if the screen did not change.
 
 Starting WebView / Chrome work from native:
